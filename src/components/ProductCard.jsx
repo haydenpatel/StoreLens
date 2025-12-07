@@ -13,15 +13,45 @@ export default function ProductCard({ product, collectionUrl }) {
   const maxPrice = Math.max(...prices);
   // const hasDiscount = variants.some(v => v.compare_at_price && parseFloat(v.compare_at_price) > parseFloat(v.price));
   const inStock = variants.some(v => v.available);
+  const maxTagsToShow = 3;
+  const maxTagChars = 18; // only show tags shorter than or equal to this
+  const maxTagDisplayChars = 16; // truncate displayed tag text to this length
 
   // Find all discounted variants
-  const discountedVariants = variants.filter(v =>
+  const _discountedVariants = variants.filter(v =>
     v.compare_at_price && parseFloat(v.compare_at_price) > parseFloat(v.price)
   );
 
   // Core discount data using shared helper
-const { hasDiscount, discountAmount, discountPercent } =
-  getDiscountData(variants);
+  const { hasDiscount, discountAmount, discountPercent } = getDiscountData(variants);
+
+  // Prepare variant titles for display (display up to maxChars and use `+N more`)
+  const variantTitles = (variants || []).map(v => v.title || v.name || '').filter(Boolean);
+  const maxChars = 35; // max characters to show for the combined titles
+  let variantsDisplay = '';
+  let remaining = 0;
+  if (variantTitles.length > 0) {
+    let cur = '';
+    let used = 0;
+    for (let i = 0; i < variantTitles.length; i++) {
+      const title = variantTitles[i];
+      const sep = cur.length ? ', ' : '';
+      if ((cur + sep + title).length <= maxChars) {
+        cur = cur + sep + title;
+        used++;
+      } else {
+        // If nothing has been added yet, truncate the first title to fit
+        if (!cur.length) {
+          const fit = Math.max(0, maxChars - 3);
+          cur = title.slice(0, fit) + (title.length > fit ? '...' : '');
+          used++;
+        }
+        break;
+      }
+    }
+    variantsDisplay = cur;
+    remaining = variantTitles.length - used;
+  }
 
   // if (hasDiscount) {
   //   // Use variant with the largest absolute $ discount
@@ -95,7 +125,7 @@ const { hasDiscount, discountAmount, discountPercent } =
         {/* Content */}
         <div className="p-4 space-y-2">
           {/* Title */}
-          <h3 className="font-medium text-foreground line-clamp-2 min-h-[2.5rem]">
+          <h3 className="font-medium text-foreground line-clamp-2 min-h-[3rem]">
             {product.title}
           </h3>
 
@@ -105,10 +135,9 @@ const { hasDiscount, discountAmount, discountPercent } =
               <p className="font-semibold">{priceDisplay}</p>
               {/* Variants*/}
               <p className="text-xs text-muted-foreground">
-              {variants.length > 1 
-                ? `${variants.length} variants`
-                : <span>&nbsp;</span>
-              }</p>
+              {variantsDisplay}
+              <i>{(remaining > 0 ? ` +${remaining} more` : '')}</i>
+              </p>
             </div>
 
             {/* View button */}
@@ -139,25 +168,28 @@ const { hasDiscount, discountAmount, discountPercent } =
           )}
 
           {/* Tags */}
-          {product.tags && product.tags.length > 0 && (
-            <div className="flex flex-wrap gap-1">
-              {product.tags.slice(0, 2).map(tag => (
-                <Badge 
-                  key={tag} 
-                  variant="tags" 
-                >
-                  {tag}
-                </Badge>
-              ))}
-              {product.tags.length > 2 && (
-                <Badge 
-                  variant="tags" 
-                >
-                  +{product.tags.length - 2}
-                </Badge>
-              )}
-            </div>
-          )}
+          {product.tags && product.tags.length > 0 && (() => {
+            const shortTags = product.tags.filter(t => (t || '').length <= maxTagChars);
+            const useTags = shortTags.length > 0
+              ? shortTags.slice(0, maxTagsToShow)
+              : product.tags.slice(0, maxTagsToShow).map(t => t); // fallback to first tags if none are short
+
+            const displayedCount = useTags.length;
+            const hiddenCount = product.tags.length - displayedCount;
+
+            return (
+              <div className="flex flex-wrap gap-1">
+                {useTags.map(tag => (
+                  <Badge key={tag} variant="tags">
+                    {tag.length > maxTagDisplayChars ? tag.slice(0, maxTagDisplayChars - 1) + '…' : tag}
+                  </Badge>
+                ))}
+                {hiddenCount > 0 && (
+                  <Badge variant="tags">+{hiddenCount}</Badge>
+                )}
+              </div>
+            );
+          })()}
         </div>
       </CardContent>
     </Card>
