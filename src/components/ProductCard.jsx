@@ -34,19 +34,24 @@ export default function ProductCard({ product, collectionUrl }) {
     let cur = '';
     let used = 0;
     for (let i = 0; i < variantTitles.length; i++) {
-      const title = variantTitles[i];
-      const sep = cur.length ? ', ' : '';
-      if ((cur + sep + title).length <= maxChars) {
-        cur = cur + sep + title;
+      if (variantTitles[i] === 'Default Title') { // LTTStore.com - skip 'Default Title'
         used++;
+        continue;
       } else {
-        // If nothing has been added yet, truncate the first title to fit
-        if (!cur.length) {
-          const fit = Math.max(0, maxChars - 3);
-          cur = title.slice(0, fit) + (title.length > fit ? '...' : '');
+        const title = variantTitles[i];
+        const sep = cur.length ? ', ' : '';
+        if ((cur + sep + title).length <= maxChars) {
+          cur = cur + sep + title;
           used++;
+        } else {
+          // If nothing has been added yet, truncate the first title to fit
+          if (!cur.length) {
+            const fit = Math.max(0, maxChars - 3);
+            cur = title.slice(0, fit) + (title.length > fit ? '...' : '');
+            used++;
+          }
+          break;
         }
-        break;
       }
     }
     variantsDisplay = cur;
@@ -129,7 +134,7 @@ export default function ProductCard({ product, collectionUrl }) {
             {product.title}
           </h3>
 
-          <div className="flex items-center justify-between pt-2">
+          <div className="flex items-top justify-between pt-2 min-h-[3rem]">
             {/* Price */}
             <div>
               <p className="font-semibold">{priceDisplay}</p>
