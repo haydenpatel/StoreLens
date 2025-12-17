@@ -32,6 +32,15 @@ export default function StoreLensApp() {
   const [inputHandle, setInputHandle] = useState("");
   const [discoverImmediately, setDiscoverImmediately] = useState(false);
   const discoverTimeoutRef = useRef(null);
+  const historyKey = "shopify-url-history";
+  const updateHistoryEntry = (entry) => {
+    if (!entry) return;
+    setUrlHistory((prev) => {
+      const updated = [entry, ...prev.filter((u) => u !== entry)].slice(0, 5);
+      localStorage.setItem(historyKey, JSON.stringify(updated));
+      return updated;
+    });
+  };
   
   // Filter states
   const [searchQuery, setSearchQuery] = useState("");
@@ -46,7 +55,7 @@ export default function StoreLensApp() {
 
   // Load URL history from localStorage
   useEffect(() => {
-    const saved = localStorage.getItem("shopify-url-history");
+    const saved = localStorage.getItem(historyKey);
     if (saved) {
       setUrlHistory(JSON.parse(saved));
     }
@@ -109,11 +118,14 @@ export default function StoreLensApp() {
         throw new Error("No products found in this collection");
       }
 
-      setProducts(allProducts);
-      setCurrentCollectionUrl(url);
-      resetFilters();
-      setError(null);
-    } catch (err) {
+    setProducts(allProducts);
+    setCurrentCollectionUrl(url);
+    resetFilters();
+    setError(null);
+    if (collectionsState.status !== "ready") {
+      updateHistoryEntry(url);
+    }
+  } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
@@ -190,15 +202,6 @@ export default function StoreLensApp() {
   }, []);
 
   useEffect(() => {
-    if (!storeOrigin) return;
-    setUrlHistory((prev) => {
-      const updated = [storeOrigin, ...prev.filter((u) => u !== storeOrigin)].slice(0, 5);
-      localStorage.setItem("shopify-url-history", JSON.stringify(updated));
-      return updated;
-    });
-  }, [storeOrigin]);
-
-  useEffect(() => {
     if (discoverTimeoutRef.current) {
       clearTimeout(discoverTimeoutRef.current);
     }
@@ -227,6 +230,7 @@ export default function StoreLensApp() {
             collections,
             error: null,
           });
+          updateHistoryEntry(storeOrigin);
         }
       } catch (err) {
         if (!controller.signal.aborted) {

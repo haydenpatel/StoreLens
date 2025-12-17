@@ -91,6 +91,7 @@ export async function discoverCollections(origin) {
     }
   }
 
+  const priorityHandles = ["all", "all-1", "all-products"];
   const filtered = allCollections
     .filter((c) => c.products_count > 0)
     .map((c) => ({
@@ -98,7 +99,18 @@ export async function discoverCollections(origin) {
       title: c.title,
       products_count: c.products_count,
     }))
-    .sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: "base" }));
+    .sort((a, b) => {
+      const aIndex = priorityHandles.indexOf(a.handle);
+      const bIndex = priorityHandles.indexOf(b.handle);
+
+      if (aIndex !== -1 && bIndex !== -1) {
+        return aIndex - bIndex;
+      }
+      if (aIndex !== -1) return -1;
+      if (bIndex !== -1) return 1;
+
+      return a.title.localeCompare(b.title, undefined, { sensitivity: "base" });
+    });
 
   saveCollectionsCache(origin, filtered);
   return filtered;
