@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { Loader2, AlertCircle } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
@@ -7,13 +7,31 @@ import Sidebar from "../components/Sidebar";
 import ProductGrid from "../components/ProductGrid";
 
 import { getDiscountData } from "@/lib/utils";
+import {
+  discoverCollections,
+  extractCollectionHandle,
+  getDisplayHost,
+  getOrigin,
+  parseUserInputToURL,
+} from "@/lib/store";
 
 export default function StoreLensApp() {
-  const [collectionUrl, setCollectionUrl] = useState("");
+  const [storeInput, setStoreInput] = useState("");
+  const [storeOrigin, setStoreOrigin] = useState("");
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [urlHistory, setUrlHistory] = useState([]);
+  const [collectionsState, setCollectionsState] = useState({
+    status: "idle",
+    collections: [],
+    error: null,
+  });
+  const [selectedHandle, setSelectedHandle] = useState("");
+  const [currentCollectionUrl, setCurrentCollectionUrl] = useState("");
+  const [inputHandle, setInputHandle] = useState("");
+  const [discoverImmediately, setDiscoverImmediately] = useState(false);
+  const discoverTimeoutRef = useRef(null);
   
   // Filter states
   const [searchQuery, setSearchQuery] = useState("");
@@ -34,58 +52,15 @@ export default function StoreLensApp() {
     }
   }, []);
 
-  // Check if URL is a bare domain (no collection path)
-  const isBareDomain = (url) => {
-    try {
-      const urlObj = new URL(url.startsWith('http') ? url : `https://${url}`);
-      const pathname = urlObj.pathname;
-      return !pathname || pathname === '/' || pathname === '';
-    } catch {
-      return false;
-    }
-  };
-
-  // Convert to bare hostname (for product links)
   const getHostname = (url) => {
     try {
-      const urlObj = new URL(url.startsWith('http') ? url : `https://${url}`);
+      const urlObj = new URL(url.startsWith("http") ? url : `https://${url}`);
       return urlObj.hostname;
     } catch {
       return false;
     }
   };
 
-  // Resolve default collection for a bare domain
-  const resolveDefaultCollection = async (baseUrl) => {
-    const urlObj = new URL(baseUrl.startsWith('http') ? baseUrl : `https://${baseUrl}`);
-    const domain = `${urlObj.protocol}//${urlObj.host}`;
-    
-    const candidates = [
-      'all',
-      'all-1', 
-      'all-products',
-    ];
-
-    for (const candidate of candidates) {
-      try {
-        const testUrl = `${domain}/collections/${candidate}/products.json?limit=1`;
-        const response = await fetch(testUrl);
-        
-        if (response.ok) {
-          const data = await response.json();
-          if (data.products && data.products.length > 0) {
-            return `${domain}/collections/${candidate}`;
-          }
-        }
-      } catch (err) {
-        continue;
-      }
-    }
-
-    return null;
-  };
-
-  // Convert Shopify collection URL to JSON endpoint
   const getJsonUrl = (url) => {
     try {
       const urlObj = new URL(url);
@@ -104,25 +79,13 @@ export default function StoreLensApp() {
     }
   };
 
-  // Fetch all products with pagination
   const fetchCollection = async (url) => {
     setLoading(true);
     setError(null);
     setProducts([]);
     
     try {
-      let resolvedUrl = url;
-      
-      // If it's a bare domain, try to resolve to default collection
-      if (isBareDomain(url)) {
-        const defaultCollection = await resolveDefaultCollection(url);
-        if (!defaultCollection) {
-          throw new Error("I couldn't find a collection of products to load. Please paste the full collection URL and try again.");
-        }
-        resolvedUrl = defaultCollection;
-      }
-      
-      const jsonUrl = getJsonUrl(resolvedUrl);
+      const jsonUrl = getJsonUrl(url);
       let allProducts = [];
       let page = 1;
       let hasMore = true;
@@ -147,15 +110,12 @@ export default function StoreLensApp() {
       }
 
       setProducts(allProducts);
-      
-      // Update URL history with the original input
+      setCurrentCollectionUrl(url);
       const newHistory = [url, ...urlHistory.filter(u => u !== url)].slice(0, 5);
       setUrlHistory(newHistory);
       localStorage.setItem("shopify-url-history", JSON.stringify(newHistory));
-      
-      // Reset filters
       resetFilters();
-      
+      setError(null);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -163,9 +123,53 @@ export default function StoreLensApp() {
     }
   };
 
+  const loadCollectionByHandle = async (handle, origin = storeOrigin) => {
+    if (!handle || !origin) {
+      setError("Please select a collection to load.");
+      return;
+    }
+    const url = `${origin}/collections/${handle}`;
+    setSelectedHandle(handle);
+    setInputHandle(handle);
+    await fetchCollection(url);
+  };
+
+  const applyUserInput = (value, { immediate = false, autoLoad = false } = {}) => {
+    const parsed = parseUserInputToURL(value);
+    if (!parsed) {
+      setStoreInput(value);
+      setStoreOrigin("");
+      setInputHandle("");
+      setSelectedHandle("");
+      return;
+    }
+    const origin = getOrigin(parsed);
+    const host = getDisplayHost(parsed);
+    const handle = extractCollectionHandle(parsed);
+    setStoreInput(host);
+    setStoreOrigin(origin);
+    setInputHandle(handle || "");
+    if (handle) {
+      setSelectedHandle(handle);
+      if (autoLoad) {
+        loadCollectionByHandle(handle, origin);
+      } else {
+        setCurrentCollectionUrl(`${origin}/collections/${handle}`);
+      }
+    } else {
+      setSelectedHandle("");
+      setCurrentCollectionUrl("");
+    }
+    setDiscoverImmediately(immediate);
+  };
+
   const handleLoadCollection = () => {
-    if (collectionUrl.trim()) {
-      fetchCollection(collectionUrl.trim());
+    if (inputHandle) {
+      loadCollectionByHandle(inputHandle, storeOrigin);
+    } else if (selectedHandle) {
+      loadCollectionByHandle(selectedHandle, storeOrigin);
+    } else {
+      setError("Please select a collection to load.");
     }
   };
 
@@ -178,6 +182,93 @@ export default function StoreLensApp() {
     setSelectedOptions({});
     setInStockOnly(true);
     setSaleOnly(false);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (discoverTimeoutRef.current) {
+        clearTimeout(discoverTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (discoverTimeoutRef.current) {
+      clearTimeout(discoverTimeoutRef.current);
+    }
+    if (!storeOrigin) {
+      setCollectionsState({
+        status: "idle",
+        collections: [],
+        error: null,
+      });
+      return;
+    }
+
+    const delay = discoverImmediately ? 0 : 400;
+    const controller = new AbortController();
+    discoverTimeoutRef.current = setTimeout(async () => {
+      setCollectionsState((prev) => ({
+        ...prev,
+        status: "loading",
+        error: null,
+      }));
+      try {
+        const collections = await discoverCollections(storeOrigin);
+        if (!controller.signal.aborted) {
+          setCollectionsState({
+            status: "ready",
+            collections,
+            error: null,
+          });
+        }
+      } catch (err) {
+        if (!controller.signal.aborted) {
+          setCollectionsState({
+            status: "error",
+            collections: [],
+            error: err.message || "Couldn't load collections for this store",
+          });
+        }
+      } finally {
+        setDiscoverImmediately(false);
+      }
+    }, delay);
+
+    return () => {
+      controller.abort();
+      if (discoverTimeoutRef.current) {
+        clearTimeout(discoverTimeoutRef.current);
+      }
+    };
+  }, [storeOrigin, discoverImmediately]);
+
+  useEffect(() => {
+    if (collectionsState.status !== "ready") return;
+    if (inputHandle && collectionsState.collections.some((c) => c.handle === inputHandle)) {
+      setSelectedHandle(inputHandle);
+    }
+  }, [collectionsState, inputHandle]);
+
+  const handleInputChange = (value) => {
+    setError(null);
+    applyUserInput(value);
+  };
+
+  const handlePaste = (value) => {
+    setError(null);
+    applyUserInput(value, { immediate: true, autoLoad: true });
+  };
+
+  const handleSelectHistory = (url) => {
+    applyUserInput(url, { immediate: true, autoLoad: true });
+  };
+
+  const handleSelectHandle = (handle) => {
+    setError(null);
+    setSelectedHandle(handle);
+    setInputHandle(handle);
+    loadCollectionByHandle(handle, storeOrigin);
   };
 
   // Extract unique filter values
@@ -338,15 +429,18 @@ export default function StoreLensApp() {
   return (
     <div className="min-h-screen bg-secondary">
       <Header
-        collectionUrl={collectionUrl}
-        setCollectionUrl={setCollectionUrl}
+        storeInput={storeInput}
+        onStoreInputChange={handleInputChange}
+        onStorePaste={handlePaste}
         onLoad={handleLoadCollection}
         loading={loading}
         urlHistory={urlHistory}
-        onSelectHistory={(url) => {
-          setCollectionUrl(url);
-          fetchCollection(url);
-        }}
+        onSelectHistory={handleSelectHistory}
+        collections={collectionsState.collections}
+        collectionsStatus={collectionsState.status}
+        collectionsError={collectionsState.error}
+        selectedHandle={selectedHandle}
+        onSelectHandle={handleSelectHandle}
       />
 
       <div className="flex">
@@ -390,19 +484,17 @@ export default function StoreLensApp() {
           {!loading && !error && products.length === 0 && (
             <div className="text-center py-20">
               <p className="text-muted-foreground text-lg">
-                Enter a Shopify collection URL above to get started
+                Enter a Shopify store or collection URL above to get started
               </p>
             </div>
           )}
-          {/* <h2 className="text-center text-white text-lg">{new URL(collectionUrl).hostname}</h2> */}
-
           {!loading && products.length > 0 && (
             <ProductGrid
               products={filteredProducts}
               totalProducts={products.length}
               sortBy={sortBy}
               setSortBy={setSortBy}
-              collectionUrl={getHostname(collectionUrl)}
+              collectionUrl={getHostname(currentCollectionUrl)}
             />
           )}
         </main>
