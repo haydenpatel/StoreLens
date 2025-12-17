@@ -73,7 +73,7 @@ export default function Header({
               }}
               onKeyPress={handleKeyPress}
               disabled={loading}
-              className="flex-1 min-w-16rem"
+              className="flex-1 min-w-[16rem]"
             />
             <Select
               value={selectedHandle || undefined}
@@ -116,13 +116,11 @@ export default function Header({
             {urlHistory.length > 0 && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="icon" disabled={loading}>
-                    <Clock className="w-4 h-4" />
+                  <Button variant="outline" disabled={loading}>
+                    <Clock className="w-4 h-4" />Recent Stores
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-80">
-                  <DropdownMenuLabel>Recent Stores</DropdownMenuLabel>
-                  <DropdownMenuSeparator />
                   {urlHistory.map((url, index) => (
                     <DropdownMenuItem 
                       key={index}
@@ -136,7 +134,7 @@ export default function Header({
               </DropdownMenu>
             )}
 
-            <Button 
+            {/*<Button 
               onClick={onLoad} 
               disabled={loading || !storeInput.trim()}
               // variant="default"
@@ -149,7 +147,7 @@ export default function Header({
               ) : (
                 "Load Collection"
               )}
-            </Button>
+            </Button>*/}
           </div>
           <div className="flex items-center justify-items-end gap-2">
             <Button
