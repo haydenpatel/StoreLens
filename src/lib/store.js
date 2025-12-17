@@ -53,18 +53,21 @@ export function saveCollectionsCache(origin, collections) {
   }
 }
 
-async function fetchCollectionsPage(origin, page) {
+async function fetchCollectionsPage(origin, page, signal) {
   const response = await fetch(
-    `${origin}/collections.json?limit=250&page=${page}`
+    `${origin}/collections.json?limit=250&page=${page}`,
+    { signal }
   );
   if (!response.ok) {
-    throw new Error("Failed to fetch collections");
+    const errorMessage = `Failed to fetch collections (status ${response.status})`;
+    console.error(`Collection discovery failed for ${origin}: ${response.status} ${response.statusText}`);
+    throw new Error(errorMessage);
   }
   const data = await response.json();
   return Array.isArray(data?.collections) ? data.collections : [];
 }
 
-export async function discoverCollections(origin) {
+export async function discoverCollections(origin, signal) {
   const cached = loadCollectionsCache(origin);
   if (cached) {
     return cached;
@@ -77,7 +80,7 @@ export async function discoverCollections(origin) {
   let keepGoing = true;
 
   while (keepGoing && page <= maxPages) {
-    const collections = await fetchCollectionsPage(origin, page);
+    const collections = await fetchCollectionsPage(origin, page, signal);
     const signature = JSON.stringify(collections);
     if (collections.length === 0 || seenPages.has(signature)) {
       break;

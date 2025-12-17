@@ -121,6 +121,8 @@ export default function Header({
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-80">
+                  <DropdownMenuLabel>Recent Stores</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
                   {urlHistory.map((url, index) => (
                     <DropdownMenuItem 
                       key={index}
