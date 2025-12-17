@@ -223,7 +223,7 @@ export default function StoreLensApp() {
         error: null,
       }));
       try {
-        const collections = await discoverCollections(storeOrigin);
+        const collections = await discoverCollections(storeOrigin, controller.signal);
         if (!controller.signal.aborted) {
           setCollectionsState({
             status: "ready",
