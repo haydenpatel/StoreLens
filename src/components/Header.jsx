@@ -32,6 +32,15 @@ export default function Header({
   selectedHandle,
   onSelectHandle,
 }) {
+  const getHostFromValue = (value) => {
+    try {
+      const parsed = value.startsWith("http") ? new URL(value) : new URL(`https://${value}`);
+      return parsed.host;
+    } catch {
+      return value;
+    }
+  };
+
   const handleKeyPress = (e) => {
     if (e.key === 'Enter' && !loading) {
       onLoad();
@@ -112,7 +121,7 @@ export default function Header({
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-80">
-                  <DropdownMenuLabel>Recent Collections</DropdownMenuLabel>
+                  <DropdownMenuLabel>Recent Stores</DropdownMenuLabel>
                   <DropdownMenuSeparator />
                   {urlHistory.map((url, index) => (
                     <DropdownMenuItem 
@@ -120,7 +129,7 @@ export default function Header({
                       onClick={() => onSelectHistory(url)}
                       className="cursor-pointer"
                     >
-                      <div className="truncate text-sm">{url}</div>
+                      <div className="truncate text-sm">{getHostFromValue(url)}</div>
                     </DropdownMenuItem>
                   ))}
                 </DropdownMenuContent>
