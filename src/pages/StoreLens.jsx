@@ -111,9 +111,6 @@ export default function StoreLensApp() {
 
       setProducts(allProducts);
       setCurrentCollectionUrl(url);
-      const newHistory = [url, ...urlHistory.filter(u => u !== url)].slice(0, 5);
-      setUrlHistory(newHistory);
-      localStorage.setItem("shopify-url-history", JSON.stringify(newHistory));
       resetFilters();
       setError(null);
     } catch (err) {
@@ -191,6 +188,15 @@ export default function StoreLensApp() {
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (!storeOrigin) return;
+    setUrlHistory((prev) => {
+      const updated = [storeOrigin, ...prev.filter((u) => u !== storeOrigin)].slice(0, 5);
+      localStorage.setItem("shopify-url-history", JSON.stringify(updated));
+      return updated;
+    });
+  }, [storeOrigin]);
 
   useEffect(() => {
     if (discoverTimeoutRef.current) {
