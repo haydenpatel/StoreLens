@@ -98,25 +98,35 @@ export async function discoverCollections(origin, signal) {
     return cached;
   }
 
-  const allCollections = [];
-  const seenPages = new Set();
-  const maxPages = 20;
-  let page = 1;
-  let keepGoing = true;
+  // /collections.json is a "nice to have" listing that some themes block or
+  // omit collections from entirely. Don't let it failing prevent us from
+  // still finding the store's all-products collection by direct probing.
+  let allCollections = [];
+  let listingError = null;
+  try {
+    const seenPages = new Set();
+    const maxPages = 20;
+    let page = 1;
+    let keepGoing = true;
 
-  while (keepGoing && page <= maxPages) {
-    const collections = await fetchCollectionsPage(origin, page, signal);
-    const signature = JSON.stringify(collections);
-    if (collections.length === 0 || seenPages.has(signature)) {
-      break;
+    while (keepGoing && page <= maxPages) {
+      const collections = await fetchCollectionsPage(origin, page, signal);
+      const signature = JSON.stringify(collections);
+      if (collections.length === 0 || seenPages.has(signature)) {
+        break;
+      }
+      seenPages.add(signature);
+      allCollections.push(...collections);
+      if (collections.length < 250) {
+        keepGoing = false;
+      } else {
+        page += 1;
+      }
     }
-    seenPages.add(signature);
-    allCollections.push(...collections);
-    if (collections.length < 250) {
-      keepGoing = false;
-    } else {
-      page += 1;
-    }
+  } catch (err) {
+    if (err?.name === "AbortError") throw err;
+    listingError = err;
+    allCollections = [];
   }
 
   const priorityHandles = ["all", "all-products", "all-1", "everything", "shop-all"];
@@ -134,6 +144,10 @@ export async function discoverCollections(origin, signal) {
     signal
   );
   const withProbe = probed ? [probed, ...mapped] : mapped;
+
+  if (withProbe.length === 0 && listingError) {
+    throw listingError;
+  }
 
   const filtered = withProbe.sort((a, b) => {
     const aIndex = priorityHandles.indexOf(a.handle);

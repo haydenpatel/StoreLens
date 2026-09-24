@@ -32,6 +32,7 @@ export default function StoreLensApp() {
   const [inputHandle, setInputHandle] = useState("");
   const [discoverImmediately, setDiscoverImmediately] = useState(false);
   const [discoveryRetryNonce, setDiscoveryRetryNonce] = useState(0);
+  const [autoLoadPending, setAutoLoadPending] = useState(false);
   const discoverTimeoutRef = useRef(null);
   const historyKey = "shopify-url-history";
   const updateHistoryEntry = (entry) => {
@@ -161,14 +162,19 @@ export default function StoreLensApp() {
     setInputHandle(handle || "");
     if (handle) {
       setSelectedHandle(handle);
+      setAutoLoadPending(false);
       if (autoLoad) {
         loadCollectionByHandle(handle, origin);
       } else {
         setCurrentCollectionUrl(`${origin}/collections/${handle}`);
       }
     } else {
+      // Bare domain: no collection path to load directly. Once discovery
+      // resolves, auto-load its best guess (e.g. the store's all-products
+      // collection) instead of leaving the user stuck on an empty page.
       setSelectedHandle("");
       setCurrentCollectionUrl("");
+      setAutoLoadPending(autoLoad);
     }
     setDiscoverImmediately(immediate);
   };
@@ -264,6 +270,28 @@ export default function StoreLensApp() {
       setSelectedHandle(inputHandle);
     }
   }, [collectionsState, inputHandle]);
+
+  useEffect(() => {
+    if (!autoLoadPending) return;
+    if (collectionsState.status === "ready") {
+      setAutoLoadPending(false);
+      const best = collectionsState.collections[0];
+      if (best) {
+        loadCollectionByHandle(best.handle, storeOrigin);
+      } else {
+        setError(
+          "I couldn't find a collection of products to load. Please paste the full collection URL and try again."
+        );
+      }
+    } else if (collectionsState.status === "error") {
+      setAutoLoadPending(false);
+      setError(
+        "I couldn't find a collection of products to load. Please paste the full collection URL and try again."
+      );
+    }
+    // loadCollectionByHandle is recreated each render; the autoLoadPending guard above prevents re-firing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoLoadPending, collectionsState, storeOrigin]);
 
   const handleInputChange = (value) => {
     setError(null);
