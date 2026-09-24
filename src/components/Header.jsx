@@ -173,7 +173,7 @@ export default function Header({
                 <DropdownMenuTrigger asChild>
                   <Button variant="outline" disabled={loading} className="shrink-0" title="Recent Stores">
                     <Clock className="w-4 h-4" />
-                    <span className="max-sm:inline sm:max-[700px]:hidden min-[700px]:inline">Recent Stores</span>
+                    <span className="hidden min-[700px]:inline">Recent Stores</span>
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-80">
