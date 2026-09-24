@@ -22,7 +22,11 @@ export function extractCollectionHandle(url) {
   return match ? match[1] : null;
 }
 
-const CACHE_PREFIX = "storelens:collections:";
+// Bumping this invalidates every previously cached entry (old ones are just
+// orphaned under their old key) whenever the discovery/probe logic changes
+// in a way that could make stale cached results wrong or outdated.
+const CACHE_VERSION = 2;
+const CACHE_PREFIX = `storelens:collections:v${CACHE_VERSION}:`;
 const TTL_MS = 21600000;
 
 export function loadCollectionsCache(origin) {
@@ -31,21 +35,22 @@ export function loadCollectionsCache(origin) {
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object") return null;
-    const { cachedAt, ttlMs, collections } = parsed;
+    const { cachedAt, ttlMs, collections, allProductsHandle } = parsed;
     if (!cachedAt || !ttlMs || !Array.isArray(collections)) return null;
     if (Date.now() - cachedAt >= ttlMs) return null;
-    return collections;
+    return { collections, allProductsHandle: allProductsHandle ?? null };
   } catch {
     return null;
   }
 }
 
-export function saveCollectionsCache(origin, collections) {
+export function saveCollectionsCache(origin, collections, allProductsHandle) {
   try {
     const payload = {
       cachedAt: Date.now(),
       ttlMs: TTL_MS,
       collections,
+      allProductsHandle: allProductsHandle ?? null,
     };
     localStorage.setItem(`${CACHE_PREFIX}${origin}`, JSON.stringify(payload));
   } catch {
@@ -70,7 +75,10 @@ async function fetchCollectionsPage(origin, page, signal) {
 // Shopify auto-generates an "all products" collection for every store, but
 // themes frequently exclude it from the Online Store sales channel, so it
 // never shows up in /collections.json even though its endpoint still works.
-const ALL_PRODUCTS_HANDLES = ["all", "all-products", "everything", "shop-all"];
+// This same list doubles as the dropdown's priority sort order, so a probed
+// or listed match is always treated consistently as "the" all-products
+// collection rather than inferred from list position.
+const ALL_PRODUCTS_HANDLES = ["all", "all-products", "all-1", "everything", "shop-all"];
 
 async function probeAllProductsCollection(origin, existingHandles, signal) {
   for (const handle of ALL_PRODUCTS_HANDLES) {
@@ -92,8 +100,8 @@ async function probeAllProductsCollection(origin, existingHandles, signal) {
   return null;
 }
 
-export async function discoverCollections(origin, signal) {
-  const cached = loadCollectionsCache(origin);
+export async function discoverCollections(origin, signal, { forceRefresh = false } = {}) {
+  const cached = forceRefresh ? null : loadCollectionsCache(origin);
   if (cached) {
     return cached;
   }
@@ -129,7 +137,6 @@ export async function discoverCollections(origin, signal) {
     allCollections = [];
   }
 
-  const priorityHandles = ["all", "all-products", "all-1", "everything", "shop-all"];
   const mapped = allCollections
     .filter((c) => c.products_count > 0)
     .map((c) => ({
@@ -150,8 +157,8 @@ export async function discoverCollections(origin, signal) {
   }
 
   const filtered = withProbe.sort((a, b) => {
-    const aIndex = priorityHandles.indexOf(a.handle);
-    const bIndex = priorityHandles.indexOf(b.handle);
+    const aIndex = ALL_PRODUCTS_HANDLES.indexOf(a.handle);
+    const bIndex = ALL_PRODUCTS_HANDLES.indexOf(b.handle);
 
     if (aIndex !== -1 && bIndex !== -1) {
       return aIndex - bIndex;
@@ -162,6 +169,12 @@ export async function discoverCollections(origin, signal) {
     return a.title.localeCompare(b.title, undefined, { sensitivity: "base" });
   });
 
-  saveCollectionsCache(origin, filtered);
-  return filtered;
+  // Only treat a collection as "the" all-products collection when it's a
+  // known handle (probed or listed) — never infer it from list position,
+  // since an arbitrary alphabetically-first collection is not a safe guess.
+  const allProductsMatch = filtered.find((c) => ALL_PRODUCTS_HANDLES.includes(c.handle));
+  const allProductsHandle = allProductsMatch ? allProductsMatch.handle : null;
+
+  saveCollectionsCache(origin, filtered, allProductsHandle);
+  return { collections: filtered, allProductsHandle };
 }
