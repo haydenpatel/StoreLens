@@ -50,9 +50,9 @@ export default function Header({
 
   return (
     <header className="bg-secondary border-b border-border sticky top-0 z-10">
-      <div className="px-4 sm:px-6 py-4 flex flex-col gap-3">
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
+      <div className="px-4 sm:px-6 py-4 flex flex-col gap-3 xl:flex-row xl:items-center xl:gap-4">
+        <div className="max-xl:flex max-xl:items-center max-xl:justify-between max-xl:gap-4 xl:contents">
+          <div className="flex items-center gap-3 xl:order-1 xl:shrink-0">
             <div className="w-8 h-8 rounded-lg flex items-top justify-center">
               <img src="/StoreLens-icon.svg"></img>
               <Package className="w-5 h-5 text-background" />
@@ -64,7 +64,7 @@ export default function Header({
             variant="outline"
             asChild
             size="sm"
-            className="gap-1 shrink-0"
+            className="gap-1 shrink-0 xl:order-3"
           >
             <a
                 href="https://storelens.feedbackchimp.space"
@@ -79,8 +79,8 @@ export default function Header({
           </Button>
         </div>
 
-        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
-          <div className="flex gap-2">
+        <div className="max-xl:flex max-xl:flex-col max-xl:gap-2 sm:max-xl:flex-row sm:max-xl:flex-wrap sm:max-xl:items-center xl:contents">
+          <div className="flex gap-2 xl:order-2 xl:flex-1">
             <Input
               type="text"
               placeholder="Paste Shopify store or collection URL"
@@ -116,7 +116,7 @@ export default function Header({
             onValueChange={onSelectHandle}
             disabled={loading || !storeInput}
           >
-            <SelectTrigger className="w-full sm:w-auto sm:min-w-[14rem]" aria-invalid={collectionsStatus === "error"}>
+            <SelectTrigger className="w-full sm:w-auto sm:min-w-[14rem] xl:order-2" aria-invalid={collectionsStatus === "error"}>
               <SelectValue
                 placeholder={
                   collectionsStatus === "loading"
@@ -152,7 +152,7 @@ export default function Header({
             </SelectContent>
           </Select>
 
-          <div className="flex gap-2">
+          <div className="flex gap-2 xl:order-2">
             {collectionsStatus === "error" && (
               <Button
                 variant="outline"

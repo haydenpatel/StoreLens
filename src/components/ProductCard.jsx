@@ -84,22 +84,22 @@ function ProductCard({ product, collectionUrl }) {
           
           {/* Stock badge */}
           {!inStock && (
-            <Badge variant="secondary" className="absolute top-0 right-2 bg-destructive text-primary-foreground">
+            <Badge variant="secondary" className="absolute top-0 right-2 bg-destructive text-primary-foreground text-[10px] px-1.5 sm:text-xs sm:px-2">
               Out of Stock
             </Badge>
           )}
-          
+
           {hasDiscount && inStock && (
-            <Badge variant="secondary" className="absolute top-0 right-2 bg-chart-3 text-primary-foreground">
+            <Badge variant="secondary" className="absolute top-0 right-2 bg-chart-3 text-primary-foreground text-[10px] px-1.5 sm:text-xs sm:px-2">
               Save ${discountAmount.toFixed(2)}{" "}
               {discountPercent >= 1
                 ? `(${discountPercent.toFixed(0)}% off)`
                 : `(${discountPercent.toFixed(1)}% off)`}   {/* show tiny discounts too */}
             </Badge>
           )}
-          
+
           {hasDiscount && !inStock && (
-            <Badge variant="secondary" className="absolute top-6 right-2 bg-chart-3 text-primary-foreground">
+            <Badge variant="secondary" className="absolute top-6 right-2 bg-chart-3 text-primary-foreground text-[10px] px-1.5 sm:text-xs sm:px-2">
               Save ${discountAmount.toFixed(2)}{" "}
               {discountPercent >= 1
                 ? `(${discountPercent.toFixed(0)}% off)`
@@ -109,13 +109,13 @@ function ProductCard({ product, collectionUrl }) {
         </div>
 
         {/* Content */}
-        <div className="p-4 space-y-2">
+        <div className="p-3 sm:p-4 space-y-2">
           {/* Title */}
           <h3 className="font-medium text-foreground line-clamp-2 min-h-[3rem]">
             {product.title}
           </h3>
 
-          <div className="flex items-top justify-between pt-2 min-h-[3rem]">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between pt-2">
             {/* Price */}
             <div>
               <p className="font-semibold">{priceDisplay}</p>
@@ -132,7 +132,7 @@ function ProductCard({ product, collectionUrl }) {
                 size="sm"
                 variant="outline"
                 asChild
-                className="gap-1"
+                className="gap-1 self-start"
               >
                 <a 
                   href={productUrl}
