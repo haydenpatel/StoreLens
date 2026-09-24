@@ -1,7 +1,7 @@
 import React from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Package, Clock, RefreshCw } from "lucide-react";
+import { Package, Clock, RefreshCw, ArrowRight, Loader2 } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -75,6 +75,19 @@ export default function Header({
               disabled={loading}
               className="flex-1 min-w-[16rem]"
             />
+            <Button
+              variant="outline"
+              onClick={onLoad}
+              disabled={loading || !storeInput.trim()}
+              title="Load this store"
+            >
+              {loading ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <ArrowRight className="w-4 h-4" />
+              )}
+              Load
+            </Button>
             <Select
               value={selectedHandle || undefined}
               onValueChange={onSelectHandle}

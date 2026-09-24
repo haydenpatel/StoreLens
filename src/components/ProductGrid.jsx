@@ -8,7 +8,7 @@ import {
 } from "@/components/ui/select";
 import ProductCard from "./ProductCard";
 
-export default function ProductGrid({ products, totalProducts, sortBy, setSortBy, collectionUrl }) {
+function ProductGrid({ products, totalProducts, sortBy, setSortBy, collectionUrl }) {
   return (
     <div>
       {/* Header */}
@@ -52,3 +52,7 @@ export default function ProductGrid({ products, totalProducts, sortBy, setSortBy
     </div>
   );
 }
+
+// Unrelated parent state (like the store URL input) shouldn't force every
+// product card to re-render — this can be a large list.
+export default React.memo(ProductGrid);
