@@ -68,6 +68,7 @@ export default function Sidebar({
     () => typeof window !== "undefined" && window.matchMedia("(min-width: 1280px)").matches
   );
   const closeButtonRef = useRef(null);
+  const asideRef = useRef(null);
 
   useEffect(() => {
     const mql = window.matchMedia("(min-width: 1280px)");
@@ -85,6 +86,39 @@ export default function Sidebar({
     };
   }, [isOpen, isDesktop]);
 
+  // Trap Tab navigation inside the drawer while it's open on mobile/tablet,
+  // so keyboard focus can't reach the header/main content hidden behind the
+  // backdrop.
+  useEffect(() => {
+    if (!isOpen || isDesktop) return;
+    const aside = asideRef.current;
+    if (!aside) return;
+
+    function handleKeyDown(e) {
+      if (e.key === "Escape") {
+        onClose();
+        return;
+      }
+      if (e.key !== "Tab") return;
+      const focusable = aside.querySelectorAll(
+        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, isDesktop, onClose]);
+
   return (
     <>
       {/* Mobile-only backdrop, closes the drawer on tap */}
@@ -96,6 +130,7 @@ export default function Sidebar({
         />
       )}
       <aside
+        ref={asideRef}
         className={cn(
           "fixed left-0 top-0 z-50 h-screen w-80 max-w-[85vw] bg-secondary border-r border-sidebar-border shadow-xl transition-transform duration-200 ease-in-out",
           isOpen ? "translate-x-0" : "-translate-x-full",
