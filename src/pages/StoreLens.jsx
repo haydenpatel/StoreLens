@@ -175,7 +175,11 @@ export default function StoreLensApp() {
       }
 
       if (collectionsState.status !== "ready") {
-        updateHistoryEntry(url);
+        // Domain only, never the collection path - a collection URL here
+        // (raced ahead of discovery's own history write below) would
+        // otherwise bump other domains out of Recent Stores every time
+        // someone just browses collections within the same store.
+        updateHistoryEntry(new URL(url).origin);
       }
     } finally {
       setLoading(false);
@@ -235,6 +239,19 @@ export default function StoreLensApp() {
     setError(null);
     applyUserInput(storeInput);
   };
+
+  // Deep link support: /<domain> or /<domain>/collections/<handle> in the
+  // URL path loads that store (and collection, if given) on first load.
+  // That's the same shape applyUserInput() already accepts from the paste
+  // box, so no separate parsing is needed here - a bare domain still falls
+  // through to its existing "load all products" default.
+  useEffect(() => {
+    const path = decodeURIComponent(window.location.pathname.slice(1)).replace(/\/$/, "");
+    if (path) {
+      applyUserInput(path);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Set default filter values
   const resetFilters = () => {
