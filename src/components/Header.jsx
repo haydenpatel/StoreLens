@@ -113,84 +113,89 @@ export default function Header({
             </Button>
           </div>
 
-          <Select
-            value={selectedHandle || undefined}
-            onValueChange={onSelectHandle}
-            disabled={loading || !storeInput}
-          >
-            <SelectTrigger className="max-sm:w-full sm:w-auto sm:max-xl:min-w-[12rem] xl:min-w-[16rem] xl:order-2" aria-invalid={collectionsStatus === "error"}>
-              <SelectValue
-                placeholder={
-                  collectionsStatus === "loading"
-                    ? "Discovering collections..."
-                    : collectionsStatus === "error"
-                    ? "Couldn't load collections"
-                    : collections?.length === 0
-                    ? "No collections found"
-                    : "Select a collection"
-                }
-              />
-            </SelectTrigger>
-            <SelectContent align="start">
-              {collectionsStatus === "loading" && (
-                <SelectItem value="__loading" disabled>
-                  Discovering collections...
-                </SelectItem>
-              )}
-              {collectionsStatus === "error" && (
-                <SelectItem value="__error" disabled>
-                  {collectionsError || "Couldn't load collections for this store"}
-                </SelectItem>
-              )}
-              {collectionsStatus === "ready" &&
-                collections.map((collection) => (
-                  <SelectItem key={collection.handle} value={collection.handle}>
-                    {collection.title}
-                    {typeof collection.products_count === "number"
-                      ? ` (${collection.products_count})`
-                      : ""}
+          {/* Grouped so Recent Stores sits to the right of the dropdown on
+              mobile's own row, instead of wrapping below it; dissolves at
+              sm+ so tablet/desktop keep their independent flex behavior. */}
+          <div className="max-sm:flex max-sm:w-full max-sm:gap-2 sm:contents">
+            <Select
+              value={selectedHandle || undefined}
+              onValueChange={onSelectHandle}
+              disabled={loading || !storeInput}
+            >
+              <SelectTrigger className="max-sm:flex-1 sm:w-auto sm:max-xl:min-w-[12rem] xl:min-w-[16rem] xl:order-2" aria-invalid={collectionsStatus === "error"}>
+                <SelectValue
+                  placeholder={
+                    collectionsStatus === "loading"
+                      ? "Discovering collections..."
+                      : collectionsStatus === "error"
+                      ? "Couldn't load collections"
+                      : collections?.length === 0
+                      ? "No collections found"
+                      : "Select a collection"
+                  }
+                />
+              </SelectTrigger>
+              <SelectContent align="start">
+                {collectionsStatus === "loading" && (
+                  <SelectItem value="__loading" disabled>
+                    Discovering collections...
                   </SelectItem>
-                ))}
-            </SelectContent>
-          </Select>
-
-          <div className="flex gap-2 xl:order-2">
-            {collectionsStatus === "error" && (
-              <Button
-                variant="outline"
-                size="icon"
-                title="Retry loading collections"
-                onClick={onRetryCollections}
-                disabled={loading}
-                className="shrink-0"
-              >
-                <RefreshCw className="w-4 h-4" />
-              </Button>
-            )}
-
-            {urlHistory.length > 0 && (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" disabled={loading} className="shrink-0" title="Recent Stores">
-                    <Clock className="w-4 h-4" />
-                    <span className="hidden min-[700px]:inline">Recent Stores</span>
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-80">
-                  <DropdownMenuLabel>Recent Stores</DropdownMenuLabel>
-                  <DropdownMenuSeparator />
-                  {urlHistory.map((url, index) => (
-                    <DropdownMenuItem
-                      key={index}
-                      onClick={() => onSelectHistory(url)}
-                      className="cursor-pointer"
-                    >
-                      <div className="truncate text-sm">{getHostFromValue(url)}</div>
-                    </DropdownMenuItem>
+                )}
+                {collectionsStatus === "error" && (
+                  <SelectItem value="__error" disabled>
+                    {collectionsError || "Couldn't load collections for this store"}
+                  </SelectItem>
+                )}
+                {collectionsStatus === "ready" &&
+                  collections.map((collection) => (
+                    <SelectItem key={collection.handle} value={collection.handle}>
+                      {collection.title}
+                      {typeof collection.products_count === "number"
+                        ? ` (${collection.products_count})`
+                        : ""}
+                    </SelectItem>
                   ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            )}
+              </SelectContent>
+            </Select>
+
+            <div className="flex gap-2 xl:order-2">
+              {collectionsStatus === "error" && (
+                <Button
+                  variant="outline"
+                  size="icon"
+                  title="Retry loading collections"
+                  onClick={onRetryCollections}
+                  disabled={loading}
+                  className="shrink-0"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                </Button>
+              )}
+
+              {urlHistory.length > 0 && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" disabled={loading} className="shrink-0" title="Recent Stores">
+                      <Clock className="w-4 h-4" />
+                      <span className="hidden min-[700px]:inline">Recent Stores</span>
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-80">
+                    <DropdownMenuLabel>Recent Stores</DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    {urlHistory.map((url, index) => (
+                      <DropdownMenuItem
+                        key={index}
+                        onClick={() => onSelectHistory(url)}
+                        className="cursor-pointer"
+                      >
+                        <div className="truncate text-sm">{getHostFromValue(url)}</div>
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
+            </div>
           </div>
 
           {/* Absorbs leftover space in the single-row desktop layout, pushing
