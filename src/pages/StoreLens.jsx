@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import { Loader2, AlertCircle } from "lucide-react";
+import { Loader2, AlertCircle, Info } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
 import Header from "../components/Header";
@@ -21,6 +21,7 @@ export default function StoreLensApp() {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [loadNotice, setLoadNotice] = useState(null);
   const [urlHistory, setUrlHistory] = useState([]);
   const [collectionsState, setCollectionsState] = useState({
     status: "idle",
@@ -90,23 +91,39 @@ export default function StoreLensApp() {
     }
   };
 
+  // Shopify's legacy /products.json pagination tops out at 1000 pages of up
+  // to 250 items (250,000 products). Beyond that — or if a page request
+  // fails partway through a very large collection — keep whatever was
+  // already fetched instead of discarding it all on one bad request.
+  const MAX_PRODUCT_PAGES = 1000;
+
   const fetchCollection = async (url) => {
     setLoading(true);
     setError(null);
+    setLoadNotice(null);
     setProducts([]);
-    
-    try {
-      const jsonUrl = getJsonUrl(url);
-      let allProducts = [];
-      let page = 1;
-      let hasMore = true;
 
-      while (hasMore) {
+    let jsonUrl;
+    try {
+      jsonUrl = getJsonUrl(url);
+    } catch (err) {
+      setError(err.message);
+      setLoading(false);
+      return;
+    }
+
+    let allProducts = [];
+    let page = 1;
+    let hasMore = true;
+    let pageError = null;
+
+    while (hasMore && page <= MAX_PRODUCT_PAGES) {
+      try {
         const response = await fetch(`${jsonUrl}?page=${page}&limit=250`);
-        if (!response.ok) throw new Error("Failed to fetch collection");
-        
+        if (!response.ok) {
+          throw new Error(`Failed to fetch page ${page} (status ${response.status})`);
+        }
         const data = await response.json();
-        
         if (data.products && data.products.length > 0) {
           allProducts = [...allProducts, ...data.products];
           page++;
@@ -114,24 +131,36 @@ export default function StoreLensApp() {
         } else {
           hasMore = false;
         }
+      } catch (err) {
+        pageError = err;
+        hasMore = false;
       }
+    }
 
-      if (allProducts.length === 0) {
-        throw new Error("No products found in this collection");
-      }
+    if (allProducts.length === 0) {
+      setError(pageError?.message || "No products found in this collection");
+      setLoading(false);
+      return;
+    }
 
     setProducts(allProducts);
     setCurrentCollectionUrl(url);
     resetFilters();
-    setError(null);
+
+    if (pageError) {
+      setLoadNotice(
+        `Loaded ${allProducts.length.toLocaleString()} products, but couldn't fetch the rest (${pageError.message}).`
+      );
+    } else if (page > MAX_PRODUCT_PAGES && hasMore) {
+      setLoadNotice(
+        `This collection is larger than Shopify's public catalog can page through — showing the first ${allProducts.length.toLocaleString()} products.`
+      );
+    }
+
     if (collectionsState.status !== "ready") {
       updateHistoryEntry(url);
     }
-  } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
+    setLoading(false);
   };
 
   const loadCollectionByHandle = async (handle, origin = storeOrigin) => {
@@ -535,6 +564,13 @@ export default function StoreLensApp() {
             <Alert variant="destructive" className="max-w-2xl mx-auto">
               <AlertCircle className="h-4 w-4" />
               <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+
+          {!loading && loadNotice && products.length > 0 && (
+            <Alert className="max-w-2xl mx-auto mb-6">
+              <Info className="h-4 w-4" />
+              <AlertDescription>{loadNotice}</AlertDescription>
             </Alert>
           )}
 

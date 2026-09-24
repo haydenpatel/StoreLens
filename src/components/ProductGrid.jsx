@@ -1,4 +1,5 @@
-import React from "react";
+import React, { useEffect, useRef, useState } from "react";
+import { Loader2 } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -8,7 +9,52 @@ import {
 } from "@/components/ui/select";
 import ProductCard from "./ProductCard";
 
+// Rendering a DOM card per product doesn't scale to collections with
+// thousands of items, so only a growing chunk is mounted at a time; a
+// sentinel below the grid reveals more as the user scrolls near it.
+const CHUNK_SIZE = 60;
+
 function ProductGrid({ products, totalProducts, sortBy, setSortBy, collectionUrl }) {
+  const [visibleCount, setVisibleCount] = useState(CHUNK_SIZE);
+  const [productsForReset, setProductsForReset] = useState(products);
+  const sentinelRef = useRef(null);
+  const productsLengthRef = useRef(products.length);
+
+  useEffect(() => {
+    productsLengthRef.current = products.length;
+  });
+
+  // A new search/filter/sort produces a new products array — start over
+  // from the top of it rather than keeping whatever was already revealed.
+  // Adjusted during render (React's recommended pattern for resetting state
+  // on a prop change) rather than in an effect, to avoid an extra render pass.
+  if (products !== productsForReset) {
+    setProductsForReset(products);
+    setVisibleCount(CHUNK_SIZE);
+  }
+
+  // Set up once: the sentinel div is always rendered (while there are any
+  // products at all), so its ref stays stable and doesn't need reattaching
+  // each time the list changes — productsLengthRef keeps the cap current.
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          setVisibleCount((prev) => Math.min(prev + CHUNK_SIZE, productsLengthRef.current));
+        }
+      },
+      { rootMargin: "600px" }
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, []);
+
+  const visibleProducts = products.slice(0, visibleCount);
+  const hasMoreToShow = visibleCount < products.length;
+
   return (
     <div>
       {/* Header */}
@@ -39,11 +85,19 @@ function ProductGrid({ products, totalProducts, sortBy, setSortBy, collectionUrl
 
       {/* Product Grid */}
       {products.length > 0 ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {products.map(product => (
-            <ProductCard key={product.id} product={product} collectionUrl={collectionUrl} />
-          ))}
-        </div>
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            {visibleProducts.map(product => (
+              <ProductCard key={product.id} product={product} collectionUrl={collectionUrl} />
+            ))}
+          </div>
+          <div ref={sentinelRef} aria-hidden="true" className="h-px" />
+          {hasMoreToShow && (
+            <div className="flex justify-center py-6">
+              <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+            </div>
+          )}
+        </>
       ) : (
         <div className="text-center py-20">
           <p className="text-muted-foreground">No products match your filters</p>
