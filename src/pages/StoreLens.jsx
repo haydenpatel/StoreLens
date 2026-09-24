@@ -32,9 +32,7 @@ export default function StoreLensApp() {
   const [currentCollectionUrl, setCurrentCollectionUrl] = useState("");
   const [inputHandle, setInputHandle] = useState("");
   const [discoveryRetryNonce, setDiscoveryRetryNonce] = useState(0);
-  const discoverTimeoutRef = useRef(null);
   const forceRefreshDiscoveryRef = useRef(false);
-  const immediateDiscoveryRef = useRef(false);
   const autoLoadPendingRef = useRef(false);
   const historyKey = "shopify-url-history";
   const updateHistoryEntry = (entry) => {
@@ -87,7 +85,7 @@ export default function StoreLensApp() {
       }
       
       throw new Error("Invalid collection URL");
-    } catch (err) {
+    } catch {
       throw new Error("Please enter a valid Shopify collection URL");
     }
   };
@@ -147,10 +145,11 @@ export default function StoreLensApp() {
     await fetchCollection(url);
   };
 
-  const applyUserInput = (
-    value,
-    { immediate = false, autoLoad = false, normalizeDisplay = immediate } = {}
-  ) => {
+  // Called only from explicit, discrete actions (submit, paste, history
+  // selection) — never on every keystroke — so it always resolves the input
+  // immediately: normalizing the display to a clean host, kicking off
+  // collection discovery, and loading a collection URL's handle right away.
+  const applyUserInput = (value) => {
     const parsed = parseUserInputToURL(value);
     if (!parsed) {
       setStoreInput(value);
@@ -162,40 +161,26 @@ export default function StoreLensApp() {
     const origin = getOrigin(parsed);
     const host = getDisplayHost(parsed);
     const handle = extractCollectionHandle(parsed);
-    // Typing a collection URL by hand needs the raw value preserved so the
-    // path isn't wiped out on every keystroke; a paste/history selection
-    // normalizes the box down to a clean host instead.
-    setStoreInput(normalizeDisplay ? host : value);
+    setStoreInput(host);
     setStoreOrigin(origin);
     setInputHandle(handle || "");
     if (handle) {
-      setSelectedHandle(handle);
       autoLoadPendingRef.current = false;
-      if (autoLoad) {
-        loadCollectionByHandle(handle, origin);
-      } else {
-        setCurrentCollectionUrl(`${origin}/collections/${handle}`);
-      }
+      loadCollectionByHandle(handle, origin);
     } else {
       // Bare domain: no collection path to load directly. Once discovery
       // resolves, auto-load its best guess (e.g. the store's all-products
       // collection) instead of leaving the user stuck on an empty page.
       setSelectedHandle("");
       setCurrentCollectionUrl("");
-      autoLoadPendingRef.current = autoLoad;
+      autoLoadPendingRef.current = true;
     }
-    if (immediate) {
-      // Consumed (and reset) by a ref inside the discovery effect rather
-      // than state, so resetting it after the fetch completes doesn't
-      // itself retrigger the effect and re-run discovery a second time.
-      immediateDiscoveryRef.current = true;
-      setDiscoveryRetryNonce((n) => n + 1);
-    }
+    setDiscoveryRetryNonce((n) => n + 1);
   };
 
   const handleSubmitStoreInput = () => {
     setError(null);
-    applyUserInput(storeInput, { immediate: true, autoLoad: true });
+    applyUserInput(storeInput);
   };
 
   // Set default filter values
@@ -209,18 +194,11 @@ export default function StoreLensApp() {
     setSaleOnly(false);
   };
 
+  // Discovery only ever runs from a discrete user action (submit, paste,
+  // history selection, retry) now — never from continuous typing — so there's
+  // no keystroke burst to debounce against; this runs as soon as storeOrigin
+  // or discoveryRetryNonce changes.
   useEffect(() => {
-    return () => {
-      if (discoverTimeoutRef.current) {
-        clearTimeout(discoverTimeoutRef.current);
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    if (discoverTimeoutRef.current) {
-      clearTimeout(discoverTimeoutRef.current);
-    }
     if (!storeOrigin) {
       setCollectionsState({
         status: "idle",
@@ -231,13 +209,8 @@ export default function StoreLensApp() {
       return;
     }
 
-    // Read and consume via a ref rather than state: state would need to be
-    // reset to false after firing, and that reset would itself be a
-    // dependency change that reruns this whole effect a second time.
-    const delay = immediateDiscoveryRef.current ? 0 : 400;
-    immediateDiscoveryRef.current = false;
     const controller = new AbortController();
-    discoverTimeoutRef.current = setTimeout(async () => {
+    (async () => {
       setCollectionsState((prev) => ({
         ...prev,
         status: "loading",
@@ -291,13 +264,10 @@ export default function StoreLensApp() {
           }
         }
       }
-    }, delay);
+    })();
 
     return () => {
       controller.abort();
-      if (discoverTimeoutRef.current) {
-        clearTimeout(discoverTimeoutRef.current);
-      }
     };
     // loadCollectionByHandle is recreated each render; the autoLoadPendingRef
     // guard above prevents it from being invoked more than once per discovery.
@@ -306,7 +276,6 @@ export default function StoreLensApp() {
 
   const handleRetryDiscovery = () => {
     forceRefreshDiscoveryRef.current = true;
-    immediateDiscoveryRef.current = true;
     setDiscoveryRetryNonce((n) => n + 1);
   };
 
@@ -328,11 +297,11 @@ export default function StoreLensApp() {
 
   const handlePaste = (value) => {
     setError(null);
-    applyUserInput(value, { immediate: true, autoLoad: true });
+    applyUserInput(value);
   };
 
   const handleSelectHistory = (url) => {
-    applyUserInput(url, { immediate: true, autoLoad: true });
+    applyUserInput(url);
   };
 
   const handleSelectHandle = (handle) => {
