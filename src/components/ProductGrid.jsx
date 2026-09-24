@@ -61,7 +61,7 @@ function ProductGrid({ products, totalProducts, sortBy, setSortBy, collectionUrl
   return (
     <div>
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-6">
         <div className="text-sm text-foreground">
           Showing <span className="font-bold">{products.length}</span> of{" "}
           <span className="font-bold">{totalProducts}</span> products
@@ -70,7 +70,7 @@ function ProductGrid({ products, totalProducts, sortBy, setSortBy, collectionUrl
         <div className="flex items-center gap-2">
           <span className="text-sm text-foreground">Sort by:</span>
           <Select value={sortBy} onValueChange={setSortBy}>
-            <SelectTrigger className="w-50">
+            <SelectTrigger className="w-44 sm:w-50">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -89,7 +89,7 @@ function ProductGrid({ products, totalProducts, sortBy, setSortBy, collectionUrl
       {/* Product Grid */}
       {products.length > 0 ? (
         <>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4">
             {visibleProducts.map(product => (
               <ProductCard key={product.id} product={product} collectionUrl={collectionUrl} />
             ))}
