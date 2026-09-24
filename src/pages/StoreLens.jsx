@@ -125,7 +125,10 @@ export default function StoreLensApp() {
         }
         const data = await response.json();
         if (data.products && data.products.length > 0) {
-          allProducts = [...allProducts, ...data.products];
+          // Push in place rather than spreading into a new array each page —
+          // for a collection near the 1000-page cap, re-copying the whole
+          // accumulated array on every iteration is O(n²).
+          allProducts.push(...data.products);
           page++;
           hasMore = data.products.length === 250;
         } else {

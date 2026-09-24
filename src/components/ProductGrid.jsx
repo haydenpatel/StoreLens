@@ -33,9 +33,12 @@ function ProductGrid({ products, totalProducts, sortBy, setSortBy, collectionUrl
     setVisibleCount(CHUNK_SIZE);
   }
 
-  // Set up once: the sentinel div is always rendered (while there are any
-  // products at all), so its ref stays stable and doesn't need reattaching
-  // each time the list changes — productsLengthRef keeps the cap current.
+  // The sentinel div only exists while there are any (filtered) products at
+  // all — it unmounts when a filter empties the results and remounts when
+  // results reappear. Re-run setup on that transition (not on every list
+  // change) so the observer reattaches to the new node; productsLengthRef
+  // keeps the growth cap current without needing the effect to rerun too.
+  const hasProducts = products.length > 0;
   useEffect(() => {
     const sentinel = sentinelRef.current;
     if (!sentinel) return;
@@ -50,7 +53,7 @@ function ProductGrid({ products, totalProducts, sortBy, setSortBy, collectionUrl
     );
     observer.observe(sentinel);
     return () => observer.disconnect();
-  }, []);
+  }, [hasProducts]);
 
   const visibleProducts = products.slice(0, visibleCount);
   const hasMoreToShow = visibleCount < products.length;
