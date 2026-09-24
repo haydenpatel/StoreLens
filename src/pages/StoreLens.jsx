@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { Loader2, AlertCircle } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
@@ -7,13 +7,42 @@ import Sidebar from "../components/Sidebar";
 import ProductGrid from "../components/ProductGrid";
 
 import { getDiscountData } from "@/lib/utils";
+import {
+  discoverCollections,
+  extractCollectionHandle,
+  getDisplayHost,
+  getOrigin,
+  parseUserInputToURL,
+} from "@/lib/store";
 
 export default function StoreLensApp() {
-  const [collectionUrl, setCollectionUrl] = useState("");
+  const [storeInput, setStoreInput] = useState("");
+  const [storeOrigin, setStoreOrigin] = useState("");
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [urlHistory, setUrlHistory] = useState([]);
+  const [collectionsState, setCollectionsState] = useState({
+    status: "idle",
+    collections: [],
+    error: null,
+    allProductsHandle: null,
+  });
+  const [selectedHandle, setSelectedHandle] = useState("");
+  const [currentCollectionUrl, setCurrentCollectionUrl] = useState("");
+  const [inputHandle, setInputHandle] = useState("");
+  const [discoveryRetryNonce, setDiscoveryRetryNonce] = useState(0);
+  const forceRefreshDiscoveryRef = useRef(false);
+  const autoLoadPendingRef = useRef(false);
+  const historyKey = "shopify-url-history";
+  const updateHistoryEntry = (entry) => {
+    if (!entry) return;
+    setUrlHistory((prev) => {
+      const updated = [entry, ...prev.filter((u) => u !== entry)].slice(0, 5);
+      localStorage.setItem(historyKey, JSON.stringify(updated));
+      return updated;
+    });
+  };
   
   // Filter states
   const [searchQuery, setSearchQuery] = useState("");
@@ -28,64 +57,21 @@ export default function StoreLensApp() {
 
   // Load URL history from localStorage
   useEffect(() => {
-    const saved = localStorage.getItem("shopify-url-history");
+    const saved = localStorage.getItem(historyKey);
     if (saved) {
       setUrlHistory(JSON.parse(saved));
     }
   }, []);
 
-  // Check if URL is a bare domain (no collection path)
-  const isBareDomain = (url) => {
-    try {
-      const urlObj = new URL(url.startsWith('http') ? url : `https://${url}`);
-      const pathname = urlObj.pathname;
-      return !pathname || pathname === '/' || pathname === '';
-    } catch {
-      return false;
-    }
-  };
-
-  // Convert to bare hostname (for product links)
   const getHostname = (url) => {
     try {
-      const urlObj = new URL(url.startsWith('http') ? url : `https://${url}`);
+      const urlObj = new URL(url.startsWith("http") ? url : `https://${url}`);
       return urlObj.hostname;
     } catch {
-      return false;
+      return "";
     }
   };
 
-  // Resolve default collection for a bare domain
-  const resolveDefaultCollection = async (baseUrl) => {
-    const urlObj = new URL(baseUrl.startsWith('http') ? baseUrl : `https://${baseUrl}`);
-    const domain = `${urlObj.protocol}//${urlObj.host}`;
-    
-    const candidates = [
-      'all',
-      'all-1', 
-      'all-products',
-    ];
-
-    for (const candidate of candidates) {
-      try {
-        const testUrl = `${domain}/collections/${candidate}/products.json?limit=1`;
-        const response = await fetch(testUrl);
-        
-        if (response.ok) {
-          const data = await response.json();
-          if (data.products && data.products.length > 0) {
-            return `${domain}/collections/${candidate}`;
-          }
-        }
-      } catch (err) {
-        continue;
-      }
-    }
-
-    return null;
-  };
-
-  // Convert Shopify collection URL to JSON endpoint
   const getJsonUrl = (url) => {
     try {
       const urlObj = new URL(url);
@@ -99,30 +85,18 @@ export default function StoreLensApp() {
       }
       
       throw new Error("Invalid collection URL");
-    } catch (err) {
+    } catch {
       throw new Error("Please enter a valid Shopify collection URL");
     }
   };
 
-  // Fetch all products with pagination
   const fetchCollection = async (url) => {
     setLoading(true);
     setError(null);
     setProducts([]);
     
     try {
-      let resolvedUrl = url;
-      
-      // If it's a bare domain, try to resolve to default collection
-      if (isBareDomain(url)) {
-        const defaultCollection = await resolveDefaultCollection(url);
-        if (!defaultCollection) {
-          throw new Error("I couldn't find a collection of products to load. Please paste the full collection URL and try again.");
-        }
-        resolvedUrl = defaultCollection;
-      }
-      
-      const jsonUrl = getJsonUrl(resolvedUrl);
+      const jsonUrl = getJsonUrl(url);
       let allProducts = [];
       let page = 1;
       let hasMore = true;
@@ -146,27 +120,72 @@ export default function StoreLensApp() {
         throw new Error("No products found in this collection");
       }
 
-      setProducts(allProducts);
-      
-      // Update URL history with the original input
-      const newHistory = [url, ...urlHistory.filter(u => u !== url)].slice(0, 5);
-      setUrlHistory(newHistory);
-      localStorage.setItem("shopify-url-history", JSON.stringify(newHistory));
-      
-      // Reset filters
-      resetFilters();
-      
-    } catch (err) {
+    setProducts(allProducts);
+    setCurrentCollectionUrl(url);
+    resetFilters();
+    setError(null);
+    if (collectionsState.status !== "ready") {
+      updateHistoryEntry(url);
+    }
+  } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleLoadCollection = () => {
-    if (collectionUrl.trim()) {
-      fetchCollection(collectionUrl.trim());
+  const loadCollectionByHandle = async (handle, origin = storeOrigin) => {
+    if (!handle || !origin) {
+      setError("Please select a collection to load.");
+      return;
     }
+    const url = `${origin}/collections/${handle}`;
+    setSelectedHandle(handle);
+    setInputHandle(handle);
+    await fetchCollection(url);
+  };
+
+  // Called only from explicit, discrete actions (submit, paste, history
+  // selection) — never on every keystroke — so it always resolves the input
+  // immediately: normalizing the display to a clean host, kicking off
+  // collection discovery, and loading a collection URL's handle right away.
+  const applyUserInput = (value) => {
+    const parsed = parseUserInputToURL(value);
+    if (!parsed) {
+      setStoreInput(value);
+      setStoreOrigin("");
+      setInputHandle("");
+      setSelectedHandle("");
+      // Only surface an error for genuinely invalid input — an empty
+      // submission (e.g. pressing Enter on an empty box) isn't a mistake.
+      if (value?.trim()) {
+        setError("Please enter a valid Shopify store or collection URL");
+      }
+      return;
+    }
+    const origin = getOrigin(parsed);
+    const host = getDisplayHost(parsed);
+    const handle = extractCollectionHandle(parsed);
+    setStoreInput(host);
+    setStoreOrigin(origin);
+    setInputHandle(handle || "");
+    if (handle) {
+      autoLoadPendingRef.current = false;
+      loadCollectionByHandle(handle, origin);
+    } else {
+      // Bare domain: no collection path to load directly. Once discovery
+      // resolves, auto-load its best guess (e.g. the store's all-products
+      // collection) instead of leaving the user stuck on an empty page.
+      setSelectedHandle("");
+      setCurrentCollectionUrl("");
+      autoLoadPendingRef.current = true;
+    }
+    setDiscoveryRetryNonce((n) => n + 1);
+  };
+
+  const handleSubmitStoreInput = () => {
+    setError(null);
+    applyUserInput(storeInput);
   };
 
   // Set default filter values
@@ -178,6 +197,134 @@ export default function StoreLensApp() {
     setSelectedOptions({});
     setInStockOnly(true);
     setSaleOnly(false);
+  };
+
+  // Discovery only ever runs from a discrete user action (submit, paste,
+  // history selection, retry) now — never from continuous typing — so there's
+  // no keystroke burst to debounce against; this runs as soon as storeOrigin
+  // or discoveryRetryNonce changes.
+  useEffect(() => {
+    if (!storeOrigin) {
+      setCollectionsState({
+        status: "idle",
+        collections: [],
+        error: null,
+        allProductsHandle: null,
+      });
+      return;
+    }
+
+    const controller = new AbortController();
+    (async () => {
+      setCollectionsState((prev) => ({
+        ...prev,
+        status: "loading",
+        error: null,
+      }));
+      const forceRefresh = forceRefreshDiscoveryRef.current;
+      forceRefreshDiscoveryRef.current = false;
+      try {
+        const { collections, allProductsHandle } = await discoverCollections(
+          storeOrigin,
+          controller.signal,
+          { forceRefresh }
+        );
+        if (!controller.signal.aborted) {
+          setCollectionsState({
+            status: "ready",
+            collections,
+            error: null,
+            allProductsHandle,
+          });
+          updateHistoryEntry(storeOrigin);
+          // Consume the flag here, against this exact discovery's fresh
+          // result, rather than in a separate effect watching collectionsState:
+          // that raced against a stale "ready" state left over from whichever
+          // store was discovered previously, firing before this discovery
+          // resolved and consuming the flag before it had real data to use.
+          if (autoLoadPendingRef.current) {
+            autoLoadPendingRef.current = false;
+            if (allProductsHandle) {
+              loadCollectionByHandle(allProductsHandle, storeOrigin);
+            } else {
+              setError(
+                "I couldn't automatically find an all-products collection for this store. Please choose a collection from the dropdown above."
+              );
+            }
+          }
+        }
+      } catch (err) {
+        if (!controller.signal.aborted) {
+          setCollectionsState({
+            status: "error",
+            collections: [],
+            error: err.message || "Couldn't load collections for this store",
+            allProductsHandle: null,
+          });
+          if (autoLoadPendingRef.current) {
+            autoLoadPendingRef.current = false;
+            setError(
+              "I couldn't find a collection of products to load. Please paste the full collection URL and try again."
+            );
+          }
+        }
+      }
+    })();
+
+    return () => {
+      controller.abort();
+    };
+    // loadCollectionByHandle is recreated each render; the autoLoadPendingRef
+    // guard above prevents it from being invoked more than once per discovery.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storeOrigin, discoveryRetryNonce]);
+
+  const handleRetryDiscovery = () => {
+    forceRefreshDiscoveryRef.current = true;
+    setDiscoveryRetryNonce((n) => n + 1);
+  };
+
+  // Keep the currently-loaded collection selectable in the dropdown even when
+  // /collections.json (and the all-products probe) didn't happen to include
+  // it — otherwise the Select ends up holding a value with no matching item.
+  useEffect(() => {
+    if (collectionsState.status !== "ready" || !inputHandle) return;
+    setSelectedHandle(inputHandle);
+    setCollectionsState((prev) => {
+      if (prev.collections.some((c) => c.handle === inputHandle)) return prev;
+      const title = inputHandle
+        .replace(/-/g, " ")
+        .replace(/\b\w/g, (c) => c.toUpperCase());
+      return {
+        ...prev,
+        collections: [{ handle: inputHandle, title, products_count: null }, ...prev.collections],
+      };
+    });
+  }, [collectionsState, inputHandle]);
+
+  const handleInputChange = (value) => {
+    // Just track what's typed; parsing the URL and kicking off collection
+    // discovery on every keystroke re-rendered the whole app (including a
+    // potentially large product grid), making typing feel sluggish. Actually
+    // resolving the input now happens on submit (Enter or the Load button).
+    setError(null);
+    setStoreInput(value);
+  };
+
+  const handlePaste = (value) => {
+    setError(null);
+    applyUserInput(value);
+  };
+
+  const handleSelectHistory = (url) => {
+    applyUserInput(url);
+  };
+
+  const handleSelectHandle = (handle) => {
+    setError(null);
+    setSelectedHandle(handle);
+    setInputHandle(handle);
+    loadCollectionByHandle(handle, storeOrigin);
   };
 
   // Extract unique filter values
@@ -302,17 +449,17 @@ export default function StoreLensApp() {
     filtered.sort((a, b) => {
       switch (sortBy) {
         case "title-asc":
-          return a.title.localeCompare(b.title);
+          return (a.title || "").localeCompare(b.title || "");
         case "title-desc":
-          return b.title.localeCompare(a.title);
+          return (b.title || "").localeCompare(a.title || "");
         case "price-asc": {
-          const aMin = Math.min(...a.variants.map(v => parseFloat(v.price)));
-          const bMin = Math.min(...b.variants.map(v => parseFloat(v.price)));
+          const aMin = Math.min(...(a.variants || []).map(v => parseFloat(v.price)), Infinity);
+          const bMin = Math.min(...(b.variants || []).map(v => parseFloat(v.price)), Infinity);
           return aMin - bMin;
         }
         case "price-desc": {
-          const aMax = Math.max(...a.variants.map(v => parseFloat(v.price)));
-          const bMax = Math.max(...b.variants.map(v => parseFloat(v.price)));
+          const aMax = Math.max(...(a.variants || []).map(v => parseFloat(v.price)), -Infinity);
+          const bMax = Math.max(...(b.variants || []).map(v => parseFloat(v.price)), -Infinity);
           return bMax - aMax;
         }
         case "newest":
@@ -338,15 +485,19 @@ export default function StoreLensApp() {
   return (
     <div className="min-h-screen bg-secondary">
       <Header
-        collectionUrl={collectionUrl}
-        setCollectionUrl={setCollectionUrl}
-        onLoad={handleLoadCollection}
+        storeInput={storeInput}
+        onStoreInputChange={handleInputChange}
+        onStorePaste={handlePaste}
+        onLoad={handleSubmitStoreInput}
         loading={loading}
         urlHistory={urlHistory}
-        onSelectHistory={(url) => {
-          setCollectionUrl(url);
-          fetchCollection(url);
-        }}
+        onSelectHistory={handleSelectHistory}
+        collections={collectionsState.collections}
+        collectionsStatus={collectionsState.status}
+        collectionsError={collectionsState.error}
+        selectedHandle={selectedHandle}
+        onSelectHandle={handleSelectHandle}
+        onRetryCollections={handleRetryDiscovery}
       />
 
       <div className="flex">
@@ -390,19 +541,17 @@ export default function StoreLensApp() {
           {!loading && !error && products.length === 0 && (
             <div className="text-center py-20">
               <p className="text-muted-foreground text-lg">
-                Enter a Shopify collection URL above to get started
+                Enter a Shopify store or collection URL above to get started
               </p>
             </div>
           )}
-          {/* <h2 className="text-center text-white text-lg">{new URL(collectionUrl).hostname}</h2> */}
-
           {!loading && products.length > 0 && (
             <ProductGrid
               products={filteredProducts}
               totalProducts={products.length}
               sortBy={sortBy}
               setSortBy={setSortBy}
-              collectionUrl={getHostname(collectionUrl)}
+              collectionUrl={getHostname(currentCollectionUrl)}
             />
           )}
         </main>
