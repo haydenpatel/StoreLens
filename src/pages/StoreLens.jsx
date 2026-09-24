@@ -156,6 +156,11 @@ export default function StoreLensApp() {
       setStoreOrigin("");
       setInputHandle("");
       setSelectedHandle("");
+      // Only surface an error for genuinely invalid input — an empty
+      // submission (e.g. pressing Enter on an empty box) isn't a mistake.
+      if (value?.trim()) {
+        setError("Please enter a valid Shopify store or collection URL");
+      }
       return;
     }
     const origin = getOrigin(parsed);
@@ -279,11 +284,22 @@ export default function StoreLensApp() {
     setDiscoveryRetryNonce((n) => n + 1);
   };
 
+  // Keep the currently-loaded collection selectable in the dropdown even when
+  // /collections.json (and the all-products probe) didn't happen to include
+  // it — otherwise the Select ends up holding a value with no matching item.
   useEffect(() => {
-    if (collectionsState.status !== "ready") return;
-    if (inputHandle && collectionsState.collections.some((c) => c.handle === inputHandle)) {
-      setSelectedHandle(inputHandle);
-    }
+    if (collectionsState.status !== "ready" || !inputHandle) return;
+    setSelectedHandle(inputHandle);
+    setCollectionsState((prev) => {
+      if (prev.collections.some((c) => c.handle === inputHandle)) return prev;
+      const title = inputHandle
+        .replace(/-/g, " ")
+        .replace(/\b\w/g, (c) => c.toUpperCase());
+      return {
+        ...prev,
+        collections: [{ handle: inputHandle, title, products_count: null }, ...prev.collections],
+      };
+    });
   }, [collectionsState, inputHandle]);
 
   const handleInputChange = (value) => {
