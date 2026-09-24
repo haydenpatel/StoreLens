@@ -26,6 +26,7 @@ export default function StoreLensApp() {
     status: "idle",
     collections: [],
     error: null,
+    allProductsHandle: null,
   });
   const [selectedHandle, setSelectedHandle] = useState("");
   const [currentCollectionUrl, setCurrentCollectionUrl] = useState("");
@@ -34,6 +35,7 @@ export default function StoreLensApp() {
   const [discoveryRetryNonce, setDiscoveryRetryNonce] = useState(0);
   const [autoLoadPending, setAutoLoadPending] = useState(false);
   const discoverTimeoutRef = useRef(null);
+  const forceRefreshDiscoveryRef = useRef(false);
   const historyKey = "shopify-url-history";
   const updateHistoryEntry = (entry) => {
     if (!entry) return;
@@ -217,6 +219,7 @@ export default function StoreLensApp() {
         status: "idle",
         collections: [],
         error: null,
+        allProductsHandle: null,
       });
       return;
     }
@@ -229,13 +232,20 @@ export default function StoreLensApp() {
         status: "loading",
         error: null,
       }));
+      const forceRefresh = forceRefreshDiscoveryRef.current;
+      forceRefreshDiscoveryRef.current = false;
       try {
-        const collections = await discoverCollections(storeOrigin, controller.signal);
+        const { collections, allProductsHandle } = await discoverCollections(
+          storeOrigin,
+          controller.signal,
+          { forceRefresh }
+        );
         if (!controller.signal.aborted) {
           setCollectionsState({
             status: "ready",
             collections,
             error: null,
+            allProductsHandle,
           });
           updateHistoryEntry(storeOrigin);
         }
@@ -245,6 +255,7 @@ export default function StoreLensApp() {
             status: "error",
             collections: [],
             error: err.message || "Couldn't load collections for this store",
+            allProductsHandle: null,
           });
         }
       } finally {
@@ -261,6 +272,7 @@ export default function StoreLensApp() {
   }, [storeOrigin, discoverImmediately, discoveryRetryNonce]);
 
   const handleRetryDiscovery = () => {
+    forceRefreshDiscoveryRef.current = true;
     setDiscoveryRetryNonce((n) => n + 1);
   };
 
@@ -275,12 +287,14 @@ export default function StoreLensApp() {
     if (!autoLoadPending) return;
     if (collectionsState.status === "ready") {
       setAutoLoadPending(false);
-      const best = collectionsState.collections[0];
-      if (best) {
-        loadCollectionByHandle(best.handle, storeOrigin);
+      // Only auto-load when a genuine all-products collection was identified
+      // (probed or listed). Falling back to the first collection in the list
+      // would silently load an arbitrary, unrelated category instead.
+      if (collectionsState.allProductsHandle) {
+        loadCollectionByHandle(collectionsState.allProductsHandle, storeOrigin);
       } else {
         setError(
-          "I couldn't find a collection of products to load. Please paste the full collection URL and try again."
+          "I couldn't automatically find an all-products collection for this store. Please choose a collection from the dropdown above."
         );
       }
     } else if (collectionsState.status === "error") {
