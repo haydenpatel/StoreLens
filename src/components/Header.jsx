@@ -172,29 +172,32 @@ export default function Header({
                 </Button>
               )}
 
-              {urlHistory.length > 0 && (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="outline" disabled={loading} className="shrink-0 max-[700px]:!size-9 max-[700px]:!p-0 max-[700px]:!gap-0" title="Recent Stores">
-                      <Clock className="w-4 h-4" />
-                      <span className="hidden min-[700px]:inline">Recent Stores</span>
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-80">
-                    <DropdownMenuLabel>Recent Stores</DropdownMenuLabel>
-                    <DropdownMenuSeparator />
-                    {urlHistory.map((url, index) => (
-                      <DropdownMenuItem
-                        key={index}
-                        onClick={() => onSelectHistory(url)}
-                        className="cursor-pointer"
-                      >
-                        <div className="truncate text-sm">{getHostFromValue(url)}</div>
-                      </DropdownMenuItem>
-                    ))}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              )}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="outline"
+                    disabled={loading || urlHistory.length === 0}
+                    className="shrink-0 max-[700px]:!size-9 max-[700px]:!p-0 max-[700px]:!gap-0"
+                    title="Recent Stores"
+                  >
+                    <Clock className="w-4 h-4" />
+                    <span className="hidden min-[700px]:inline">Recent Stores</span>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-80">
+                  <DropdownMenuLabel>Recent Stores</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  {urlHistory.map((url, index) => (
+                    <DropdownMenuItem
+                      key={index}
+                      onClick={() => onSelectHistory(url)}
+                      className="cursor-pointer"
+                    >
+                      <div className="truncate text-sm">{getHostFromValue(url)}</div>
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </div>
 
