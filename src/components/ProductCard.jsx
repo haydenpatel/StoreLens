@@ -69,9 +69,11 @@ function ProductCard({ product, collectionUrl }) {
         {/* Image */}
         <div className="aspect-square overflow-hidden rounded-t-lg relative">
           {image ? (
-            <img 
-              src={image} 
+            <img
+              src={image}
               alt={product.title}
+              loading="lazy"
+              decoding="async"
               className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
             />
           ) : (
