@@ -80,7 +80,7 @@ export default function Header({
         </div>
 
         <div className="max-lg:flex max-lg:flex-col max-lg:gap-2 sm:max-lg:flex-row sm:max-lg:flex-wrap sm:max-lg:items-center lg:contents">
-          <div className="flex gap-2 lg:order-2">
+          <div className="flex gap-2 lg:order-2 lg:flex-1 lg:min-w-[12rem] lg:max-w-[16rem]">
             <Input
               type="text"
               placeholder="Paste Shopify store or collection URL"
@@ -93,7 +93,7 @@ export default function Header({
               }}
               onKeyPress={handleKeyPress}
               disabled={loading}
-              className="flex-1 max-sm:min-w-0 sm:min-w-[12rem]"
+              className="flex-1 max-lg:min-w-0 lg:min-w-[8rem]"
             />
             <Button
               variant="outline"
@@ -116,7 +116,7 @@ export default function Header({
             onValueChange={onSelectHandle}
             disabled={loading || !storeInput}
           >
-            <SelectTrigger className="max-sm:w-full sm:w-auto sm:min-w-[12rem] lg:order-2" aria-invalid={collectionsStatus === "error"}>
+            <SelectTrigger className="max-sm:w-full sm:w-auto sm:min-w-[12rem] lg:order-2 lg:flex-1 lg:max-w-[16rem]" aria-invalid={collectionsStatus === "error"}>
               <SelectValue
                 placeholder={
                   collectionsStatus === "loading"
