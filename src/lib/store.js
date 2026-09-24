@@ -67,6 +67,31 @@ async function fetchCollectionsPage(origin, page, signal) {
   return Array.isArray(data?.collections) ? data.collections : [];
 }
 
+// Shopify auto-generates an "all products" collection for every store, but
+// themes frequently exclude it from the Online Store sales channel, so it
+// never shows up in /collections.json even though its endpoint still works.
+const ALL_PRODUCTS_HANDLES = ["all", "all-products", "everything", "shop-all"];
+
+async function probeAllProductsCollection(origin, existingHandles, signal) {
+  for (const handle of ALL_PRODUCTS_HANDLES) {
+    if (existingHandles.has(handle)) return null;
+    try {
+      const response = await fetch(
+        `${origin}/collections/${handle}/products.json?limit=1`,
+        { signal }
+      );
+      if (!response.ok) continue;
+      const data = await response.json();
+      if (Array.isArray(data?.products) && data.products.length > 0) {
+        return { handle, title: "All Products", products_count: null };
+      }
+    } catch {
+      /* try the next candidate handle */
+    }
+  }
+  return null;
+}
+
 export async function discoverCollections(origin, signal) {
   const cached = loadCollectionsCache(origin);
   if (cached) {
@@ -94,26 +119,34 @@ export async function discoverCollections(origin, signal) {
     }
   }
 
-  const priorityHandles = ["all", "all-1", "all-products"];
-  const filtered = allCollections
+  const priorityHandles = ["all", "all-products", "all-1", "everything", "shop-all"];
+  const mapped = allCollections
     .filter((c) => c.products_count > 0)
     .map((c) => ({
       handle: c.handle,
       title: c.title,
       products_count: c.products_count,
-    }))
-    .sort((a, b) => {
-      const aIndex = priorityHandles.indexOf(a.handle);
-      const bIndex = priorityHandles.indexOf(b.handle);
+    }));
 
-      if (aIndex !== -1 && bIndex !== -1) {
-        return aIndex - bIndex;
-      }
-      if (aIndex !== -1) return -1;
-      if (bIndex !== -1) return 1;
+  const probed = await probeAllProductsCollection(
+    origin,
+    new Set(mapped.map((c) => c.handle)),
+    signal
+  );
+  const withProbe = probed ? [probed, ...mapped] : mapped;
 
-      return a.title.localeCompare(b.title, undefined, { sensitivity: "base" });
-    });
+  const filtered = withProbe.sort((a, b) => {
+    const aIndex = priorityHandles.indexOf(a.handle);
+    const bIndex = priorityHandles.indexOf(b.handle);
+
+    if (aIndex !== -1 && bIndex !== -1) {
+      return aIndex - bIndex;
+    }
+    if (aIndex !== -1) return -1;
+    if (bIndex !== -1) return 1;
+
+    return a.title.localeCompare(b.title, undefined, { sensitivity: "base" });
+  });
 
   saveCollectionsCache(origin, filtered);
   return filtered;

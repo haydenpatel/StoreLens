@@ -1,7 +1,7 @@
 import React from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Package, Loader2, Clock } from "lucide-react";
+import { Package, Clock, RefreshCw } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -31,6 +31,7 @@ export default function Header({
   collectionsError,
   selectedHandle,
   onSelectHandle,
+  onRetryCollections,
 }) {
   const getHostFromValue = (value) => {
     try {
@@ -49,7 +50,6 @@ export default function Header({
 
   return (
     <header className="bg-secondary border-b border-border sticky top-0 z-10">
-    {/* <header className="bg-secondary sticky top-0 z-10"> */}
       <div className="px-6 py-4">
         <div className="flex items-center gap-49">
           <div className="flex items-center gap-4">
@@ -107,12 +107,27 @@ export default function Header({
                 {collectionsStatus === "ready" &&
                   collections.map((collection) => (
                     <SelectItem key={collection.handle} value={collection.handle}>
-                      {collection.title} ({collection.products_count})
+                      {collection.title}
+                      {typeof collection.products_count === "number"
+                        ? ` (${collection.products_count})`
+                        : ""}
                     </SelectItem>
                   ))}
               </SelectContent>
             </Select>
-            
+
+            {collectionsStatus === "error" && (
+              <Button
+                variant="outline"
+                size="icon"
+                title="Retry loading collections"
+                onClick={onRetryCollections}
+                disabled={loading}
+              >
+                <RefreshCw className="w-4 h-4" />
+              </Button>
+            )}
+
             {urlHistory.length > 0 && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -136,20 +151,6 @@ export default function Header({
               </DropdownMenu>
             )}
 
-            {/*<Button 
-              onClick={onLoad} 
-              disabled={loading || !storeInput.trim()}
-              // variant="default"
-            >
-              {loading ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Loading...
-                </>
-              ) : (
-                "Load Collection"
-              )}
-            </Button>*/}
           </div>
           <div className="flex items-center justify-items-end gap-2">
             <Button
