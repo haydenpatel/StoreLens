@@ -77,6 +77,7 @@ export default function Header({
             />
             <Button
               variant="outline"
+              size="icon"
               onClick={onLoad}
               disabled={loading || !storeInput.trim()}
               title="Load this store"
@@ -86,7 +87,6 @@ export default function Header({
               ) : (
                 <ArrowRight className="w-4 h-4" />
               )}
-              Load
             </Button>
             <Select
               value={selectedHandle || undefined}
