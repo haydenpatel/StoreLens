@@ -93,7 +93,12 @@ async function probeAllProductsCollection(origin, existingHandles, signal) {
       if (Array.isArray(data?.products) && data.products.length > 0) {
         return { handle, title: "All Products", products_count: null };
       }
-    } catch {
+    } catch (err) {
+      // An abort means the caller cancelled this discovery (e.g. the user
+      // switched stores) — propagate it rather than treating it as "this
+      // candidate failed", so the aborted discovery can't save a partial
+      // result to the cache.
+      if (err?.name === "AbortError") throw err;
       /* try the next candidate handle */
     }
   }
