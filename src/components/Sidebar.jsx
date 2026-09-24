@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -55,18 +55,42 @@ export default function Sidebar({
     }
   };
 
-  const hasActiveFilters = searchQuery || selectedVendors.length > 0 || 
-    selectedTypes.length > 0 || selectedTags.length > 0 || 
-    Object.values(selectedOptions).some(v => v.length > 0) || 
+  const hasActiveFilters = searchQuery || selectedVendors.length > 0 ||
+    selectedTypes.length > 0 || selectedTags.length > 0 ||
+    Object.values(selectedOptions).some(v => v.length > 0) ||
     !inStockOnly || saleOnly ||
     (priceRange[0] !== filterData.minPrice || priceRange[1] !== filterData.maxPrice);
+
+  // Below xl the sidebar is an off-screen drawer rather than a permanently
+  // docked panel, so its controls need to be inert (and focus managed) while
+  // closed instead of just visually translated away.
+  const [isDesktop, setIsDesktop] = useState(
+    () => typeof window !== "undefined" && window.matchMedia("(min-width: 1280px)").matches
+  );
+  const closeButtonRef = useRef(null);
+
+  useEffect(() => {
+    const mql = window.matchMedia("(min-width: 1280px)");
+    const handleChange = (e) => setIsDesktop(e.matches);
+    mql.addEventListener("change", handleChange);
+    return () => mql.removeEventListener("change", handleChange);
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen || isDesktop) return;
+    const previouslyFocused = document.activeElement;
+    closeButtonRef.current?.focus();
+    return () => {
+      if (previouslyFocused instanceof HTMLElement) previouslyFocused.focus();
+    };
+  }, [isOpen, isDesktop]);
 
   return (
     <>
       {/* Mobile-only backdrop, closes the drawer on tap */}
       {isOpen && (
         <div
-          className="fixed inset-0 z-40 bg-black/40 lg:hidden"
+          className="fixed inset-0 z-40 bg-black/40 xl:hidden"
           onClick={onClose}
           aria-hidden="true"
         />
@@ -75,8 +99,9 @@ export default function Sidebar({
         className={cn(
           "fixed left-0 top-0 z-50 h-screen w-80 max-w-[85vw] bg-secondary border-r border-sidebar-border shadow-xl transition-transform duration-200 ease-in-out",
           isOpen ? "translate-x-0" : "-translate-x-full",
-          "lg:sticky lg:top-[73px] lg:left-auto lg:z-auto lg:h-[calc(100vh-73px)] lg:max-w-none lg:translate-x-0 lg:shadow-none lg:bg-transparent"
+          "xl:sticky xl:top-[73px] xl:left-auto xl:z-auto xl:h-[calc(100vh-73px)] xl:max-w-none xl:translate-x-0 xl:shadow-none xl:bg-transparent"
         )}
+        inert={isDesktop ? undefined : !isOpen}
       >
       <ScrollArea className="h-full">
         <div className="p-6 space-y-6">
@@ -119,9 +144,10 @@ export default function Sidebar({
               </Button>
             )}
             <Button
+              ref={closeButtonRef}
               variant="ghost"
               size="icon"
-              className="lg:hidden"
+              className="xl:hidden"
               onClick={onClose}
               aria-label="Close filters"
             >

@@ -578,7 +578,7 @@ export default function StoreLensApp() {
           {!loading && products.length > 0 && (
             <Button
               variant="outline"
-              className="mb-4 lg:hidden"
+              className="mb-4 xl:hidden"
               onClick={() => setIsFilterDrawerOpen(true)}
             >
               <SlidersHorizontal className="w-4 h-4" />
