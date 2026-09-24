@@ -61,7 +61,7 @@ function ProductGrid({ products, totalProducts, sortBy, setSortBy, collectionUrl
   return (
     <div>
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-6">
         <div className="text-sm text-foreground">
           Showing <span className="font-bold">{products.length}</span> of{" "}
           <span className="font-bold">{totalProducts}</span> products
@@ -70,7 +70,7 @@ function ProductGrid({ products, totalProducts, sortBy, setSortBy, collectionUrl
         <div className="flex items-center gap-2">
           <span className="text-sm text-foreground">Sort by:</span>
           <Select value={sortBy} onValueChange={setSortBy}>
-            <SelectTrigger className="w-50">
+            <SelectTrigger className="w-44 sm:w-50">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

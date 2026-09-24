@@ -7,7 +7,7 @@ import { Slider } from "@/components/ui/slider";
 import { Search, X } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator"
-import { getDiscountData } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 
 
 export default function Sidebar({
@@ -28,7 +28,9 @@ export default function Sidebar({
   setInStockOnly,
   saleOnly,
   setSaleOnly,
-  onReset
+  onReset,
+  isOpen = false,
+  onClose = () => {},
 }) {
   const toggleSelection = (array, setter, value) => {
     if (array.includes(value)) {
@@ -60,8 +62,22 @@ export default function Sidebar({
     (priceRange[0] !== filterData.minPrice || priceRange[1] !== filterData.maxPrice);
 
   return (
-    // <aside className="w-80 bg-secondary border-r border-sidebar-border sticky top-[73px] h-[calc(100vh-73px)]">
-    <aside className="w-80 sticky top-[73px] h-[calc(100vh-73px)]">
+    <>
+      {/* Mobile-only backdrop, closes the drawer on tap */}
+      {isOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-black/40 lg:hidden"
+          onClick={onClose}
+          aria-hidden="true"
+        />
+      )}
+      <aside
+        className={cn(
+          "fixed left-0 top-0 z-50 h-screen w-80 max-w-[85vw] bg-secondary border-r border-sidebar-border shadow-xl transition-transform duration-200 ease-in-out",
+          isOpen ? "translate-x-0" : "-translate-x-full",
+          "lg:sticky lg:top-[73px] lg:left-auto lg:z-auto lg:h-[calc(100vh-73px)] lg:max-w-none lg:translate-x-0 lg:shadow-none lg:bg-transparent"
+        )}
+      >
       <ScrollArea className="h-full">
         <div className="p-6 space-y-6">
           {/* Search */}
@@ -80,12 +96,13 @@ export default function Sidebar({
           </div>
 
           {/* Header */}
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-2">
             <h2 className="font-semibold text-sidebar-primary">Filters</h2>
+            <div className="flex items-center gap-2">
             {hasActiveFilters && (
-              <Button 
-                variant="default" 
-                size="sm" 
+              <Button
+                variant="default"
+                size="sm"
                 onClick={onReset}
               >
                 <X className="w-3 h-3 mr-1" />
@@ -93,14 +110,24 @@ export default function Sidebar({
               </Button>
             )}
             {!hasActiveFilters && ( /* Filters in default state */
-              <Button 
-                variant="disabled" 
-                size="sm" 
+              <Button
+                variant="disabled"
+                size="sm"
               >
                 <X className="w-3 h-3 mr-1" />
                 Reset
               </Button>
             )}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="lg:hidden"
+              onClick={onClose}
+              aria-label="Close filters"
+            >
+              <X className="w-4 h-4" />
+            </Button>
+            </div>
           </div>
 
           {/* In Stock Only */}
@@ -184,7 +211,8 @@ export default function Sidebar({
           )}
         </div>
       </ScrollArea>
-    </aside>
+      </aside>
+    </>
   );
 }
 

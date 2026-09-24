@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import { Loader2, AlertCircle, Info } from "lucide-react";
+import { Loader2, AlertCircle, Info, SlidersHorizontal } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 
 import Header from "../components/Header";
 import Sidebar from "../components/Sidebar";
@@ -33,6 +34,7 @@ export default function StoreLensApp() {
   const [currentCollectionUrl, setCurrentCollectionUrl] = useState("");
   const [inputHandle, setInputHandle] = useState("");
   const [discoveryRetryNonce, setDiscoveryRetryNonce] = useState(0);
+  const [isFilterDrawerOpen, setIsFilterDrawerOpen] = useState(false);
   const forceRefreshDiscoveryRef = useRef(false);
   const autoLoadPendingRef = useRef(false);
   const historyKey = "shopify-url-history";
@@ -567,10 +569,23 @@ export default function StoreLensApp() {
             saleOnly={saleOnly}
             setSaleOnly={setSaleOnly}
             onReset={resetFilters}
+            isOpen={isFilterDrawerOpen}
+            onClose={() => setIsFilterDrawerOpen(false)}
           />
         )}
 
-        <main className="flex-1 p-6 bg-background border-sidebar-border border-l">
+        <main className="flex-1 p-4 sm:p-6 bg-background border-sidebar-border border-l">
+          {!loading && products.length > 0 && (
+            <Button
+              variant="outline"
+              className="mb-4 lg:hidden"
+              onClick={() => setIsFilterDrawerOpen(true)}
+            >
+              <SlidersHorizontal className="w-4 h-4" />
+              Filters
+            </Button>
+          )}
+
           {loading && (
             <div className="flex items-center justify-center h-64">
               <Loader2 className="w-8 h-8 animate-spin text-primary" />
