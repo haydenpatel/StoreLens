@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -7,7 +7,7 @@ import { Slider } from "@/components/ui/slider";
 import { Search, X } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator"
-import { getDiscountData } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 
 
 export default function Sidebar({
@@ -28,7 +28,9 @@ export default function Sidebar({
   setInStockOnly,
   saleOnly,
   setSaleOnly,
-  onReset
+  onReset,
+  isOpen = false,
+  onClose = () => {},
 }) {
   const toggleSelection = (array, setter, value) => {
     if (array.includes(value)) {
@@ -53,15 +55,89 @@ export default function Sidebar({
     }
   };
 
-  const hasActiveFilters = searchQuery || selectedVendors.length > 0 || 
-    selectedTypes.length > 0 || selectedTags.length > 0 || 
-    Object.values(selectedOptions).some(v => v.length > 0) || 
+  const hasActiveFilters = searchQuery || selectedVendors.length > 0 ||
+    selectedTypes.length > 0 || selectedTags.length > 0 ||
+    Object.values(selectedOptions).some(v => v.length > 0) ||
     !inStockOnly || saleOnly ||
     (priceRange[0] !== filterData.minPrice || priceRange[1] !== filterData.maxPrice);
 
+  // Below xl the sidebar is an off-screen drawer rather than a permanently
+  // docked panel, so its controls need to be inert (and focus managed) while
+  // closed instead of just visually translated away.
+  const [isDesktop, setIsDesktop] = useState(
+    () => typeof window !== "undefined" && window.matchMedia("(min-width: 1280px)").matches
+  );
+  const closeButtonRef = useRef(null);
+  const asideRef = useRef(null);
+
+  useEffect(() => {
+    const mql = window.matchMedia("(min-width: 1280px)");
+    const handleChange = (e) => setIsDesktop(e.matches);
+    mql.addEventListener("change", handleChange);
+    return () => mql.removeEventListener("change", handleChange);
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen || isDesktop) return;
+    const previouslyFocused = document.activeElement;
+    closeButtonRef.current?.focus();
+    return () => {
+      if (previouslyFocused instanceof HTMLElement) previouslyFocused.focus();
+    };
+  }, [isOpen, isDesktop]);
+
+  // Trap Tab navigation inside the drawer while it's open on mobile/tablet,
+  // so keyboard focus can't reach the header/main content hidden behind the
+  // backdrop.
+  useEffect(() => {
+    if (!isOpen || isDesktop) return;
+    const aside = asideRef.current;
+    if (!aside) return;
+
+    function handleKeyDown(e) {
+      if (e.key === "Escape") {
+        onClose();
+        return;
+      }
+      if (e.key !== "Tab") return;
+      const focusable = aside.querySelectorAll(
+        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, isDesktop, onClose]);
+
   return (
-    // <aside className="w-80 bg-secondary border-r border-sidebar-border sticky top-[73px] h-[calc(100vh-73px)]">
-    <aside className="w-80 sticky top-[73px] h-[calc(100vh-73px)]">
+    <>
+      {/* Mobile-only backdrop, closes the drawer on tap */}
+      {isOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-black/40 xl:hidden"
+          onClick={onClose}
+          aria-hidden="true"
+        />
+      )}
+      <aside
+        ref={asideRef}
+        className={cn(
+          "fixed left-0 top-0 z-50 h-screen w-80 max-w-[85vw] bg-secondary border-r border-sidebar-border shadow-xl transition-transform duration-200 ease-in-out",
+          isOpen ? "translate-x-0" : "-translate-x-full",
+          "xl:sticky xl:top-[73px] xl:left-auto xl:z-auto xl:h-[calc(100vh-73px)] xl:max-w-none xl:translate-x-0 xl:shadow-none xl:bg-transparent"
+        )}
+        inert={isDesktop ? undefined : !isOpen}
+      >
       <ScrollArea className="h-full">
         <div className="p-6 space-y-6">
           {/* Search */}
@@ -80,12 +156,13 @@ export default function Sidebar({
           </div>
 
           {/* Header */}
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-2">
             <h2 className="font-semibold text-sidebar-primary">Filters</h2>
+            <div className="flex items-center gap-2">
             {hasActiveFilters && (
-              <Button 
-                variant="default" 
-                size="sm" 
+              <Button
+                variant="default"
+                size="sm"
                 onClick={onReset}
               >
                 <X className="w-3 h-3 mr-1" />
@@ -93,14 +170,25 @@ export default function Sidebar({
               </Button>
             )}
             {!hasActiveFilters && ( /* Filters in default state */
-              <Button 
-                variant="disabled" 
-                size="sm" 
+              <Button
+                variant="disabled"
+                size="sm"
               >
                 <X className="w-3 h-3 mr-1" />
                 Reset
               </Button>
             )}
+            <Button
+              ref={closeButtonRef}
+              variant="ghost"
+              size="icon"
+              className="xl:hidden"
+              onClick={onClose}
+              aria-label="Close filters"
+            >
+              <X className="w-4 h-4" />
+            </Button>
+            </div>
           </div>
 
           {/* In Stock Only */}
@@ -184,7 +272,8 @@ export default function Sidebar({
           )}
         </div>
       </ScrollArea>
-    </aside>
+      </aside>
+    </>
   );
 }
 
