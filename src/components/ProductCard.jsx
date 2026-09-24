@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { ExternalLink, Package } from "lucide-react";
 import { getDiscountData } from "@/lib/utils";
 
-export default function ProductCard({ product, collectionUrl }) {
+function ProductCard({ product, collectionUrl }) {
   const image = product.images?.[0]?.src || null;
   const variants = product.variants || [];
   const prices = variants.map(v => parseFloat(v.price)).filter(p => !Number.isNaN(p));
@@ -179,3 +179,5 @@ export default function ProductCard({ product, collectionUrl }) {
     </Card>
   );
 }
+
+export default React.memo(ProductCard);

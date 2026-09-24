@@ -32,10 +32,10 @@ export default function StoreLensApp() {
   const [currentCollectionUrl, setCurrentCollectionUrl] = useState("");
   const [inputHandle, setInputHandle] = useState("");
   const [discoveryRetryNonce, setDiscoveryRetryNonce] = useState(0);
-  const [autoLoadPending, setAutoLoadPending] = useState(false);
   const discoverTimeoutRef = useRef(null);
   const forceRefreshDiscoveryRef = useRef(false);
   const immediateDiscoveryRef = useRef(false);
+  const autoLoadPendingRef = useRef(false);
   const historyKey = "shopify-url-history";
   const updateHistoryEntry = (entry) => {
     if (!entry) return;
@@ -170,7 +170,7 @@ export default function StoreLensApp() {
     setInputHandle(handle || "");
     if (handle) {
       setSelectedHandle(handle);
-      setAutoLoadPending(false);
+      autoLoadPendingRef.current = false;
       if (autoLoad) {
         loadCollectionByHandle(handle, origin);
       } else {
@@ -182,7 +182,7 @@ export default function StoreLensApp() {
       // collection) instead of leaving the user stuck on an empty page.
       setSelectedHandle("");
       setCurrentCollectionUrl("");
-      setAutoLoadPending(autoLoad);
+      autoLoadPendingRef.current = autoLoad;
     }
     if (immediate) {
       // Consumed (and reset) by a ref inside the discovery effect rather
@@ -193,14 +193,9 @@ export default function StoreLensApp() {
     }
   };
 
-  const handleLoadCollection = () => {
-    if (inputHandle) {
-      loadCollectionByHandle(inputHandle, storeOrigin);
-    } else if (selectedHandle) {
-      loadCollectionByHandle(selectedHandle, storeOrigin);
-    } else {
-      setError("Please select a collection to load.");
-    }
+  const handleSubmitStoreInput = () => {
+    setError(null);
+    applyUserInput(storeInput, { immediate: true, autoLoad: true });
   };
 
   // Set default filter values
@@ -264,6 +259,21 @@ export default function StoreLensApp() {
             allProductsHandle,
           });
           updateHistoryEntry(storeOrigin);
+          // Consume the flag here, against this exact discovery's fresh
+          // result, rather than in a separate effect watching collectionsState:
+          // that raced against a stale "ready" state left over from whichever
+          // store was discovered previously, firing before this discovery
+          // resolved and consuming the flag before it had real data to use.
+          if (autoLoadPendingRef.current) {
+            autoLoadPendingRef.current = false;
+            if (allProductsHandle) {
+              loadCollectionByHandle(allProductsHandle, storeOrigin);
+            } else {
+              setError(
+                "I couldn't automatically find an all-products collection for this store. Please choose a collection from the dropdown above."
+              );
+            }
+          }
         }
       } catch (err) {
         if (!controller.signal.aborted) {
@@ -273,6 +283,12 @@ export default function StoreLensApp() {
             error: err.message || "Couldn't load collections for this store",
             allProductsHandle: null,
           });
+          if (autoLoadPendingRef.current) {
+            autoLoadPendingRef.current = false;
+            setError(
+              "I couldn't find a collection of products to load. Please paste the full collection URL and try again."
+            );
+          }
         }
       }
     }, delay);
@@ -283,6 +299,9 @@ export default function StoreLensApp() {
         clearTimeout(discoverTimeoutRef.current);
       }
     };
+    // loadCollectionByHandle is recreated each render; the autoLoadPendingRef
+    // guard above prevents it from being invoked more than once per discovery.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storeOrigin, discoveryRetryNonce]);
 
   const handleRetryDiscovery = () => {
@@ -298,33 +317,13 @@ export default function StoreLensApp() {
     }
   }, [collectionsState, inputHandle]);
 
-  useEffect(() => {
-    if (!autoLoadPending) return;
-    if (collectionsState.status === "ready") {
-      setAutoLoadPending(false);
-      // Only auto-load when a genuine all-products collection was identified
-      // (probed or listed). Falling back to the first collection in the list
-      // would silently load an arbitrary, unrelated category instead.
-      if (collectionsState.allProductsHandle) {
-        loadCollectionByHandle(collectionsState.allProductsHandle, storeOrigin);
-      } else {
-        setError(
-          "I couldn't automatically find an all-products collection for this store. Please choose a collection from the dropdown above."
-        );
-      }
-    } else if (collectionsState.status === "error") {
-      setAutoLoadPending(false);
-      setError(
-        "I couldn't find a collection of products to load. Please paste the full collection URL and try again."
-      );
-    }
-    // loadCollectionByHandle is recreated each render; the autoLoadPending guard above prevents re-firing.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoLoadPending, collectionsState, storeOrigin]);
-
   const handleInputChange = (value) => {
+    // Just track what's typed; parsing the URL and kicking off collection
+    // discovery on every keystroke re-rendered the whole app (including a
+    // potentially large product grid), making typing feel sluggish. Actually
+    // resolving the input now happens on submit (Enter or the Load button).
     setError(null);
-    applyUserInput(value);
+    setStoreInput(value);
   };
 
   const handlePaste = (value) => {
@@ -504,7 +503,7 @@ export default function StoreLensApp() {
         storeInput={storeInput}
         onStoreInputChange={handleInputChange}
         onStorePaste={handlePaste}
-        onLoad={handleLoadCollection}
+        onLoad={handleSubmitStoreInput}
         loading={loading}
         urlHistory={urlHistory}
         onSelectHistory={handleSelectHistory}
