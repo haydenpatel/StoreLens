@@ -8,19 +8,13 @@ import { getDiscountData } from "@/lib/utils";
 export default function ProductCard({ product, collectionUrl }) {
   const image = product.images?.[0]?.src || null;
   const variants = product.variants || [];
-  const prices = variants.map(v => parseFloat(v.price));
-  const minPrice = Math.min(...prices);
-  const maxPrice = Math.max(...prices);
-  // const hasDiscount = variants.some(v => v.compare_at_price && parseFloat(v.compare_at_price) > parseFloat(v.price));
+  const prices = variants.map(v => parseFloat(v.price)).filter(p => !Number.isNaN(p));
+  const minPrice = prices.length > 0 ? Math.min(...prices) : null;
+  const maxPrice = prices.length > 0 ? Math.max(...prices) : null;
   const inStock = variants.some(v => v.available);
   const maxTagsToShow = 3;
   const maxTagChars = 18; // only show tags shorter than or equal to this
   const maxTagDisplayChars = 16; // truncate displayed tag text to this length
-
-  // Find all discounted variants
-  const _discountedVariants = variants.filter(v =>
-    v.compare_at_price && parseFloat(v.compare_at_price) > parseFloat(v.price)
-  );
 
   // Core discount data using shared helper
   const { hasDiscount, discountAmount, discountPercent } = getDiscountData(variants);
@@ -58,29 +52,14 @@ export default function ProductCard({ product, collectionUrl }) {
     remaining = variantTitles.length - used;
   }
 
-  // if (hasDiscount) {
-  //   // Use variant with the largest absolute $ discount
-  //   const best = discountedVariants.reduce((best, v) => {
-  //     const price = parseFloat(v.price);
-  //     const compare = parseFloat(v.compare_at_price);
-  //     const diff = compare - price;
-
-  //     return diff > best.amount
-  //       ? { amount: diff, price, compare }
-  //       : best;
-  //   }, { amount: 0, price: 0, compare: 0 });
-
-  //   discountAmount = best.amount;
-  //   discountPercent = (discountAmount / best.compare) * 100; // e.g. 0.4, 12.3, etc.
-  // }
-
   // Get product URL from handle
-  const productUrl = product.handle ? 
-    // `https://${new URL(product.images?.[0]?.src || '').hostname}/products/${product.handle}` :
-    `https://${collectionUrl}/products/${product.handle}` :
-    null;
+  const productUrl = product.handle && collectionUrl
+    ? `https://${collectionUrl}/products/${product.handle}`
+    : null;
 
-  const priceDisplay = minPrice === maxPrice 
+  const priceDisplay = minPrice === null
+    ? "Price unavailable"
+    : minPrice === maxPrice
     ? `$${minPrice.toFixed(2)}`
     : `$${minPrice.toFixed(2)} - $${maxPrice.toFixed(2)}`;
 

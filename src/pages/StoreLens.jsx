@@ -31,6 +31,7 @@ export default function StoreLensApp() {
   const [currentCollectionUrl, setCurrentCollectionUrl] = useState("");
   const [inputHandle, setInputHandle] = useState("");
   const [discoverImmediately, setDiscoverImmediately] = useState(false);
+  const [discoveryRetryNonce, setDiscoveryRetryNonce] = useState(0);
   const discoverTimeoutRef = useRef(null);
   const historyKey = "shopify-url-history";
   const updateHistoryEntry = (entry) => {
@@ -66,7 +67,7 @@ export default function StoreLensApp() {
       const urlObj = new URL(url.startsWith("http") ? url : `https://${url}`);
       return urlObj.hostname;
     } catch {
-      return false;
+      return "";
     }
   };
 
@@ -251,7 +252,11 @@ export default function StoreLensApp() {
         clearTimeout(discoverTimeoutRef.current);
       }
     };
-  }, [storeOrigin, discoverImmediately]);
+  }, [storeOrigin, discoverImmediately, discoveryRetryNonce]);
+
+  const handleRetryDiscovery = () => {
+    setDiscoveryRetryNonce((n) => n + 1);
+  };
 
   useEffect(() => {
     if (collectionsState.status !== "ready") return;
@@ -403,17 +408,17 @@ export default function StoreLensApp() {
     filtered.sort((a, b) => {
       switch (sortBy) {
         case "title-asc":
-          return a.title.localeCompare(b.title);
+          return (a.title || "").localeCompare(b.title || "");
         case "title-desc":
-          return b.title.localeCompare(a.title);
+          return (b.title || "").localeCompare(a.title || "");
         case "price-asc": {
-          const aMin = Math.min(...a.variants.map(v => parseFloat(v.price)));
-          const bMin = Math.min(...b.variants.map(v => parseFloat(v.price)));
+          const aMin = Math.min(...(a.variants || []).map(v => parseFloat(v.price)), Infinity);
+          const bMin = Math.min(...(b.variants || []).map(v => parseFloat(v.price)), Infinity);
           return aMin - bMin;
         }
         case "price-desc": {
-          const aMax = Math.max(...a.variants.map(v => parseFloat(v.price)));
-          const bMax = Math.max(...b.variants.map(v => parseFloat(v.price)));
+          const aMax = Math.max(...(a.variants || []).map(v => parseFloat(v.price)), -Infinity);
+          const bMax = Math.max(...(b.variants || []).map(v => parseFloat(v.price)), -Infinity);
           return bMax - aMax;
         }
         case "newest":
@@ -451,6 +456,7 @@ export default function StoreLensApp() {
         collectionsError={collectionsState.error}
         selectedHandle={selectedHandle}
         onSelectHandle={handleSelectHandle}
+        onRetryCollections={handleRetryDiscovery}
       />
 
       <div className="flex">
