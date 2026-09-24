@@ -64,7 +64,7 @@ export default function Header({
             variant="outline"
             asChild
             size="sm"
-            className="gap-1 shrink-0 xl:order-3"
+            className="gap-1 shrink-0 xl:order-3 max-sm:!size-9 max-sm:!p-0 max-sm:!gap-0"
           >
             <a
                 href="https://storelens.feedbackchimp.space"
@@ -175,7 +175,7 @@ export default function Header({
               {urlHistory.length > 0 && (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="outline" disabled={loading} className="shrink-0" title="Recent Stores">
+                    <Button variant="outline" disabled={loading} className="shrink-0 max-[700px]:!size-9 max-[700px]:!p-0 max-[700px]:!gap-0" title="Recent Stores">
                       <Clock className="w-4 h-4" />
                       <span className="hidden min-[700px]:inline">Recent Stores</span>
                     </Button>
