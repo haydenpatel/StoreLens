@@ -1,7 +1,7 @@
 import React from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Package, Loader2, Clock } from "lucide-react";
+import { Package, Clock, RefreshCw, ArrowRight, Loader2 } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -10,15 +10,38 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 export default function Header({ 
-  collectionUrl, 
-  setCollectionUrl, 
+  storeInput, 
+  onStoreInputChange, 
+  onStorePaste,
   onLoad, 
   loading,
   urlHistory,
-  onSelectHistory 
+  onSelectHistory,
+  collections,
+  collectionsStatus,
+  collectionsError,
+  selectedHandle,
+  onSelectHandle,
+  onRetryCollections,
 }) {
+  const getHostFromValue = (value) => {
+    try {
+      const parsed = value.startsWith("http") ? new URL(value) : new URL(`https://${value}`);
+      return parsed.host;
+    } catch {
+      return value;
+    }
+  };
+
   const handleKeyPress = (e) => {
     if (e.key === 'Enter' && !loading) {
       onLoad();
@@ -27,7 +50,6 @@ export default function Header({
 
   return (
     <header className="bg-secondary border-b border-border sticky top-0 z-10">
-    {/* <header className="bg-secondary sticky top-0 z-10"> */}
       <div className="px-6 py-4">
         <div className="flex items-center gap-49">
           <div className="flex items-center gap-4">
@@ -41,23 +63,93 @@ export default function Header({
           <div className="flex-1 flex items-center gap-2">
             <Input
               type="text"
-              placeholder="Paste Shopify collection URL (e.g., https://store.myshopify.com/collections/all)"
-              value={collectionUrl}
-              onChange={(e) => setCollectionUrl(e.target.value)}
+              placeholder="Paste Shopify store or collection URL"
+              value={storeInput}
+              onChange={(e) => onStoreInputChange(e.target.value)}
+              onPaste={(e) => {
+                const text = e.clipboardData.getData("text");
+                e.preventDefault();
+                onStorePaste(text);
+              }}
               onKeyPress={handleKeyPress}
               disabled={loading}
-              className="flex-1 min-w-16rem"
+              className="flex-1 min-w-[16rem]"
             />
-            
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={onLoad}
+              disabled={loading || !storeInput.trim()}
+              title="Load this store"
+            >
+              {loading ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <ArrowRight className="w-4 h-4" />
+              )}
+            </Button>
+            <Select
+              value={selectedHandle || undefined}
+              onValueChange={onSelectHandle}
+              disabled={loading || !storeInput}
+            >
+              <SelectTrigger className="min-w-[16rem]" aria-invalid={collectionsStatus === "error"}>
+                <SelectValue
+                  placeholder={
+                    collectionsStatus === "loading"
+                      ? "Discovering collections..."
+                      : collectionsStatus === "error"
+                      ? "Couldn't load collections"
+                      : collections?.length === 0
+                      ? "No collections found"
+                      : "Select a collection"
+                  }
+                />
+              </SelectTrigger>
+              <SelectContent align="start">
+                {collectionsStatus === "loading" && (
+                  <SelectItem value="__loading" disabled>
+                    Discovering collections...
+                  </SelectItem>
+                )}
+                {collectionsStatus === "error" && (
+                  <SelectItem value="__error" disabled>
+                    {collectionsError || "Couldn't load collections for this store"}
+                  </SelectItem>
+                )}
+                {collectionsStatus === "ready" &&
+                  collections.map((collection) => (
+                    <SelectItem key={collection.handle} value={collection.handle}>
+                      {collection.title}
+                      {typeof collection.products_count === "number"
+                        ? ` (${collection.products_count})`
+                        : ""}
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+
+            {collectionsStatus === "error" && (
+              <Button
+                variant="outline"
+                size="icon"
+                title="Retry loading collections"
+                onClick={onRetryCollections}
+                disabled={loading}
+              >
+                <RefreshCw className="w-4 h-4" />
+              </Button>
+            )}
+
             {urlHistory.length > 0 && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="icon" disabled={loading}>
-                    <Clock className="w-4 h-4" />
+                  <Button variant="outline" disabled={loading}>
+                    <Clock className="w-4 h-4" />Recent Stores
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-80">
-                  <DropdownMenuLabel>Recent Collections</DropdownMenuLabel>
+                  <DropdownMenuLabel>Recent Stores</DropdownMenuLabel>
                   <DropdownMenuSeparator />
                   {urlHistory.map((url, index) => (
                     <DropdownMenuItem 
@@ -65,27 +157,13 @@ export default function Header({
                       onClick={() => onSelectHistory(url)}
                       className="cursor-pointer"
                     >
-                      <div className="truncate text-sm">{url}</div>
+                      <div className="truncate text-sm">{getHostFromValue(url)}</div>
                     </DropdownMenuItem>
                   ))}
                 </DropdownMenuContent>
               </DropdownMenu>
             )}
 
-            <Button 
-              onClick={onLoad} 
-              disabled={loading || !collectionUrl.trim()}
-              // variant="default"
-            >
-              {loading ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Loading...
-                </>
-              ) : (
-                "Load Collection"
-              )}
-            </Button>
           </div>
           <div className="flex items-center justify-items-end gap-2">
             <Button
