@@ -40,7 +40,11 @@ export default function StoreLensApp() {
     if (!entry) return;
     setUrlHistory((prev) => {
       const updated = [entry, ...prev.filter((u) => u !== entry)].slice(0, 5);
-      localStorage.setItem(historyKey, JSON.stringify(updated));
+      try {
+        localStorage.setItem(historyKey, JSON.stringify(updated));
+      } catch {
+        /* localStorage unavailable (quota exceeded, private browsing, blocked) */
+      }
       return updated;
     });
   };
@@ -58,9 +62,13 @@ export default function StoreLensApp() {
 
   // Load URL history from localStorage
   useEffect(() => {
-    const saved = localStorage.getItem(historyKey);
-    if (saved) {
-      setUrlHistory(JSON.parse(saved));
+    try {
+      const saved = localStorage.getItem(historyKey);
+      if (saved) {
+        setUrlHistory(JSON.parse(saved));
+      }
+    } catch {
+      /* localStorage unavailable or history corrupted — ignore */
     }
   }, []);
 
@@ -146,24 +154,30 @@ export default function StoreLensApp() {
       return;
     }
 
-    setProducts(allProducts);
-    setCurrentCollectionUrl(url);
-    resetFilters();
+    // Wrapped in finally: updateHistoryEntry writes to localStorage, which
+    // can throw (quota exceeded, private browsing, storage blocked) — that
+    // shouldn't leave the loading spinner stuck when products already loaded.
+    try {
+      setProducts(allProducts);
+      setCurrentCollectionUrl(url);
+      resetFilters();
 
-    if (pageError) {
-      setLoadNotice(
-        `Loaded ${allProducts.length.toLocaleString()} products, but couldn't fetch the rest (${pageError.message}).`
-      );
-    } else if (page > MAX_PRODUCT_PAGES && hasMore) {
-      setLoadNotice(
-        `This collection is larger than Shopify's public catalog can page through — showing the first ${allProducts.length.toLocaleString()} products.`
-      );
-    }
+      if (pageError) {
+        setLoadNotice(
+          `Loaded ${allProducts.length.toLocaleString()} products, but couldn't fetch the rest (${pageError.message}).`
+        );
+      } else if (page > MAX_PRODUCT_PAGES && hasMore) {
+        setLoadNotice(
+          `This collection is larger than Shopify's public catalog can page through — showing the first ${allProducts.length.toLocaleString()} products.`
+        );
+      }
 
-    if (collectionsState.status !== "ready") {
-      updateHistoryEntry(url);
+      if (collectionsState.status !== "ready") {
+        updateHistoryEntry(url);
+      }
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const loadCollectionByHandle = async (handle, origin = storeOrigin) => {
