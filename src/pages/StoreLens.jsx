@@ -636,27 +636,35 @@ export default function StoreLensApp() {
   // deliberate navigation someone would expect Back to step through one
   // change at a time, and pushing on every keystroke/checkbox would make
   // Back nearly unusable.
+  //
+  // Debounced: typing in the search box or dragging the price slider fires
+  // this on every keystroke/step, and replaceState doesn't need to keep up
+  // with each one - only the final value once things settle is worth
+  // writing. Each change resets the pending write rather than queuing one.
   useEffect(() => {
     if (!currentCollectionUrl) return;
-    const params = new URLSearchParams();
-    if (searchQuery) params.set("q", searchQuery);
-    if (selectedVendors.length > 0) params.set("vendor", selectedVendors.join(","));
-    if (selectedTypes.length > 0) params.set("type", selectedTypes.join(","));
-    if (selectedTags.length > 0) params.set("tag", selectedTags.join(","));
-    if (Object.keys(selectedOptions).length > 0) params.set("options", JSON.stringify(selectedOptions));
-    if (!inStockOnly) params.set("inStock", "0");
-    if (saleOnly) params.set("sale", "1");
-    if (priceRange[0] !== filterData.minPrice || priceRange[1] !== filterData.maxPrice) {
-      params.set("minPrice", String(priceRange[0]));
-      params.set("maxPrice", String(priceRange[1]));
-    }
-    if (sortBy !== "title-asc") params.set("sort", sortBy);
+    const timeoutId = setTimeout(() => {
+      const params = new URLSearchParams();
+      if (searchQuery) params.set("q", searchQuery);
+      if (selectedVendors.length > 0) params.set("vendor", selectedVendors.join(","));
+      if (selectedTypes.length > 0) params.set("type", selectedTypes.join(","));
+      if (selectedTags.length > 0) params.set("tag", selectedTags.join(","));
+      if (Object.keys(selectedOptions).length > 0) params.set("options", JSON.stringify(selectedOptions));
+      if (!inStockOnly) params.set("inStock", "0");
+      if (saleOnly) params.set("sale", "1");
+      if (priceRange[0] !== filterData.minPrice || priceRange[1] !== filterData.maxPrice) {
+        params.set("minPrice", String(priceRange[0]));
+        params.set("maxPrice", String(priceRange[1]));
+      }
+      if (sortBy !== "title-asc") params.set("sort", sortBy);
 
-    const search = params.toString();
-    const newSearch = search ? `?${search}` : "";
-    if (newSearch !== window.location.search) {
-      window.history.replaceState(null, "", window.location.pathname + newSearch);
-    }
+      const search = params.toString();
+      const newSearch = search ? `?${search}` : "";
+      if (newSearch !== window.location.search) {
+        window.history.replaceState(null, "", window.location.pathname + newSearch);
+      }
+    }, 300);
+    return () => clearTimeout(timeoutId);
   }, [
     currentCollectionUrl,
     searchQuery,
