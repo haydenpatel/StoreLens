@@ -29,6 +29,7 @@ export default function Sidebar({
   saleOnly,
   setSaleOnly,
   onReset,
+  activeFilterCount,
   isOpen = false,
   onClose = () => {},
 }) {
@@ -55,11 +56,7 @@ export default function Sidebar({
     }
   };
 
-  const hasActiveFilters = searchQuery || selectedVendors.length > 0 ||
-    selectedTypes.length > 0 || selectedTags.length > 0 ||
-    Object.values(selectedOptions).some(v => v.length > 0) ||
-    !inStockOnly || saleOnly ||
-    (priceRange[0] !== filterData.minPrice || priceRange[1] !== filterData.maxPrice);
+  const hasActiveFilters = activeFilterCount > 0;
 
   // Below xl the sidebar is an off-screen drawer rather than a permanently
   // docked panel, so its controls need to be inert (and focus managed) while
@@ -150,8 +147,18 @@ export default function Sidebar({
                 placeholder="Search products..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9 text-sm"
+                className={cn("pl-9 text-sm", searchQuery && "pr-9")}
               />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery("")}
+                  aria-label="Clear search"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-sidebar-accent-foreground hover:text-sidebar-primary"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
             </div>
           </div>
 

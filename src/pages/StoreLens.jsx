@@ -629,6 +629,23 @@ export default function StoreLensApp() {
     };
   }, [products]);
 
+  // Count of active filter groups (not total selected values within a group) -
+  // shared between the mobile "Filters" toggle button's badge and Sidebar's
+  // own Reset button, so the two stay in sync rather than each computing
+  // "active" from a possibly-diverging copy of the same conditions.
+  const activeFilterCount = useMemo(() => {
+    let count = 0;
+    if (searchQuery) count++;
+    if (selectedVendors.length > 0) count++;
+    if (selectedTypes.length > 0) count++;
+    if (selectedTags.length > 0) count++;
+    if (Object.values(selectedOptions).some((v) => v.length > 0)) count++;
+    if (!inStockOnly) count++;
+    if (saleOnly) count++;
+    if (priceRange[0] !== filterData.minPrice || priceRange[1] !== filterData.maxPrice) count++;
+    return count;
+  }, [searchQuery, selectedVendors, selectedTypes, selectedTags, selectedOptions, inStockOnly, saleOnly, priceRange, filterData]);
+
   // Update price range when products change
   useEffect(() => {
     if (filterData.minPrice !== Infinity && filterData.maxPrice !== 0) {
@@ -852,6 +869,7 @@ export default function StoreLensApp() {
             saleOnly={saleOnly}
             setSaleOnly={setSaleOnly}
             onReset={resetFilters}
+            activeFilterCount={activeFilterCount}
             isOpen={isFilterDrawerOpen}
             onClose={() => setIsFilterDrawerOpen(false)}
           />
@@ -865,7 +883,7 @@ export default function StoreLensApp() {
               onClick={() => setIsFilterDrawerOpen(true)}
             >
               <SlidersHorizontal className="w-4 h-4" />
-              Filters
+              Filters{activeFilterCount > 0 && ` (${activeFilterCount})`}
             </Button>
           )}
 
