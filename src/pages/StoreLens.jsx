@@ -352,7 +352,14 @@ export default function StoreLensApp() {
     if (!currentCollectionUrl) return;
     const loaded = new URL(currentCollectionUrl);
     const path = `/${loaded.host}${loaded.pathname}`;
-    if (path !== window.location.pathname) {
+    // loaded.host is always lowercased by the URL API, but the domain
+    // segment of window.location.pathname (just a path segment here, not a
+    // real host) keeps whatever case the link used - lowercase only that
+    // first segment before comparing, so a mixed-case deep link doesn't look
+    // like a "change" and push a spurious duplicate entry for what's already
+    // the same page.
+    const normalizedCurrentPath = window.location.pathname.replace(/^\/[^/]+/, (domain) => domain.toLowerCase());
+    if (path !== normalizedCurrentPath) {
       if (lastLoadWasAutoDefaultRef.current) {
         window.history.replaceState(null, "", path);
       } else {
