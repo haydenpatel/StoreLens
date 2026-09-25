@@ -49,6 +49,10 @@ export default function StoreLensApp() {
   // well after isUrlOriginatedRef has been cleared, so its origin has to be
   // captured here instead of re-read at that later point.
   const pendingAutoLoadIsUrlOriginatedRef = useRef(false);
+  // Filter/sort state parsed from the URL's query string (by loadFromLocation),
+  // waiting to be applied once a collection's own data has settled - see the
+  // restore effect below for why it can't just be applied immediately.
+  const pendingFilterParamsRef = useRef(null);
   const historyKey = "shopify-url-history";
   const updateHistoryEntry = (entry) => {
     if (!entry) return;
@@ -85,6 +89,37 @@ export default function StoreLensApp() {
       /* localStorage unavailable or history corrupted — ignore */
     }
   }, []);
+
+  // Parses filter/sort state out of the URL's query string (?q=...&vendor=a,b&...).
+  // Returns null when there's nothing to restore, so callers can tell "no
+  // params" apart from "params that happen to match the defaults".
+  const parseFilterParamsFromSearch = (search) => {
+    const params = new URLSearchParams(search);
+    if ([...params.keys()].length === 0) return null;
+
+    const result = {};
+    if (params.has("q")) result.searchQuery = params.get("q");
+    if (params.has("vendor")) result.selectedVendors = params.get("vendor").split(",").filter(Boolean);
+    if (params.has("type")) result.selectedTypes = params.get("type").split(",").filter(Boolean);
+    if (params.has("tag")) result.selectedTags = params.get("tag").split(",").filter(Boolean);
+    if (params.has("options")) {
+      try {
+        result.selectedOptions = JSON.parse(params.get("options"));
+      } catch {
+        /* malformed options param - ignore rather than crash */
+      }
+    }
+    if (params.has("inStock")) result.inStockOnly = params.get("inStock") !== "0";
+    if (params.has("sale")) result.saleOnly = params.get("sale") === "1";
+    if (params.has("minPrice") && params.has("maxPrice")) {
+      const min = Number(params.get("minPrice"));
+      const max = Number(params.get("maxPrice"));
+      if (!Number.isNaN(min) && !Number.isNaN(max)) result.priceRange = [min, max];
+    }
+    if (params.has("sort")) result.sortBy = params.get("sort");
+
+    return Object.keys(result).length > 0 ? result : null;
+  };
 
   const getHostname = (url) => {
     try {
@@ -306,6 +341,7 @@ export default function StoreLensApp() {
     isUrlOriginatedRef.current = true;
     try {
       if (path) {
+        pendingFilterParamsRef.current = parseFilterParamsFromSearch(window.location.search);
         applyUserInput(path);
       } else {
         // Cancel whatever collection request might still be in flight -
@@ -313,6 +349,7 @@ export default function StoreLensApp() {
         // products/currentCollectionUrl and pushing a stale URL right back
         // onto history even though the user navigated back to empty.
         fetchCollectionAbortRef.current?.abort();
+        pendingFilterParamsRef.current = null;
         setLoading(false);
         setProducts([]);
         setCurrentCollectionUrl("");
@@ -567,6 +604,72 @@ export default function StoreLensApp() {
       setPriceRange([filterData.minPrice, filterData.maxPrice]);
     }
   }, [filterData]);
+
+  // Restore filter/sort state from the URL once a collection's own data has
+  // settled - both resetFilters() (called on every successful load) and the
+  // price-range effect above would otherwise immediately overwrite it with
+  // defaults. Keyed on currentCollectionUrl (changes exactly once per
+  // successful load) rather than filterData/products directly, since those
+  // also transiently reset to empty at the START of a load, before the real
+  // data arrives - reacting to that would apply these against the wrong
+  // (empty) filterData and consume the pending params before the real
+  // filterData was ever available to restore against.
+  useEffect(() => {
+    const pending = pendingFilterParamsRef.current;
+    if (!pending || !currentCollectionUrl) return;
+    pendingFilterParamsRef.current = null;
+    if (pending.searchQuery !== undefined) setSearchQuery(pending.searchQuery);
+    if (pending.selectedVendors !== undefined) setSelectedVendors(pending.selectedVendors);
+    if (pending.selectedTypes !== undefined) setSelectedTypes(pending.selectedTypes);
+    if (pending.selectedTags !== undefined) setSelectedTags(pending.selectedTags);
+    if (pending.selectedOptions !== undefined) setSelectedOptions(pending.selectedOptions);
+    if (pending.inStockOnly !== undefined) setInStockOnly(pending.inStockOnly);
+    if (pending.saleOnly !== undefined) setSaleOnly(pending.saleOnly);
+    if (pending.priceRange !== undefined) setPriceRange(pending.priceRange);
+    if (pending.sortBy !== undefined) setSortBy(pending.sortBy);
+  }, [currentCollectionUrl]);
+
+  // ...and the write direction: reflect filter/sort state in the URL's query
+  // string as it changes, so a filtered/sorted view is bookmarkable too - not
+  // just the domain/collection. Always replaceState rather than pushState:
+  // unlike switching collections, adjusting a filter isn't a distinct,
+  // deliberate navigation someone would expect Back to step through one
+  // change at a time, and pushing on every keystroke/checkbox would make
+  // Back nearly unusable.
+  useEffect(() => {
+    if (!currentCollectionUrl) return;
+    const params = new URLSearchParams();
+    if (searchQuery) params.set("q", searchQuery);
+    if (selectedVendors.length > 0) params.set("vendor", selectedVendors.join(","));
+    if (selectedTypes.length > 0) params.set("type", selectedTypes.join(","));
+    if (selectedTags.length > 0) params.set("tag", selectedTags.join(","));
+    if (Object.keys(selectedOptions).length > 0) params.set("options", JSON.stringify(selectedOptions));
+    if (!inStockOnly) params.set("inStock", "0");
+    if (saleOnly) params.set("sale", "1");
+    if (priceRange[0] !== filterData.minPrice || priceRange[1] !== filterData.maxPrice) {
+      params.set("minPrice", String(priceRange[0]));
+      params.set("maxPrice", String(priceRange[1]));
+    }
+    if (sortBy !== "title-asc") params.set("sort", sortBy);
+
+    const search = params.toString();
+    const newSearch = search ? `?${search}` : "";
+    if (newSearch !== window.location.search) {
+      window.history.replaceState(null, "", window.location.pathname + newSearch);
+    }
+  }, [
+    currentCollectionUrl,
+    searchQuery,
+    selectedVendors,
+    selectedTypes,
+    selectedTags,
+    selectedOptions,
+    inStockOnly,
+    saleOnly,
+    priceRange,
+    sortBy,
+    filterData,
+  ]);
 
   // Filter products
   const filteredProducts = useMemo(() => {
