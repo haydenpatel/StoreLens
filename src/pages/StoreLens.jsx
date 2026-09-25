@@ -49,6 +49,10 @@ export default function StoreLensApp() {
   // well after isUrlOriginatedRef has been cleared, so its origin has to be
   // captured here instead of re-read at that later point.
   const pendingAutoLoadIsUrlOriginatedRef = useRef(false);
+  // Filter/sort state parsed from the URL's query string (by loadFromLocation),
+  // waiting to be applied once a collection's own data has settled - see the
+  // restore effect below for why it can't just be applied immediately.
+  const pendingFilterParamsRef = useRef(null);
   const historyKey = "shopify-url-history";
   const updateHistoryEntry = (entry) => {
     if (!entry) return;
@@ -85,6 +89,57 @@ export default function StoreLensApp() {
       /* localStorage unavailable or history corrupted — ignore */
     }
   }, []);
+
+  // Parses filter/sort state out of the URL's query string (?q=...&vendor=a,b&...).
+  // Returns null when there's nothing to restore, so callers can tell "no
+  // params" apart from "params that happen to match the defaults".
+  const parseFilterParamsFromSearch = (search) => {
+    const params = new URLSearchParams(search);
+    if ([...params.keys()].length === 0) return null;
+
+    const result = {};
+    if (params.has("q")) result.searchQuery = params.get("q");
+    if (params.has("vendor")) result.selectedVendors = params.getAll("vendor").filter(Boolean);
+    if (params.has("type")) result.selectedTypes = params.getAll("type").filter(Boolean);
+    if (params.has("tag")) result.selectedTags = params.getAll("tag").filter(Boolean);
+    if (params.has("options")) {
+      try {
+        const parsed = JSON.parse(params.get("options"));
+        // JSON.parse accepts plenty of shapes that aren't the {key: [values]}
+        // object selectedOptions requires (null, arrays, primitives, or an
+        // object with non-array values) - Object.keys/entries on those either
+        // throws or silently corrupts filtering, so validate the shape rather
+        // than just checking JSON.parse didn't throw.
+        if (
+          parsed !== null &&
+          typeof parsed === "object" &&
+          !Array.isArray(parsed) &&
+          Object.values(parsed).every((v) => Array.isArray(v))
+        ) {
+          result.selectedOptions = parsed;
+        }
+      } catch {
+        /* malformed options param - ignore rather than crash */
+      }
+    }
+    if (params.has("inStock")) result.inStockOnly = params.get("inStock") !== "0";
+    if (params.has("sale")) result.saleOnly = params.get("sale") === "1";
+    if (params.has("minPrice") && params.has("maxPrice")) {
+      const min = Number(params.get("minPrice"));
+      const max = Number(params.get("maxPrice"));
+      // Number.isFinite (not just !isNaN) rejects Infinity/-Infinity too - a
+      // link like ?minPrice=Infinity&maxPrice=Infinity parses without error
+      // but then fails every product's price check, silently filtering out
+      // the entire collection. Also reject an inverted range (min > max),
+      // which would do the same.
+      if (Number.isFinite(min) && Number.isFinite(max) && min <= max) {
+        result.priceRange = [min, max];
+      }
+    }
+    if (params.has("sort")) result.sortBy = params.get("sort");
+
+    return Object.keys(result).length > 0 ? result : null;
+  };
 
   const getHostname = (url) => {
     try {
@@ -143,6 +198,17 @@ export default function StoreLensApp() {
     const isCurrent = () => !controller.signal.aborted;
     const isAutoDefaultLoad = nextLoadIsAutoDefaultRef.current;
     nextLoadIsAutoDefaultRef.current = false;
+    // Any load that isn't part of a URL-originated chain (isUrlOriginatedRef
+    // covers an explicit handle in the URL; isAutoDefaultLoad covers a bare
+    // domain's auto-resolved default, which resolves asynchronously after
+    // isUrlOriginatedRef has already been cleared) supersedes whatever
+    // pending URL-driven filters might still be waiting for a load that
+    // failed or was itself superseded before it could consume them - a
+    // manually chosen collection should never inherit someone else's
+    // leftover filter state.
+    if (!isUrlOriginatedRef.current && !isAutoDefaultLoad) {
+      pendingFilterParamsRef.current = null;
+    }
 
     setLoading(true);
     setError(null);
@@ -306,6 +372,7 @@ export default function StoreLensApp() {
     isUrlOriginatedRef.current = true;
     try {
       if (path) {
+        pendingFilterParamsRef.current = parseFilterParamsFromSearch(window.location.search);
         applyUserInput(path);
       } else {
         // Cancel whatever collection request might still be in flight -
@@ -313,6 +380,7 @@ export default function StoreLensApp() {
         // products/currentCollectionUrl and pushing a stale URL right back
         // onto history even though the user navigated back to empty.
         fetchCollectionAbortRef.current?.abort();
+        pendingFilterParamsRef.current = null;
         setLoading(false);
         setProducts([]);
         setCurrentCollectionUrl("");
@@ -567,6 +635,84 @@ export default function StoreLensApp() {
       setPriceRange([filterData.minPrice, filterData.maxPrice]);
     }
   }, [filterData]);
+
+  // Restore filter/sort state from the URL once a collection's own data has
+  // settled - both resetFilters() (called on every successful load) and the
+  // price-range effect above would otherwise immediately overwrite it with
+  // defaults. Keyed on currentCollectionUrl (changes exactly once per
+  // successful load) rather than filterData/products directly, since those
+  // also transiently reset to empty at the START of a load, before the real
+  // data arrives - reacting to that would apply these against the wrong
+  // (empty) filterData and consume the pending params before the real
+  // filterData was ever available to restore against.
+  useEffect(() => {
+    const pending = pendingFilterParamsRef.current;
+    if (!pending || !currentCollectionUrl) return;
+    pendingFilterParamsRef.current = null;
+    if (pending.searchQuery !== undefined) setSearchQuery(pending.searchQuery);
+    if (pending.selectedVendors !== undefined) setSelectedVendors(pending.selectedVendors);
+    if (pending.selectedTypes !== undefined) setSelectedTypes(pending.selectedTypes);
+    if (pending.selectedTags !== undefined) setSelectedTags(pending.selectedTags);
+    if (pending.selectedOptions !== undefined) setSelectedOptions(pending.selectedOptions);
+    if (pending.inStockOnly !== undefined) setInStockOnly(pending.inStockOnly);
+    if (pending.saleOnly !== undefined) setSaleOnly(pending.saleOnly);
+    if (pending.priceRange !== undefined) setPriceRange(pending.priceRange);
+    if (pending.sortBy !== undefined) setSortBy(pending.sortBy);
+  }, [currentCollectionUrl]);
+
+  // ...and the write direction: reflect filter/sort state in the URL's query
+  // string as it changes, so a filtered/sorted view is bookmarkable too - not
+  // just the domain/collection. Always replaceState rather than pushState:
+  // unlike switching collections, adjusting a filter isn't a distinct,
+  // deliberate navigation someone would expect Back to step through one
+  // change at a time, and pushing on every keystroke/checkbox would make
+  // Back nearly unusable.
+  //
+  // Debounced: typing in the search box or dragging the price slider fires
+  // this on every keystroke/step, and replaceState doesn't need to keep up
+  // with each one - only the final value once things settle is worth
+  // writing. Each change resets the pending write rather than queuing one.
+  useEffect(() => {
+    if (!currentCollectionUrl) return;
+    const timeoutId = setTimeout(() => {
+      const params = new URLSearchParams();
+      if (searchQuery) params.set("q", searchQuery);
+      // Repeated params rather than a comma-joined string - a vendor/type/tag
+      // value containing a literal comma (e.g. "Acme, Inc.") would otherwise
+      // get split back into multiple values on read, silently changing the
+      // filter.
+      selectedVendors.forEach((v) => params.append("vendor", v));
+      selectedTypes.forEach((t) => params.append("type", t));
+      selectedTags.forEach((t) => params.append("tag", t));
+      if (Object.keys(selectedOptions).length > 0) params.set("options", JSON.stringify(selectedOptions));
+      if (!inStockOnly) params.set("inStock", "0");
+      if (saleOnly) params.set("sale", "1");
+      if (priceRange[0] !== filterData.minPrice || priceRange[1] !== filterData.maxPrice) {
+        params.set("minPrice", String(priceRange[0]));
+        params.set("maxPrice", String(priceRange[1]));
+      }
+      if (sortBy !== "title-asc") params.set("sort", sortBy);
+
+      const search = params.toString();
+      const newSearch = search ? `?${search}` : "";
+      if (newSearch !== window.location.search) {
+        window.history.replaceState(null, "", window.location.pathname + newSearch);
+      }
+    }, 300);
+    return () => clearTimeout(timeoutId);
+  }, [
+    currentCollectionUrl,
+    searchQuery,
+    selectedVendors,
+    selectedTypes,
+    selectedTags,
+    selectedOptions,
+    inStockOnly,
+    saleOnly,
+    priceRange,
+    sortBy,
+    filterData,
+  ]);
 
   // Filter products
   const filteredProducts = useMemo(() => {
