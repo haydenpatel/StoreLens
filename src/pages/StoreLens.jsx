@@ -251,7 +251,17 @@ export default function StoreLensApp() {
   const skipNextUrlSyncRef = useRef(false);
 
   const loadFromLocation = () => {
-    const path = decodeURIComponent(window.location.pathname.slice(1)).replace(/\/$/, "");
+    // A corrupted/mangled link (some chat and email clients do this to URLs)
+    // can carry invalid percent-encoding, which throws rather than just
+    // producing a garbled string - fall back to the raw pathname so a bad
+    // link degrades to "invalid store" instead of crashing the app outright.
+    let rawPath = window.location.pathname.slice(1);
+    try {
+      rawPath = decodeURIComponent(rawPath);
+    } catch {
+      /* malformed percent-encoding - use the raw, undecoded path as-is */
+    }
+    const path = rawPath.replace(/\/$/, "");
     if (path) {
       // Only the path branch leads to a later currentCollectionUrl change
       // for the sync effect to intercept - setting this unconditionally
