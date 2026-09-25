@@ -241,17 +241,57 @@ export default function StoreLensApp() {
   };
 
   // Deep link support: /<domain> or /<domain>/collections/<handle> in the
-  // URL path loads that store (and collection, if given) on first load.
-  // That's the same shape applyUserInput() already accepts from the paste
-  // box, so no separate parsing is needed here - a bare domain still falls
-  // through to its existing "load all products" default.
-  useEffect(() => {
+  // URL path loads that store (and collection, if given) - on first load,
+  // and again on Back/Forward. That's the same shape applyUserInput()
+  // already accepts from the paste box, so no separate parsing is needed -
+  // a bare domain still falls through to its existing "load all products"
+  // default. Set before calling applyUserInput() so the sync effect below
+  // (which fires later, once the load actually resolves) knows this load
+  // came FROM the URL and shouldn't push a redundant new entry for it.
+  const skipNextUrlSyncRef = useRef(false);
+
+  const loadFromLocation = () => {
     const path = decodeURIComponent(window.location.pathname.slice(1)).replace(/\/$/, "");
     if (path) {
+      // Only the path branch leads to a later currentCollectionUrl change
+      // for the sync effect to intercept - setting this unconditionally
+      // left it stale (never consumed) after a root/empty visit, wrongly
+      // suppressing the sync effect's very next, unrelated, genuine update.
+      skipNextUrlSyncRef.current = true;
       applyUserInput(path);
+    } else {
+      setProducts([]);
+      setCurrentCollectionUrl("");
+      setError(null);
+      setLoadNotice(null);
+      applyUserInput("");
     }
+  };
+
+  useEffect(() => {
+    loadFromLocation();
+    window.addEventListener("popstate", loadFromLocation);
+    return () => window.removeEventListener("popstate", loadFromLocation);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // ...and the other direction: once a collection finishes loading, reflect
+  // it in the address bar so any point in a session is bookmarkable/
+  // shareable, not just the page someone landed on. Skipped for a load that
+  // itself came from the URL (mount or Back/Forward) via the ref above, so
+  // that doesn't also push a duplicate history entry right back.
+  useEffect(() => {
+    if (!currentCollectionUrl) return;
+    if (skipNextUrlSyncRef.current) {
+      skipNextUrlSyncRef.current = false;
+      return;
+    }
+    const loaded = new URL(currentCollectionUrl);
+    const path = `/${loaded.host}${loaded.pathname}`;
+    if (path !== window.location.pathname) {
+      window.history.pushState(null, "", path);
+    }
+  }, [currentCollectionUrl]);
 
   // Set default filter values
   const resetFilters = () => {
