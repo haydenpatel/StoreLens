@@ -107,7 +107,19 @@ export default function StoreLensApp() {
   // already fetched instead of discarding it all on one bad request.
   const MAX_PRODUCT_PAGES = 1000;
 
+  // Back/Forward can kick off a new load while a previous one is still
+  // in-flight (rapid navigation) - without tracking which call is current,
+  // an older, slower response could resolve after a newer one and clobber
+  // it, leaving the UI showing one collection while the address bar (and
+  // the rest of the app's state) points at another.
+  const fetchCollectionAbortRef = useRef(null);
+
   const fetchCollection = async (url) => {
+    fetchCollectionAbortRef.current?.abort();
+    const controller = new AbortController();
+    fetchCollectionAbortRef.current = controller;
+    const isCurrent = () => !controller.signal.aborted;
+
     setLoading(true);
     setError(null);
     setLoadNotice(null);
@@ -117,8 +129,10 @@ export default function StoreLensApp() {
     try {
       jsonUrl = getJsonUrl(url);
     } catch (err) {
-      setError(err.message);
-      setLoading(false);
+      if (isCurrent()) {
+        setError(err.message);
+        setLoading(false);
+      }
       return;
     }
 
@@ -129,7 +143,7 @@ export default function StoreLensApp() {
 
     while (hasMore && page <= MAX_PRODUCT_PAGES) {
       try {
-        const response = await fetch(`${jsonUrl}?page=${page}&limit=250`);
+        const response = await fetch(`${jsonUrl}?page=${page}&limit=250`, { signal: controller.signal });
         if (!response.ok) {
           throw new Error(`Failed to fetch page ${page} (status ${response.status})`);
         }
@@ -145,10 +159,13 @@ export default function StoreLensApp() {
           hasMore = false;
         }
       } catch (err) {
+        if (!isCurrent()) return; // superseded - the newer call owns state from here
         pageError = err;
         hasMore = false;
       }
     }
+
+    if (!isCurrent()) return;
 
     if (allProducts.length === 0) {
       setError(pageError?.message || "No products found in this collection");
@@ -182,7 +199,9 @@ export default function StoreLensApp() {
         updateHistoryEntry(new URL(url).origin);
       }
     } finally {
-      setLoading(false);
+      if (isCurrent()) {
+        setLoading(false);
+      }
     }
   };
 
@@ -245,11 +264,7 @@ export default function StoreLensApp() {
   // and again on Back/Forward. That's the same shape applyUserInput()
   // already accepts from the paste box, so no separate parsing is needed -
   // a bare domain still falls through to its existing "load all products"
-  // default. Set before calling applyUserInput() so the sync effect below
-  // (which fires later, once the load actually resolves) knows this load
-  // came FROM the URL and shouldn't push a redundant new entry for it.
-  const skipNextUrlSyncRef = useRef(false);
-
+  // default.
   const loadFromLocation = () => {
     // A corrupted/mangled link (some chat and email clients do this to URLs)
     // can carry invalid percent-encoding, which throws rather than just
@@ -263,11 +278,6 @@ export default function StoreLensApp() {
     }
     const path = rawPath.replace(/\/$/, "");
     if (path) {
-      // Only the path branch leads to a later currentCollectionUrl change
-      // for the sync effect to intercept - setting this unconditionally
-      // left it stale (never consumed) after a root/empty visit, wrongly
-      // suppressing the sync effect's very next, unrelated, genuine update.
-      skipNextUrlSyncRef.current = true;
       applyUserInput(path);
     } else {
       setProducts([]);
@@ -287,15 +297,14 @@ export default function StoreLensApp() {
 
   // ...and the other direction: once a collection finishes loading, reflect
   // it in the address bar so any point in a session is bookmarkable/
-  // shareable, not just the page someone landed on. Skipped for a load that
-  // itself came from the URL (mount or Back/Forward) via the ref above, so
-  // that doesn't also push a duplicate history entry right back.
+  // shareable, not just the page someone landed on. A load that itself came
+  // from the URL (mount or Back/Forward) already leaves the address bar
+  // matching, so the comparison below is naturally a no-op for it - no extra
+  // "did this come from the URL" bookkeeping needed. A failed or invalid
+  // load never reaches here at all, since currentCollectionUrl only changes
+  // on a successful one, so there's nothing that can go stale.
   useEffect(() => {
     if (!currentCollectionUrl) return;
-    if (skipNextUrlSyncRef.current) {
-      skipNextUrlSyncRef.current = false;
-      return;
-    }
     const loaded = new URL(currentCollectionUrl);
     const path = `/${loaded.host}${loaded.pathname}`;
     if (path !== window.location.pathname) {
