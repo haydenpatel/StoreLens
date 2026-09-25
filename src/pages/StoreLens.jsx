@@ -37,6 +37,18 @@ export default function StoreLensApp() {
   const [isFilterDrawerOpen, setIsFilterDrawerOpen] = useState(false);
   const forceRefreshDiscoveryRef = useRef(false);
   const autoLoadPendingRef = useRef(false);
+  // Whether the CURRENTLY EXECUTING applyUserInput() call was triggered by
+  // loadFromLocation (initial mount or Back/Forward) rather than a manual
+  // action (paste, dropdown, history select). Set/cleared synchronously
+  // bracketing that one call site, so it's only ever true during that call's
+  // own synchronous portion - nothing else ever sets it, so there's no
+  // staleness risk from an unrelated later call seeing it left on.
+  const isUrlOriginatedRef = useRef(false);
+  // Snapshot of the above, taken when a bare domain defers to an async
+  // auto-load (autoLoadPendingRef) - the auto-load itself resolves later,
+  // well after isUrlOriginatedRef has been cleared, so its origin has to be
+  // captured here instead of re-read at that later point.
+  const pendingAutoLoadIsUrlOriginatedRef = useRef(false);
   const historyKey = "shopify-url-history";
   const updateHistoryEntry = (entry) => {
     if (!entry) return;
@@ -263,6 +275,7 @@ export default function StoreLensApp() {
       setSelectedHandle("");
       setCurrentCollectionUrl("");
       autoLoadPendingRef.current = true;
+      pendingAutoLoadIsUrlOriginatedRef.current = isUrlOriginatedRef.current;
     }
     setDiscoveryRetryNonce((n) => n + 1);
   };
@@ -290,14 +303,25 @@ export default function StoreLensApp() {
       /* malformed percent-encoding - use the raw, undecoded path as-is */
     }
     const path = rawPath.replace(/\/$/, "");
-    if (path) {
-      applyUserInput(path);
-    } else {
-      setProducts([]);
-      setCurrentCollectionUrl("");
-      setError(null);
-      setLoadNotice(null);
-      applyUserInput("");
+    isUrlOriginatedRef.current = true;
+    try {
+      if (path) {
+        applyUserInput(path);
+      } else {
+        // Cancel whatever collection request might still be in flight -
+        // otherwise a slow one can resolve after landing here, repopulating
+        // products/currentCollectionUrl and pushing a stale URL right back
+        // onto history even though the user navigated back to empty.
+        fetchCollectionAbortRef.current?.abort();
+        setLoading(false);
+        setProducts([]);
+        setCurrentCollectionUrl("");
+        setError(null);
+        setLoadNotice(null);
+        applyUserInput("");
+      }
+    } finally {
+      isUrlOriginatedRef.current = false;
     }
   };
 
@@ -394,7 +418,11 @@ export default function StoreLensApp() {
           if (autoLoadPendingRef.current) {
             autoLoadPendingRef.current = false;
             if (allProductsHandle) {
-              nextLoadIsAutoDefaultRef.current = true;
+              // Only replaceState (below, via lastLoadWasAutoDefaultRef) when
+              // this bare domain itself came from the URL/Back-Forward - a
+              // manually submitted bare domain (paste, history select) should
+              // still push, so Back can return to whatever was loaded before.
+              nextLoadIsAutoDefaultRef.current = pendingAutoLoadIsUrlOriginatedRef.current;
               loadCollectionByHandle(allProductsHandle, storeOrigin);
             } else {
               setError(
