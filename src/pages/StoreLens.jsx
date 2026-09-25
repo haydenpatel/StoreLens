@@ -37,6 +37,18 @@ export default function StoreLensApp() {
   const [isFilterDrawerOpen, setIsFilterDrawerOpen] = useState(false);
   const forceRefreshDiscoveryRef = useRef(false);
   const autoLoadPendingRef = useRef(false);
+  // Whether the CURRENTLY EXECUTING applyUserInput() call was triggered by
+  // loadFromLocation (initial mount or Back/Forward) rather than a manual
+  // action (paste, dropdown, history select). Set/cleared synchronously
+  // bracketing that one call site, so it's only ever true during that call's
+  // own synchronous portion - nothing else ever sets it, so there's no
+  // staleness risk from an unrelated later call seeing it left on.
+  const isUrlOriginatedRef = useRef(false);
+  // Snapshot of the above, taken when a bare domain defers to an async
+  // auto-load (autoLoadPendingRef) - the auto-load itself resolves later,
+  // well after isUrlOriginatedRef has been cleared, so its origin has to be
+  // captured here instead of re-read at that later point.
+  const pendingAutoLoadIsUrlOriginatedRef = useRef(false);
   const historyKey = "shopify-url-history";
   const updateHistoryEntry = (entry) => {
     if (!entry) return;
@@ -107,7 +119,31 @@ export default function StoreLensApp() {
   // already fetched instead of discarding it all on one bad request.
   const MAX_PRODUCT_PAGES = 1000;
 
+  // Back/Forward can kick off a new load while a previous one is still
+  // in-flight (rapid navigation) - without tracking which call is current,
+  // an older, slower response could resolve after a newer one and clobber
+  // it, leaving the UI showing one collection while the address bar (and
+  // the rest of the app's state) points at another.
+  const fetchCollectionAbortRef = useRef(null);
+
+  // Set immediately before the one call site that resolves a bare domain to
+  // its default collection (never for an explicit choice - dropdown, paste,
+  // or a deep link that already names a handle) and consumed synchronously
+  // at the very start of the matching fetchCollection call, so it's tied to
+  // that one attempt and can't be left stale for an unrelated later load to
+  // pick up. Read by the URL-sync effect to replaceState instead of
+  // pushState for that one case - see lastLoadWasAutoDefaultRef below.
+  const nextLoadIsAutoDefaultRef = useRef(false);
+  const lastLoadWasAutoDefaultRef = useRef(false);
+
   const fetchCollection = async (url) => {
+    fetchCollectionAbortRef.current?.abort();
+    const controller = new AbortController();
+    fetchCollectionAbortRef.current = controller;
+    const isCurrent = () => !controller.signal.aborted;
+    const isAutoDefaultLoad = nextLoadIsAutoDefaultRef.current;
+    nextLoadIsAutoDefaultRef.current = false;
+
     setLoading(true);
     setError(null);
     setLoadNotice(null);
@@ -117,8 +153,10 @@ export default function StoreLensApp() {
     try {
       jsonUrl = getJsonUrl(url);
     } catch (err) {
-      setError(err.message);
-      setLoading(false);
+      if (isCurrent()) {
+        setError(err.message);
+        setLoading(false);
+      }
       return;
     }
 
@@ -129,7 +167,7 @@ export default function StoreLensApp() {
 
     while (hasMore && page <= MAX_PRODUCT_PAGES) {
       try {
-        const response = await fetch(`${jsonUrl}?page=${page}&limit=250`);
+        const response = await fetch(`${jsonUrl}?page=${page}&limit=250`, { signal: controller.signal });
         if (!response.ok) {
           throw new Error(`Failed to fetch page ${page} (status ${response.status})`);
         }
@@ -145,10 +183,13 @@ export default function StoreLensApp() {
           hasMore = false;
         }
       } catch (err) {
+        if (!isCurrent()) return; // superseded - the newer call owns state from here
         pageError = err;
         hasMore = false;
       }
     }
+
+    if (!isCurrent()) return;
 
     if (allProducts.length === 0) {
       setError(pageError?.message || "No products found in this collection");
@@ -162,6 +203,7 @@ export default function StoreLensApp() {
     try {
       setProducts(allProducts);
       setCurrentCollectionUrl(url);
+      lastLoadWasAutoDefaultRef.current = isAutoDefaultLoad;
       resetFilters();
 
       if (pageError) {
@@ -175,10 +217,16 @@ export default function StoreLensApp() {
       }
 
       if (collectionsState.status !== "ready") {
-        updateHistoryEntry(url);
+        // Domain only, never the collection path - a collection URL here
+        // (raced ahead of discovery's own history write below) would
+        // otherwise bump other domains out of Recent Stores every time
+        // someone just browses collections within the same store.
+        updateHistoryEntry(new URL(url).origin);
       }
     } finally {
-      setLoading(false);
+      if (isCurrent()) {
+        setLoading(false);
+      }
     }
   };
 
@@ -227,6 +275,7 @@ export default function StoreLensApp() {
       setSelectedHandle("");
       setCurrentCollectionUrl("");
       autoLoadPendingRef.current = true;
+      pendingAutoLoadIsUrlOriginatedRef.current = isUrlOriginatedRef.current;
     }
     setDiscoveryRetryNonce((n) => n + 1);
   };
@@ -235,6 +284,89 @@ export default function StoreLensApp() {
     setError(null);
     applyUserInput(storeInput);
   };
+
+  // Deep link support: /<domain> or /<domain>/collections/<handle> in the
+  // URL path loads that store (and collection, if given) - on first load,
+  // and again on Back/Forward. That's the same shape applyUserInput()
+  // already accepts from the paste box, so no separate parsing is needed -
+  // a bare domain still falls through to its existing "load all products"
+  // default.
+  const loadFromLocation = () => {
+    // A corrupted/mangled link (some chat and email clients do this to URLs)
+    // can carry invalid percent-encoding, which throws rather than just
+    // producing a garbled string - fall back to the raw pathname so a bad
+    // link degrades to "invalid store" instead of crashing the app outright.
+    let rawPath = window.location.pathname.slice(1);
+    try {
+      rawPath = decodeURIComponent(rawPath);
+    } catch {
+      /* malformed percent-encoding - use the raw, undecoded path as-is */
+    }
+    const path = rawPath.replace(/\/$/, "");
+    isUrlOriginatedRef.current = true;
+    try {
+      if (path) {
+        applyUserInput(path);
+      } else {
+        // Cancel whatever collection request might still be in flight -
+        // otherwise a slow one can resolve after landing here, repopulating
+        // products/currentCollectionUrl and pushing a stale URL right back
+        // onto history even though the user navigated back to empty.
+        fetchCollectionAbortRef.current?.abort();
+        setLoading(false);
+        setProducts([]);
+        setCurrentCollectionUrl("");
+        setError(null);
+        setLoadNotice(null);
+        applyUserInput("");
+      }
+    } finally {
+      isUrlOriginatedRef.current = false;
+    }
+  };
+
+  useEffect(() => {
+    loadFromLocation();
+    window.addEventListener("popstate", loadFromLocation);
+    return () => window.removeEventListener("popstate", loadFromLocation);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ...and the other direction: once a collection finishes loading, reflect
+  // it in the address bar so any point in a session is bookmarkable/
+  // shareable, not just the page someone landed on. A load that itself came
+  // from the URL (mount or Back/Forward) already leaves the address bar
+  // matching, so the comparison below is naturally a no-op for it - no extra
+  // "did this come from the URL" bookkeeping needed. A failed or invalid
+  // load never reaches here at all, since currentCollectionUrl only changes
+  // on a successful one, so there's nothing that can go stale.
+  //
+  // The one exception: a bare domain resolving to its store's default
+  // collection is an auto-resolved implicit guess, not a deliberate choice -
+  // pushing it would mean Back from it lands on the bare-domain entry, which
+  // immediately re-resolves and re-pushes the very same URL, truncating the
+  // forward stack and trapping Back/Forward in a loop. replaceState instead
+  // normalizes the bare entry to its explicit URL in place, so it never
+  // exists ambiguously in history to begin with.
+  useEffect(() => {
+    if (!currentCollectionUrl) return;
+    const loaded = new URL(currentCollectionUrl);
+    const path = `/${loaded.host}${loaded.pathname}`;
+    // loaded.host is always lowercased by the URL API, but the domain
+    // segment of window.location.pathname (just a path segment here, not a
+    // real host) keeps whatever case the link used - lowercase only that
+    // first segment before comparing, so a mixed-case deep link doesn't look
+    // like a "change" and push a spurious duplicate entry for what's already
+    // the same page.
+    const normalizedCurrentPath = window.location.pathname.replace(/^\/[^/]+/, (domain) => domain.toLowerCase());
+    if (path !== normalizedCurrentPath) {
+      if (lastLoadWasAutoDefaultRef.current) {
+        window.history.replaceState(null, "", path);
+      } else {
+        window.history.pushState(null, "", path);
+      }
+    }
+  }, [currentCollectionUrl]);
 
   // Set default filter values
   const resetFilters = () => {
@@ -293,6 +425,11 @@ export default function StoreLensApp() {
           if (autoLoadPendingRef.current) {
             autoLoadPendingRef.current = false;
             if (allProductsHandle) {
+              // Only replaceState (below, via lastLoadWasAutoDefaultRef) when
+              // this bare domain itself came from the URL/Back-Forward - a
+              // manually submitted bare domain (paste, history select) should
+              // still push, so Back can return to whatever was loaded before.
+              nextLoadIsAutoDefaultRef.current = pendingAutoLoadIsUrlOriginatedRef.current;
               loadCollectionByHandle(allProductsHandle, storeOrigin);
             } else {
               setError(
