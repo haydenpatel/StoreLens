@@ -127,7 +127,14 @@ export default function StoreLensApp() {
     if (params.has("minPrice") && params.has("maxPrice")) {
       const min = Number(params.get("minPrice"));
       const max = Number(params.get("maxPrice"));
-      if (!Number.isNaN(min) && !Number.isNaN(max)) result.priceRange = [min, max];
+      // Number.isFinite (not just !isNaN) rejects Infinity/-Infinity too - a
+      // link like ?minPrice=Infinity&maxPrice=Infinity parses without error
+      // but then fails every product's price check, silently filtering out
+      // the entire collection. Also reject an inverted range (min > max),
+      // which would do the same.
+      if (Number.isFinite(min) && Number.isFinite(max) && min <= max) {
+        result.priceRange = [min, max];
+      }
     }
     if (params.has("sort")) result.sortBy = params.get("sort");
 
