@@ -114,11 +114,23 @@ export default function StoreLensApp() {
   // the rest of the app's state) points at another.
   const fetchCollectionAbortRef = useRef(null);
 
+  // Set immediately before the one call site that resolves a bare domain to
+  // its default collection (never for an explicit choice - dropdown, paste,
+  // or a deep link that already names a handle) and consumed synchronously
+  // at the very start of the matching fetchCollection call, so it's tied to
+  // that one attempt and can't be left stale for an unrelated later load to
+  // pick up. Read by the URL-sync effect to replaceState instead of
+  // pushState for that one case - see lastLoadWasAutoDefaultRef below.
+  const nextLoadIsAutoDefaultRef = useRef(false);
+  const lastLoadWasAutoDefaultRef = useRef(false);
+
   const fetchCollection = async (url) => {
     fetchCollectionAbortRef.current?.abort();
     const controller = new AbortController();
     fetchCollectionAbortRef.current = controller;
     const isCurrent = () => !controller.signal.aborted;
+    const isAutoDefaultLoad = nextLoadIsAutoDefaultRef.current;
+    nextLoadIsAutoDefaultRef.current = false;
 
     setLoading(true);
     setError(null);
@@ -179,6 +191,7 @@ export default function StoreLensApp() {
     try {
       setProducts(allProducts);
       setCurrentCollectionUrl(url);
+      lastLoadWasAutoDefaultRef.current = isAutoDefaultLoad;
       resetFilters();
 
       if (pageError) {
@@ -303,12 +316,24 @@ export default function StoreLensApp() {
   // "did this come from the URL" bookkeeping needed. A failed or invalid
   // load never reaches here at all, since currentCollectionUrl only changes
   // on a successful one, so there's nothing that can go stale.
+  //
+  // The one exception: a bare domain resolving to its store's default
+  // collection is an auto-resolved implicit guess, not a deliberate choice -
+  // pushing it would mean Back from it lands on the bare-domain entry, which
+  // immediately re-resolves and re-pushes the very same URL, truncating the
+  // forward stack and trapping Back/Forward in a loop. replaceState instead
+  // normalizes the bare entry to its explicit URL in place, so it never
+  // exists ambiguously in history to begin with.
   useEffect(() => {
     if (!currentCollectionUrl) return;
     const loaded = new URL(currentCollectionUrl);
     const path = `/${loaded.host}${loaded.pathname}`;
     if (path !== window.location.pathname) {
-      window.history.pushState(null, "", path);
+      if (lastLoadWasAutoDefaultRef.current) {
+        window.history.replaceState(null, "", path);
+      } else {
+        window.history.pushState(null, "", path);
+      }
     }
   }, [currentCollectionUrl]);
 
@@ -369,6 +394,7 @@ export default function StoreLensApp() {
           if (autoLoadPendingRef.current) {
             autoLoadPendingRef.current = false;
             if (allProductsHandle) {
+              nextLoadIsAutoDefaultRef.current = true;
               loadCollectionByHandle(allProductsHandle, storeOrigin);
             } else {
               setError(
