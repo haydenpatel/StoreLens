@@ -99,12 +99,25 @@ export default function StoreLensApp() {
 
     const result = {};
     if (params.has("q")) result.searchQuery = params.get("q");
-    if (params.has("vendor")) result.selectedVendors = params.get("vendor").split(",").filter(Boolean);
-    if (params.has("type")) result.selectedTypes = params.get("type").split(",").filter(Boolean);
-    if (params.has("tag")) result.selectedTags = params.get("tag").split(",").filter(Boolean);
+    if (params.has("vendor")) result.selectedVendors = params.getAll("vendor").filter(Boolean);
+    if (params.has("type")) result.selectedTypes = params.getAll("type").filter(Boolean);
+    if (params.has("tag")) result.selectedTags = params.getAll("tag").filter(Boolean);
     if (params.has("options")) {
       try {
-        result.selectedOptions = JSON.parse(params.get("options"));
+        const parsed = JSON.parse(params.get("options"));
+        // JSON.parse accepts plenty of shapes that aren't the {key: [values]}
+        // object selectedOptions requires (null, arrays, primitives, or an
+        // object with non-array values) - Object.keys/entries on those either
+        // throws or silently corrupts filtering, so validate the shape rather
+        // than just checking JSON.parse didn't throw.
+        if (
+          parsed !== null &&
+          typeof parsed === "object" &&
+          !Array.isArray(parsed) &&
+          Object.values(parsed).every((v) => Array.isArray(v))
+        ) {
+          result.selectedOptions = parsed;
+        }
       } catch {
         /* malformed options param - ignore rather than crash */
       }
@@ -178,6 +191,17 @@ export default function StoreLensApp() {
     const isCurrent = () => !controller.signal.aborted;
     const isAutoDefaultLoad = nextLoadIsAutoDefaultRef.current;
     nextLoadIsAutoDefaultRef.current = false;
+    // Any load that isn't part of a URL-originated chain (isUrlOriginatedRef
+    // covers an explicit handle in the URL; isAutoDefaultLoad covers a bare
+    // domain's auto-resolved default, which resolves asynchronously after
+    // isUrlOriginatedRef has already been cleared) supersedes whatever
+    // pending URL-driven filters might still be waiting for a load that
+    // failed or was itself superseded before it could consume them - a
+    // manually chosen collection should never inherit someone else's
+    // leftover filter state.
+    if (!isUrlOriginatedRef.current && !isAutoDefaultLoad) {
+      pendingFilterParamsRef.current = null;
+    }
 
     setLoading(true);
     setError(null);
@@ -646,9 +670,13 @@ export default function StoreLensApp() {
     const timeoutId = setTimeout(() => {
       const params = new URLSearchParams();
       if (searchQuery) params.set("q", searchQuery);
-      if (selectedVendors.length > 0) params.set("vendor", selectedVendors.join(","));
-      if (selectedTypes.length > 0) params.set("type", selectedTypes.join(","));
-      if (selectedTags.length > 0) params.set("tag", selectedTags.join(","));
+      // Repeated params rather than a comma-joined string - a vendor/type/tag
+      // value containing a literal comma (e.g. "Acme, Inc.") would otherwise
+      // get split back into multiple values on read, silently changing the
+      // filter.
+      selectedVendors.forEach((v) => params.append("vendor", v));
+      selectedTypes.forEach((t) => params.append("type", t));
+      selectedTags.forEach((t) => params.append("tag", t));
       if (Object.keys(selectedOptions).length > 0) params.set("options", JSON.stringify(selectedOptions));
       if (!inStockOnly) params.set("inStock", "0");
       if (saleOnly) params.set("sale", "1");
