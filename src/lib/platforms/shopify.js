@@ -262,4 +262,5 @@ export const shopifyAdapter = {
   collectionUrl: (origin, collection) => `${origin}/collections/${collection}`,
   listCollections,
   fetchCollection,
+  normalize: normalizeShopifyProduct,
 };

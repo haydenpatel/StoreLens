@@ -15,7 +15,7 @@ import {
   parseFilterParams,
 } from "@/lib/filters";
 import { getDisplayHost, parseUserInputToURL } from "@/lib/store";
-import { detectAdapter, shopifyAdapter, supportedPlatformNames } from "@/lib/platforms";
+import { defaultAdapter, detectAdapter, supportedPlatformNames } from "@/lib/platforms";
 
 export default function StoreLensApp() {
   const [storeInput, setStoreInput] = useState("");
@@ -39,8 +39,8 @@ export default function StoreLensApp() {
   // The platform adapter for the store being browsed. A ref mirrors the state
   // so async loads (which run right after applyUserInput sets it) see the
   // adapter chosen for the current input, not the previous render's.
-  const [adapter, setAdapter] = useState(shopifyAdapter);
-  const adapterRef = useRef(shopifyAdapter);
+  const [adapter, setAdapter] = useState(defaultAdapter);
+  const adapterRef = useRef(defaultAdapter);
   const forceRefreshDiscoveryRef = useRef(false);
   const autoLoadPendingRef = useRef(false);
   // Whether the CURRENTLY EXECUTING applyUserInput() call was triggered by

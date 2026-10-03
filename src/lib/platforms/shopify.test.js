@@ -310,6 +310,11 @@ describe("fetchCollection", () => {
 });
 
 describe("shopifyAdapter metadata", () => {
+  it("exposes normalize, which maps a raw product to the neutral shape", () => {
+    const n = shopifyAdapter.normalize(product({ handle: "tee", vendor: "Acme" }), ORIGIN);
+    expect(n).toMatchObject({ handle: "tee", vendors: ["Acme"] });
+  });
+
   it("identifies itself and supports every capability", () => {
     expect(shopifyAdapter.id).toBe("shopify");
     expect(shopifyAdapter.name).toBe("Shopify");

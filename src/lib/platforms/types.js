@@ -28,6 +28,7 @@
  * @property {string[]} vendors
  * @property {string[]} categories
  * @property {string[]} tags
+ * @property {string} [currency]          ISO 4217 code when the platform provides one.
  * @property {boolean} available
  * @property {string} [createdAt]          ISO 8601.
  * @property {NeutralVariant[]} variants
@@ -63,6 +64,7 @@
  * @property {(origin: string, collection: string) => string} collectionUrl
  * @property {(origin: string, signal?: AbortSignal, opts?: {forceRefresh?: boolean}) =>
  *   Promise<{collections: {handle: string, title: string, products_count: number|null}[], allProductsHandle: string|null}>} listCollections
+ * @property {(raw: any, origin: string) => NeutralProduct} normalize   Maps one raw platform product to the neutral shape.
  * @property {(collectionUrl: string, opts: {signal?: AbortSignal}) => Promise<FetchCollectionResult>} fetchCollection
  *   Throws on an invalid URL, and rethrows an abort. Everything else is reported in the result.
  */
