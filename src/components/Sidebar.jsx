@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 
 export default function Sidebar({
   filterData,
+  capabilities = {},
   searchQuery,
   setSearchQuery,
   selectedVendors,
@@ -199,16 +200,18 @@ export default function Sidebar({
           </div>
 
           {/* In Stock Only */}
-          <div className="flex items-center space-x-2">
-            <Checkbox
-              id="inStock"
-              checked={inStockOnly}
-              onCheckedChange={setInStockOnly}
-            />
-            <Label htmlFor="inStock" className="text-sm cursor-pointer">
-              In stock only
-            </Label>
-          </div>
+          {capabilities.variantStock !== false && (
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="inStock"
+                checked={inStockOnly}
+                onCheckedChange={setInStockOnly}
+              />
+              <Label htmlFor="inStock" className="text-sm cursor-pointer">
+                In stock only
+              </Label>
+            </div>
+          )}
           
           {/* Sale Only */}
           <div className="flex items-center space-x-2">
@@ -238,7 +241,7 @@ export default function Sidebar({
           </div>
 
           {/* Vendors */}
-          {filterData.vendors.length > 0 && (
+          {capabilities.vendors !== false && filterData.vendors.length > 0 && (
             <FilterSection
               title="Vendor"
               items={filterData.vendors}
@@ -248,7 +251,7 @@ export default function Sidebar({
           )}
 
           {/* Product Types */}
-          {filterData.types.length > 0 && (
+          {capabilities.categories !== false && filterData.types.length > 0 && (
             <FilterSection
               title="Product Type"
               items={filterData.types}
@@ -258,7 +261,7 @@ export default function Sidebar({
           )}
 
           {/* Options (Size, Color, etc) */}
-          {filterData.options.map(option => (
+          {capabilities.variantOptions !== false && filterData.options.map(option => (
             <FilterSection
               key={option.key}
               title={option.name}
@@ -269,7 +272,7 @@ export default function Sidebar({
           ))}
 
           {/* Tags */}
-          {filterData.tags.length > 0 && (
+          {capabilities.tags !== false && filterData.tags.length > 0 && (
             <FilterSection
               title="Tags"
               items={filterData.tags.slice(0, 20)}
