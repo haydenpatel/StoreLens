@@ -3,14 +3,22 @@
 
 const FALLBACK_SYMBOL = "$";
 
+// One formatter per use so the symbol in a label ("Discount $") and the symbol
+// in an amount ("$20.00") always agree: both use the narrow symbol, so NZD, AUD
+// and CAD all show "$".
+function currencyFormat(currency, options = {}) {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency,
+    currencyDisplay: "narrowSymbol",
+    ...options,
+  });
+}
+
 export function currencySymbol(currency) {
   if (!currency) return FALLBACK_SYMBOL;
   try {
-    const parts = new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency,
-      currencyDisplay: "narrowSymbol",
-    }).formatToParts(0);
+    const parts = currencyFormat(currency).formatToParts(0);
     return parts.find((part) => part.type === "currency")?.value ?? currency;
   } catch {
     // Not a valid ISO 4217 code.
@@ -21,7 +29,7 @@ export function currencySymbol(currency) {
 export function formatMoney(amount, currency) {
   if (!currency) return `${FALLBACK_SYMBOL}${amount.toFixed(2)}`;
   try {
-    return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(amount);
+    return currencyFormat(currency).format(amount);
   } catch {
     return `${currency} ${amount.toFixed(2)}`;
   }

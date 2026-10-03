@@ -32,6 +32,18 @@ describe("formatMoney", () => {
     expect(formatMoney(20, "JPY")).toBe("\u00a520");
   });
 
+  it("uses the narrow symbol, so dollar currencies read the same as the label", () => {
+    expect(formatMoney(20, "NZD")).toBe("$20.00");
+    expect(formatMoney(20, "AUD")).toBe("$20.00");
+    expect(formatMoney(20, "CAD")).toBe("$20.00");
+  });
+
+  it("agrees with currencySymbol for every currency", () => {
+    for (const code of ["USD", "NZD", "AUD", "CAD", "EUR", "GBP", "JPY", "CHF", "SEK"]) {
+      expect(formatMoney(5, code)).toContain(currencySymbol(code));
+    }
+  });
+
   it("falls back to code and amount for an invalid currency", () => {
     expect(formatMoney(5, "nope!")).toBe("nope! 5.00");
   });

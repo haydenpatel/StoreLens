@@ -642,6 +642,13 @@ describe("restoreOptionSelections", () => {
     });
   });
 
+  it("doesn't report an unknown option that has nothing selected", () => {
+    expect(restore({ Material: [], Size: ["Large"] })).toEqual({
+      options: { Size: ["Large"] },
+      ignored: [],
+    });
+  });
+
   it("no longer understands old positional keys: they are dropped and reported", () => {
     expect(restore({ option1: ["Black"], option2: ["Short"] })).toEqual({
       options: {},

@@ -176,7 +176,8 @@ export function restoreOptionSelections(selectedOptions, filterOptions) {
   Object.entries(selectedOptions).forEach(([name, values]) => {
     const match = byName.get(normalizeOptionName(name));
     if (!match) {
-      ignored.push(name);
+      // A name with nothing selected isn't a filter, so there's nothing to warn about.
+      if (values.length > 0) ignored.push(name);
       return;
     }
     const canonical = values.map(value => match.values.get(normalizeOptionValue(value)) ?? value);

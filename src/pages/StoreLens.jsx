@@ -34,6 +34,9 @@ export default function StoreLensApp() {
   });
   const [selectedHandle, setSelectedHandle] = useState("");
   const [currentCollectionUrl, setCurrentCollectionUrl] = useState("");
+  // Bumped once per successful load, even when it reloads the collection that
+  // is already on screen (so currentCollectionUrl doesn't change).
+  const [loadVersion, setLoadVersion] = useState(0);
   const [inputHandle, setInputHandle] = useState("");
   const [discoveryRetryNonce, setDiscoveryRetryNonce] = useState(0);
   const [isFilterDrawerOpen, setIsFilterDrawerOpen] = useState(false);
@@ -177,6 +180,7 @@ export default function StoreLensApp() {
       setProducts(allProducts);
       setLoadedAdapter(loadAdapter);
       setCurrentCollectionUrl(url);
+      setLoadVersion((version) => version + 1);
       lastLoadWasAutoDefaultRef.current = isAutoDefaultLoad;
       resetFilters();
 
@@ -519,8 +523,9 @@ export default function StoreLensApp() {
   // Restore filter/sort state from the URL once a collection's own data has
   // settled - both resetFilters() (called on every successful load) and the
   // price-range effect above would otherwise immediately overwrite it with
-  // defaults. Keyed on currentCollectionUrl (changes exactly once per
-  // successful load) rather than filterData/products directly, since those
+  // defaults. Keyed on loadVersion (changes exactly once per successful load,
+  // including a reload of the same collection with a different query string,
+  // e.g. via Back/Forward) rather than filterData/products directly, since those
   // also transiently reset to empty at the START of a load, before the real
   // data arrives - reacting to that would apply these against the wrong
   // (empty) filterData and consume the pending params before the real
@@ -548,10 +553,10 @@ export default function StoreLensApp() {
     if (pending.saleOnly !== undefined) setSaleOnly(pending.saleOnly);
     if (pending.priceRange !== undefined) setPriceRange(pending.priceRange);
     if (pending.sortBy !== undefined) setSortBy(pending.sortBy);
-    // Deliberately keyed on currentCollectionUrl alone (see above); products and
+    // Deliberately keyed on loadVersion alone (see above); products and
     // filterData are read from the same render that set it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentCollectionUrl]);
+  }, [loadVersion]);
 
   // ...and the write direction: reflect filter/sort state in the URL's query
   // string as it changes, so a filtered/sorted view is bookmarkable too - not
