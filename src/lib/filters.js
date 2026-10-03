@@ -1,25 +1,8 @@
 import { getDiscountData } from "@/lib/utils";
 
-// Pure filter/sort/URL-param logic, extracted verbatim from StoreLens.jsx
-// (no behaviour change) so it can be unit tested without rendering the page.
-
-export function getCollectionJsonUrl(url) {
-  try {
-    const urlObj = new URL(url);
-    const pathname = urlObj.pathname;
-    
-    if (pathname.includes("/collections/")) {
-      const baseUrl = `${urlObj.protocol}//${urlObj.host}${pathname}`;
-      return baseUrl.endsWith("/") 
-        ? `${baseUrl}products.json` 
-        : `${baseUrl}/products.json`;
-    }
-    
-    throw new Error("Invalid collection URL");
-  } catch {
-    throw new Error("Please enter a valid Shopify collection URL");
-  }
-}
+// Pure filter/sort/URL-param logic over the platform-neutral product shape
+// (see platforms/types.js), kept out of the page component so it can be unit
+// tested without rendering it.
 
 // Parses filter/sort state out of the URL's query string (?q=...&vendor=a,b&...).
 // Returns null when there's nothing to restore, so callers can tell "no
@@ -81,23 +64,20 @@ export function computeFilterData(products) {
   let maxPrice = 0;
 
   products.forEach(product => {
-    if (product.vendor) vendors.add(product.vendor);
-    if (product.product_type) types.add(product.product_type);
-    if (product.tags) {
-      product.tags.forEach(tag => tags.add(tag));
-    }
+    product.vendors?.forEach(vendor => vendors.add(vendor));
+    product.categories?.forEach(category => types.add(category));
+    product.tags?.forEach(tag => tags.add(tag));
 
-    // Extract variant options
+    // Extract variant options. Filters are keyed by position (option1,
+    // option2, ...) for now; name-keyed options are tracked in #27.
     product.variants?.forEach(variant => {
-      variant.option1 && !options["option1"] && (options["option1"] = new Set());
-      variant.option2 && !options["option2"] && (options["option2"] = new Set());
-      variant.option3 && !options["option3"] && (options["option3"] = new Set());
-      
-      variant.option1 && options["option1"].add(variant.option1);
-      variant.option2 && options["option2"].add(variant.option2);
-      variant.option3 && options["option3"].add(variant.option3);
+      variant.options?.forEach((value, index) => {
+        if (!value) return;
+        const key = `option${index + 1}`;
+        (options[key] ||= new Set()).add(value);
+      });
 
-      const price = parseFloat(variant.price);
+      const price = variant.price;
       if (price < minPrice) minPrice = price;
       if (price > maxPrice) maxPrice = price;
     });
@@ -105,7 +85,7 @@ export function computeFilterData(products) {
 
   // Convert Sets to sorted arrays
   const optionsArray = Object.entries(options).map(([key, values]) => ({
-    name: products[0]?.options?.find((_, i) => `option${i + 1}` === key)?.name || key,
+    name: products[0]?.options?.[Number(key.slice("option".length)) - 1]?.name || key,
     key,
     values: Array.from(values).sort()
   }));
@@ -136,6 +116,13 @@ export function countActiveFilters(
   return count;
 }
 
+// Option filters are keyed option1..option3 (position in the variant's
+// options). Any other key matches nothing.
+function variantOptionValue(variant, optionKey) {
+  const match = /^option([1-3])$/.exec(optionKey);
+  return match ? variant.options?.[Number(match[1]) - 1] : undefined;
+}
+
 export function filterAndSortProducts(
   products,
   { searchQuery, selectedVendors, selectedTypes, selectedTags, selectedOptions, priceRange, inStockOnly, saleOnly, sortBy }
@@ -147,18 +134,18 @@ export function filterAndSortProducts(
     const query = searchQuery.toLowerCase();
     filtered = filtered.filter(p => 
       p.title?.toLowerCase().includes(query) ||
-      p.body_html?.toLowerCase().includes(query)
+      p.description?.toLowerCase().includes(query)
     );
   }
 
   // Vendors
   if (selectedVendors.length > 0) {
-    filtered = filtered.filter(p => selectedVendors.includes(p.vendor));
+    filtered = filtered.filter(p => p.vendors?.some(v => selectedVendors.includes(v)));
   }
 
   // Types
   if (selectedTypes.length > 0) {
-    filtered = filtered.filter(p => selectedTypes.includes(p.product_type));
+    filtered = filtered.filter(p => p.categories?.some(c => selectedTypes.includes(c)));
   }
 
   // Tags
@@ -172,14 +159,14 @@ export function filterAndSortProducts(
   Object.entries(selectedOptions).forEach(([optionKey, values]) => {
     if (values.length > 0) {
       filtered = filtered.filter(p =>
-        p.variants?.some(v => values.includes(v[optionKey]))
+        p.variants?.some(v => values.includes(variantOptionValue(v, optionKey)))
       );
     }
   });
 
   // Price range
   filtered = filtered.filter(p => {
-    const prices = p.variants?.map(v => parseFloat(v.price)) || [];
+    const prices = p.variants?.map(v => v.price) || [];
     const minProductPrice = Math.min(...prices);
     const maxProductPrice = Math.max(...prices);
     return maxProductPrice >= priceRange[0] && minProductPrice <= priceRange[1];
@@ -208,17 +195,17 @@ export function filterAndSortProducts(
       case "title-desc":
         return (b.title || "").localeCompare(a.title || "");
       case "price-asc": {
-        const aMin = Math.min(...(a.variants || []).map(v => parseFloat(v.price)), Infinity);
-        const bMin = Math.min(...(b.variants || []).map(v => parseFloat(v.price)), Infinity);
+        const aMin = Math.min(...(a.variants || []).map(v => v.price), Infinity);
+        const bMin = Math.min(...(b.variants || []).map(v => v.price), Infinity);
         return aMin - bMin;
       }
       case "price-desc": {
-        const aMax = Math.max(...(a.variants || []).map(v => parseFloat(v.price)), -Infinity);
-        const bMax = Math.max(...(b.variants || []).map(v => parseFloat(v.price)), -Infinity);
+        const aMax = Math.max(...(a.variants || []).map(v => v.price), -Infinity);
+        const bMax = Math.max(...(b.variants || []).map(v => v.price), -Infinity);
         return bMax - aMax;
       }
       case "newest":
-        return new Date(b.created_at) - new Date(a.created_at);
+        return new Date(b.createdAt) - new Date(a.createdAt);
       case "discount-percent":
         return (
           getDiscountData(b.variants || []).discountPercent -

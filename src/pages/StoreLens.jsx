@@ -12,16 +12,10 @@ import {
   computeFilterData,
   countActiveFilters,
   filterAndSortProducts,
-  getCollectionJsonUrl,
   parseFilterParams,
 } from "@/lib/filters";
-import {
-  discoverCollections,
-  extractCollectionHandle,
-  getDisplayHost,
-  getOrigin,
-  parseUserInputToURL,
-} from "@/lib/store";
+import { getDisplayHost, parseUserInputToURL } from "@/lib/store";
+import { detectAdapter, shopifyAdapter, supportedPlatformNames } from "@/lib/platforms";
 
 export default function StoreLensApp() {
   const [storeInput, setStoreInput] = useState("");
@@ -42,6 +36,11 @@ export default function StoreLensApp() {
   const [inputHandle, setInputHandle] = useState("");
   const [discoveryRetryNonce, setDiscoveryRetryNonce] = useState(0);
   const [isFilterDrawerOpen, setIsFilterDrawerOpen] = useState(false);
+  // The platform adapter for the store being browsed. A ref mirrors the state
+  // so async loads (which run right after applyUserInput sets it) see the
+  // adapter chosen for the current input, not the previous render's.
+  const [adapter, setAdapter] = useState(shopifyAdapter);
+  const adapterRef = useRef(shopifyAdapter);
   const forceRefreshDiscoveryRef = useRef(false);
   const autoLoadPendingRef = useRef(false);
   // Whether the CURRENTLY EXECUTING applyUserInput() call was triggered by
@@ -98,22 +97,6 @@ export default function StoreLensApp() {
   }, []);
 
 
-  const getHostname = (url) => {
-    try {
-      const urlObj = new URL(url.startsWith("http") ? url : `https://${url}`);
-      return urlObj.hostname;
-    } catch {
-      return "";
-    }
-  };
-
-
-  // Shopify's legacy /products.json pagination tops out at 1000 pages of up
-  // to 250 items (250,000 products). Beyond that — or if a page request
-  // fails partway through a very large collection — keep whatever was
-  // already fetched instead of discarding it all on one bad request.
-  const MAX_PRODUCT_PAGES = 1000;
-
   // Back/Forward can kick off a new load while a previous one is still
   // in-flight (rapid navigation) - without tracking which call is current,
   // an older, slower response could resolve after a newer one and clobber
@@ -155,10 +138,12 @@ export default function StoreLensApp() {
     setLoadNotice(null);
     setProducts([]);
 
-    let jsonUrl;
+    let result;
     try {
-      jsonUrl = getCollectionJsonUrl(url);
+      result = await adapterRef.current.fetchCollection(url, { signal: controller.signal });
     } catch (err) {
+      // Superseded (aborted) - the newer call owns state from here. Anything
+      // else, e.g. an invalid collection URL, is reported to the user.
       if (isCurrent()) {
         setError(err.message);
         setLoading(false);
@@ -166,36 +151,9 @@ export default function StoreLensApp() {
       return;
     }
 
-    let allProducts = [];
-    let page = 1;
-    let hasMore = true;
-    let pageError = null;
-
-    while (hasMore && page <= MAX_PRODUCT_PAGES) {
-      try {
-        const response = await fetch(`${jsonUrl}?page=${page}&limit=250`, { signal: controller.signal });
-        if (!response.ok) {
-          throw new Error(`Failed to fetch page ${page} (status ${response.status})`);
-        }
-        const data = await response.json();
-        if (data.products && data.products.length > 0) {
-          // Push in place rather than spreading into a new array each page —
-          // for a collection near the 1000-page cap, re-copying the whole
-          // accumulated array on every iteration is O(n²).
-          allProducts.push(...data.products);
-          page++;
-          hasMore = data.products.length === 250;
-        } else {
-          hasMore = false;
-        }
-      } catch (err) {
-        if (!isCurrent()) return; // superseded - the newer call owns state from here
-        pageError = err;
-        hasMore = false;
-      }
-    }
-
     if (!isCurrent()) return;
+
+    const { products: allProducts, pageError, truncated } = result;
 
     if (allProducts.length === 0) {
       setError(pageError?.message || "No products found in this collection");
@@ -216,9 +174,9 @@ export default function StoreLensApp() {
         setLoadNotice(
           `Loaded ${allProducts.length.toLocaleString()} products, but couldn't fetch the rest (${pageError.message}).`
         );
-      } else if (page > MAX_PRODUCT_PAGES && hasMore) {
+      } else if (truncated) {
         setLoadNotice(
-          `This collection is larger than Shopify's public catalog can page through — showing the first ${allProducts.length.toLocaleString()} products.`
+          `This collection is larger than ${adapterRef.current.name}'s public catalog can page through — showing the first ${allProducts.length.toLocaleString()} products.`
         );
       }
 
@@ -241,7 +199,7 @@ export default function StoreLensApp() {
       setError("Please select a collection to load.");
       return;
     }
-    const url = `${origin}/collections/${handle}`;
+    const url = adapterRef.current.collectionUrl(origin, handle);
     setSelectedHandle(handle);
     setInputHandle(handle);
     await fetchCollection(url);
@@ -261,13 +219,15 @@ export default function StoreLensApp() {
       // Only surface an error for genuinely invalid input — an empty
       // submission (e.g. pressing Enter on an empty box) isn't a mistake.
       if (value?.trim()) {
-        setError("Please enter a valid Shopify store or collection URL");
+        setError(`Please enter a valid ${supportedPlatformNames()} store or collection URL`);
       }
       return;
     }
-    const origin = getOrigin(parsed);
+    const detected = detectAdapter(parsed);
+    adapterRef.current = detected;
+    setAdapter(detected);
     const host = getDisplayHost(parsed);
-    const handle = extractCollectionHandle(parsed);
+    const { origin, collection: handle } = detected.parseUrl(parsed);
     setStoreInput(host);
     setStoreOrigin(origin);
     setInputHandle(handle || "");
@@ -412,7 +372,7 @@ export default function StoreLensApp() {
       const forceRefresh = forceRefreshDiscoveryRef.current;
       forceRefreshDiscoveryRef.current = false;
       try {
-        const { collections, allProductsHandle } = await discoverCollections(
+        const { collections, allProductsHandle } = await adapterRef.current.listCollections(
           storeOrigin,
           controller.signal,
           { forceRefresh }
@@ -635,6 +595,7 @@ export default function StoreLensApp() {
         {products.length > 0 && (
           <Sidebar
             filterData={filterData}
+            capabilities={adapter.capabilities}
             searchQuery={searchQuery}
             setSearchQuery={setSearchQuery}
             selectedVendors={selectedVendors}
@@ -693,7 +654,7 @@ export default function StoreLensApp() {
           {!loading && !error && products.length === 0 && (
             <div className="text-center py-20">
               <p className="text-muted-foreground text-lg">
-                Enter a Shopify store or collection URL above to get started
+                Enter a {supportedPlatformNames()} store or collection URL above to get started
               </p>
             </div>
           )}
@@ -703,7 +664,6 @@ export default function StoreLensApp() {
               totalProducts={products.length}
               sortBy={sortBy}
               setSortBy={setSortBy}
-              collectionUrl={getHostname(currentCollectionUrl)}
             />
           )}
         </main>

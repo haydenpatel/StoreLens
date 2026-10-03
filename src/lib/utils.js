@@ -7,7 +7,7 @@ export function cn(...inputs) {
 
 export function getDiscountData(variants = []) {
   const discountedVariants = variants.filter(v =>
-    v.compare_at_price && parseFloat(v.compare_at_price) > parseFloat(v.price)
+    v.compareAtPrice && v.compareAtPrice > v.price
   );
 
   const hasDiscount = discountedVariants.length > 0;
@@ -16,8 +16,8 @@ export function getDiscountData(variants = []) {
 
   if (hasDiscount) {
     const best = discountedVariants.reduce((best, v) => {
-      const price = parseFloat(v.price);
-      const compare = parseFloat(v.compare_at_price);
+      const price = v.price;
+      const compare = v.compareAtPrice;
       const diff = compare - price;
 
       return diff > best.amount
