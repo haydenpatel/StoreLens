@@ -14,7 +14,7 @@ import ProductCard from "./ProductCard";
 // sentinel below the grid reveals more as the user scrolls near it.
 const CHUNK_SIZE = 60;
 
-function ProductGrid({ products, totalProducts, sortBy, setSortBy, collectionUrl }) {
+function ProductGrid({ products, totalProducts, sortBy, setSortBy }) {
   const [visibleCount, setVisibleCount] = useState(CHUNK_SIZE);
   const [productsForReset, setProductsForReset] = useState(products);
   const sentinelRef = useRef(null);
@@ -91,7 +91,7 @@ function ProductGrid({ products, totalProducts, sortBy, setSortBy, collectionUrl
         <>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4">
             {visibleProducts.map(product => (
-              <ProductCard key={product.id} product={product} collectionUrl={collectionUrl} />
+              <ProductCard key={product.id} product={product} />
             ))}
           </div>
           <div ref={sentinelRef} aria-hidden="true" className="h-px" />

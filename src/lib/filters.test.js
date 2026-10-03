@@ -4,10 +4,23 @@ import {
   computeFilterData,
   countActiveFilters,
   filterAndSortProducts,
-  getCollectionJsonUrl,
   parseFilterParams,
 } from "./filters";
-import { catalog, product, scatteredOptionsCatalog, variant } from "./__fixtures__/shopify";
+import { normalizeShopifyProduct } from "./platforms/shopify";
+import {
+  catalog as rawCatalog,
+  product,
+  scatteredOptionsCatalog as rawScatteredOptionsCatalog,
+  variant,
+} from "./__fixtures__/shopify";
+
+// These tests were written against raw Shopify products before the platform
+// adapter refactor. They now feed the same fixtures through the Shopify
+// normalizer with unchanged expectations, which is what shows the refactor
+// kept behaviour identical.
+const norm = (raws) => raws.map((p) => normalizeShopifyProduct(p, "https://shop.example.com"));
+const catalog = () => norm(rawCatalog());
+const scatteredOptionsCatalog = () => norm(rawScatteredOptionsCatalog());
 
 const defaults = {
   searchQuery: "",
@@ -24,33 +37,6 @@ const defaults = {
 const titles = (products) => products.map((p) => p.title);
 const run = (state = {}, products = catalog()) =>
   titles(filterAndSortProducts(products, { ...defaults, ...state }));
-
-describe("getCollectionJsonUrl", () => {
-  it("appends products.json to a collection URL", () => {
-    expect(getCollectionJsonUrl("https://shop.example.com/collections/tees")).toBe(
-      "https://shop.example.com/collections/tees/products.json"
-    );
-  });
-
-  it("handles a trailing slash and drops the query string", () => {
-    expect(getCollectionJsonUrl("https://shop.example.com/collections/tees/?sort=1")).toBe(
-      "https://shop.example.com/collections/tees/products.json"
-    );
-  });
-
-  it("keeps the host's port", () => {
-    expect(getCollectionJsonUrl("http://localhost:3000/collections/all")).toBe(
-      "http://localhost:3000/collections/all/products.json"
-    );
-  });
-
-  it("throws the Shopify-specific message for non-collection or invalid URLs", () => {
-    const message = "Please enter a valid Shopify collection URL";
-    expect(() => getCollectionJsonUrl("https://shop.example.com/products/tee")).toThrow(message);
-    expect(() => getCollectionJsonUrl("https://shop.example.com")).toThrow(message);
-    expect(() => getCollectionJsonUrl("not a url")).toThrow(message);
-  });
-});
 
 describe("computeFilterData", () => {
   it("collects sorted vendors, types, tags and price bounds", () => {
@@ -71,9 +57,9 @@ describe("computeFilterData", () => {
   });
 
   it("floors the minimum and ceils the maximum price", () => {
-    const data = computeFilterData([
-      product({ variants: [variant({ price: "9.99" }), variant({ price: "20.01" })] }),
-    ]);
+    const data = computeFilterData(
+      norm([product({ variants: [variant({ price: "9.99" }), variant({ price: "20.01" })] })])
+    );
     expect(data.minPrice).toBe(9);
     expect(data.maxPrice).toBe(21);
   });
@@ -177,7 +163,7 @@ describe("filterAndSortProducts", () => {
     });
 
     it("excludes a product with no variants as soon as a price range applies", () => {
-      const products = [product({ title: "No variants", variants: [] })];
+      const products = norm([product({ title: "No variants", variants: [] })]);
       expect(run({}, products)).toEqual([]);
     });
   });
@@ -412,5 +398,70 @@ describe("buildFilterSearch", () => {
       sortBy: "discount-percent",
     };
     expect(parseFilterParams(build(state))).toEqual(state);
+  });
+});
+
+describe("capabilities", () => {
+  const filterData = { minPrice: 5, maxPrice: 50 };
+  const idle = { ...defaults, inStockOnly: true, priceRange: [5, 50] };
+  const runWith = (state, capabilities) =>
+    titles(filterAndSortProducts(catalog(), { ...defaults, ...state }, capabilities));
+
+  describe("filterAndSortProducts", () => {
+    it("ignores selections for filters the platform can't populate", () => {
+      expect(runWith({ selectedVendors: ["Nobody"] }, { vendors: false })).toHaveLength(4);
+      expect(runWith({ selectedTypes: ["Nope"] }, { categories: false })).toHaveLength(4);
+      expect(runWith({ selectedTags: ["nope"] }, { tags: false })).toHaveLength(4);
+      expect(runWith({ selectedOptions: { option1: ["Nope"] } }, { variantOptions: false })).toHaveLength(4);
+    });
+
+    it("still applies a selection when its capability is supported or unspecified", () => {
+      expect(runWith({ selectedVendors: ["Nobody"] }, { vendors: true })).toEqual([]);
+      expect(runWith({ selectedVendors: ["Nobody"] }, {})).toEqual([]);
+    });
+
+    it("applies other filters even when one is unsupported", () => {
+      expect(runWith({ selectedVendors: ["Acme"], saleOnly: true }, { vendors: false })).toEqual([
+        "Beta Red Hoodie",
+        "Cedar Mug",
+      ]);
+    });
+
+    it("doesn't filter by stock when the platform reports none", () => {
+      expect(runWith({ inStockOnly: true }, { variantStock: false })).toHaveLength(4);
+      expect(runWith({ inStockOnly: true }, { variantStock: true })).toHaveLength(2);
+    });
+  });
+
+  describe("countActiveFilters", () => {
+    const count = (state, capabilities) => countActiveFilters({ ...idle, ...state }, filterData, capabilities);
+
+    it("doesn't count selections for unsupported filters", () => {
+      expect(count({ selectedVendors: ["a"] }, { vendors: false })).toBe(0);
+      expect(count({ selectedTypes: ["a"] }, { categories: false })).toBe(0);
+      expect(count({ selectedTags: ["a"] }, { tags: false })).toBe(0);
+      expect(count({ selectedOptions: { option1: ["S"] } }, { variantOptions: false })).toBe(0);
+      expect(count({ selectedVendors: ["a"] }, { vendors: true })).toBe(1);
+    });
+
+    it("reads an unsupported stock filter as the untouched default", () => {
+      expect(count({ inStockOnly: false }, { variantStock: false })).toBe(0);
+      expect(count({ inStockOnly: false }, { variantStock: true })).toBe(1);
+    });
+  });
+
+  describe("buildFilterSearch", () => {
+    const build = (state, capabilities) => buildFilterSearch({ ...idle, ...state }, filterData, capabilities);
+
+    it("drops unsupported selections from the URL", () => {
+      expect(build({ selectedVendors: ["a"], selectedTags: ["t"] }, { vendors: false })).toBe("?tag=t");
+      expect(build({ selectedTypes: ["a"] }, { categories: false })).toBe("");
+      expect(build({ selectedOptions: { option1: ["S"] } }, { variantOptions: false })).toBe("");
+    });
+
+    it("doesn't write inStock=0 for a platform without stock data", () => {
+      expect(build({ inStockOnly: false }, { variantStock: false })).toBe("");
+      expect(build({ inStockOnly: false }, { variantStock: true })).toBe("?inStock=0");
+    });
   });
 });

@@ -5,10 +5,10 @@ import { Button } from "@/components/ui/button";
 import { ExternalLink, Package } from "lucide-react";
 import { getDiscountData } from "@/lib/utils";
 
-function ProductCard({ product, collectionUrl }) {
-  const image = product.images?.[0]?.src || null;
+function ProductCard({ product }) {
+  const image = product.images?.[0]?.url || null;
   const variants = product.variants || [];
-  const prices = variants.map(v => parseFloat(v.price)).filter(p => !Number.isNaN(p));
+  const prices = variants.map(v => v.price).filter(p => !Number.isNaN(p));
   const minPrice = prices.length > 0 ? Math.min(...prices) : null;
   const maxPrice = prices.length > 0 ? Math.max(...prices) : null;
   const inStock = variants.some(v => v.available);
@@ -20,7 +20,7 @@ function ProductCard({ product, collectionUrl }) {
   const { hasDiscount, discountAmount, discountPercent } = getDiscountData(variants);
 
   // Prepare variant titles for display (display up to maxChars and use `+N more`)
-  const variantTitles = (variants || []).map(v => v.title || v.name || '').filter(Boolean);
+  const variantTitles = (variants || []).map(v => v.title || '').filter(Boolean);
   const maxChars = 35; // max characters to show for the combined titles
   let variantsDisplay = '';
   let remaining = 0;
@@ -52,10 +52,8 @@ function ProductCard({ product, collectionUrl }) {
     remaining = variantTitles.length - used;
   }
 
-  // Get product URL from handle
-  const productUrl = product.handle && collectionUrl
-    ? `https://${collectionUrl}/products/${product.handle}`
-    : null;
+  // Absolute product link, built by the platform adapter
+  const productUrl = product.url || null;
 
   const priceDisplay = minPrice === null
     ? "Price unavailable"
@@ -147,9 +145,9 @@ function ProductCard({ product, collectionUrl }) {
           </div>
 
           {/* Vendor */}
-          {product.vendor && (
+          {product.vendors?.length > 0 && (
             <p className="text-xs text-muted-foreground uppercase tracking-wide">
-              {product.vendor}
+              {product.vendors.join(", ")}
             </p>
           )}
 

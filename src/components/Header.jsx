@@ -2,6 +2,7 @@ import React from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Package, Clock, RefreshCw, ArrowRight, Loader2 } from "lucide-react";
+import { supportedPlatformNames } from "@/lib/platforms";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -27,6 +28,7 @@ export default function Header({
   urlHistory,
   onSelectHistory,
   collections,
+  collectionDiscovery = true,
   collectionsStatus,
   collectionsError,
   selectedHandle,
@@ -86,7 +88,7 @@ export default function Header({
           <div className="flex gap-2 xl:order-2 sm:flex-1">
             <Input
               type="text"
-              placeholder="Paste Shopify store or collection URL"
+              placeholder={`Paste ${supportedPlatformNames()} store or collection URL`}
               value={storeInput}
               onChange={(e) => onStoreInputChange(e.target.value)}
               onPaste={(e) => {
@@ -118,46 +120,49 @@ export default function Header({
               mobile's own row, instead of wrapping below it; dissolves at
               sm+ so tablet/desktop keep their independent flex behavior. */}
           <div className="max-sm:flex max-sm:w-full max-sm:gap-2 sm:contents">
-            <Select
-              value={selectedHandle || undefined}
-              onValueChange={onSelectHandle}
-              disabled={loading || !storeInput}
-            >
-              <SelectTrigger className="max-sm:flex-1 sm:w-auto sm:max-xl:min-w-[12rem] xl:min-w-[16rem] xl:order-2" aria-invalid={collectionsStatus === "error"}>
-                <SelectValue
-                  placeholder={
-                    collectionsStatus === "loading"
-                      ? "Discovering collections..."
-                      : collectionsStatus === "error"
-                      ? "Couldn't load collections"
-                      : collections?.length === 0
-                      ? "No collections found"
-                      : "Select a collection"
-                  }
-                />
-              </SelectTrigger>
-              <SelectContent align="start">
-                {collectionsStatus === "loading" && (
-                  <SelectItem value="__loading" disabled>
-                    Discovering collections...
-                  </SelectItem>
-                )}
-                {collectionsStatus === "error" && (
-                  <SelectItem value="__error" disabled>
-                    {collectionsError || "Couldn't load collections for this store"}
-                  </SelectItem>
-                )}
-                {collectionsStatus === "ready" &&
-                  collections.map((collection) => (
-                    <SelectItem key={collection.handle} value={collection.handle}>
-                      {collection.title}
-                      {typeof collection.products_count === "number"
-                        ? ` (${collection.products_count})`
-                        : ""}
+            {/* Platforms without a collection listing have nothing to choose from */}
+            {collectionDiscovery && (
+              <Select
+                value={selectedHandle || undefined}
+                onValueChange={onSelectHandle}
+                disabled={loading || !storeInput}
+              >
+                <SelectTrigger className="max-sm:flex-1 sm:w-auto sm:max-xl:min-w-[12rem] xl:min-w-[16rem] xl:order-2" aria-invalid={collectionsStatus === "error"}>
+                  <SelectValue
+                    placeholder={
+                      collectionsStatus === "loading"
+                        ? "Discovering collections..."
+                        : collectionsStatus === "error"
+                        ? "Couldn't load collections"
+                        : collections?.length === 0
+                        ? "No collections found"
+                        : "Select a collection"
+                    }
+                  />
+                </SelectTrigger>
+                <SelectContent align="start">
+                  {collectionsStatus === "loading" && (
+                    <SelectItem value="__loading" disabled>
+                      Discovering collections...
                     </SelectItem>
-                  ))}
-              </SelectContent>
-            </Select>
+                  )}
+                  {collectionsStatus === "error" && (
+                    <SelectItem value="__error" disabled>
+                      {collectionsError || "Couldn't load collections for this store"}
+                    </SelectItem>
+                  )}
+                  {collectionsStatus === "ready" &&
+                    collections.map((collection) => (
+                      <SelectItem key={collection.handle} value={collection.handle}>
+                        {collection.title}
+                        {typeof collection.products_count === "number"
+                          ? ` (${collection.products_count})`
+                          : ""}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            )}
 
             <div className="flex gap-2 xl:order-2">
               {collectionsStatus === "error" && (
