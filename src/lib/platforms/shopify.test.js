@@ -84,8 +84,16 @@ describe("parseUrl", () => {
       expect(parse("/shop/collections/tees")).toEqual({ origin: ORIGIN, collection: null });
     });
 
-    it("leaves a locale-only path as a bare store", () => {
-      expect(parse("/en-nz")).toEqual({ origin: ORIGIN, collection: null });
+    it("treats a locale-only root as that market's bare store", () => {
+      expect(parse("/en-nz")).toEqual({ origin: `${ORIGIN}/en-nz`, collection: null });
+      expect(parse("/en-nz/")).toEqual({ origin: `${ORIGIN}/en-nz`, collection: null });
+      expect(parse("/fr")).toEqual({ origin: `${ORIGIN}/fr`, collection: null });
+    });
+
+    it("does not treat other short root pages as a locale", () => {
+      for (const path of ["/faq", "/shop", "/about", "/", "/en-nz/pages/about"]) {
+        expect(parse(path).origin).toBe(ORIGIN);
+      }
     });
 
     it("round-trips through collectionUrl so the locale carries into the request", () => {

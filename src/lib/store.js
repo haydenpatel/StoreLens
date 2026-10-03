@@ -9,8 +9,12 @@ export function parseUserInputToURL(input) {
   }
 }
 
-export function getDisplayHost(url) {
-  return url.host;
+// An origin without its scheme, keeping any locale prefix, e.g.
+// "shop.example.com/en-nz". This is what the store box shows, so submitting it
+// again reloads the same market.
+export function getDisplayOrigin(origin) {
+  const url = new URL(origin);
+  return `${url.host}${url.pathname.replace(/\/$/, "")}`;
 }
 
 // Bumping this invalidates every previously cached entry (old ones are just

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
-  getDisplayHost,
+  getDisplayOrigin,
   loadCollectionsCache,
   parseUserInputToURL,
   saveCollectionsCache,
@@ -41,11 +41,14 @@ describe("parseUserInputToURL", () => {
   });
 });
 
-describe("getDisplayHost", () => {
-  const url = new URL("https://Shop.Example.com:8443/collections/tees?x=1");
+describe("getDisplayOrigin", () => {
+  it("drops the scheme, keeps the port and lowercases the host", () => {
+    expect(getDisplayOrigin("https://Shop.Example.com:8443")).toBe("shop.example.com:8443");
+    expect(getDisplayOrigin("https://shop.example.com/")).toBe("shop.example.com");
+  });
 
-  it("returns the host, keeping the port and lowercasing", () => {
-    expect(getDisplayHost(url)).toBe("shop.example.com:8443");
+  it("keeps a locale prefix", () => {
+    expect(getDisplayOrigin("https://shop.example.com/en-nz")).toBe("shop.example.com/en-nz");
   });
 });
 

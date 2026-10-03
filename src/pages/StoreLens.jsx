@@ -14,7 +14,7 @@ import {
   filterAndSortProducts,
   parseFilterParams,
 } from "@/lib/filters";
-import { getDisplayHost, parseUserInputToURL } from "@/lib/store";
+import { getDisplayOrigin, parseUserInputToURL } from "@/lib/store";
 import { defaultAdapter, detectAdapter, supportedPlatformNames } from "@/lib/platforms";
 
 export default function StoreLensApp() {
@@ -235,9 +235,8 @@ export default function StoreLensApp() {
     const detected = detectAdapter(parsed);
     adapterRef.current = detected;
     setAdapter(detected);
-    const host = getDisplayHost(parsed);
     const { origin, collection: handle } = detected.parseUrl(parsed);
-    setStoreInput(host);
+    setStoreInput(getDisplayOrigin(origin));
     setStoreOrigin(origin);
     setInputHandle(handle || "");
     if (handle) {

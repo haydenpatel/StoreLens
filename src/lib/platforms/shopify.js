@@ -275,10 +275,17 @@ export const shopifyAdapter = {
   // Shopify Markets puts an optional locale in front of the collection path
   // (/en-nz/collections/all). It is kept as part of the returned origin, so
   // the market's pricing and listings carry through discovery, loading and
-  // the app route.
+  // the app route. A locale-only root (/en-nz) is also a market, so a store
+  // box showing "shop.com/en-nz" reloads the same market; it is limited to a
+  // two-letter language so ordinary short pages such as /faq are not mistaken
+  // for one.
   parseUrl(url) {
     const match = url.pathname.match(/^(\/[a-z]{2,3}(?:-[a-z0-9]{2,8})?)?\/collections\/([^/]+)/i);
-    return { origin: `${url.origin}${match?.[1] ?? ""}`, collection: match ? match[2] : null };
+    if (match) {
+      return { origin: `${url.origin}${match[1] ?? ""}`, collection: match[2] };
+    }
+    const root = url.pathname.match(/^(\/[a-z]{2}(?:-[a-z0-9]{2,8})?)\/?$/i);
+    return { origin: `${url.origin}${root?.[1] ?? ""}`, collection: null };
   },
   collectionUrl: (origin, collection) => `${origin}/collections/${collection}`,
   listCollections,
