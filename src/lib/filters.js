@@ -80,8 +80,6 @@ function pickCasing(counts) {
   return pool.reduce((best, entry) => (entry[1] > best[1] ? entry : best))[0];
 }
 
-const capitalizeFirst = (text) => text.charAt(0).toUpperCase() + text.slice(1);
-
 function countCasing(counts, casing) {
   counts.set(casing, (counts.get(casing) ?? 0) + 1);
 }
@@ -135,12 +133,13 @@ export function computeFilterData(products) {
   // Options that more products have come first (so Size and Color lead);
   // ties keep first-seen order. Stores spell the same name and value several
   // ways ("Color"/"color", "Tall"/"tall"), so each is shown once, in its
-  // preferred casing; a label always starts with a capital. The label doubles
+  // preferred casing (a capitalised spelling wins, but nothing is re-cased, so
+  // "iPhone" stays "iPhone"). The label doubles
   // as the key used in state and in the URL (?options={"Size":["S"]}).
   const optionsArray = [...optionGroups.values()]
     .sort((a, b) => b.productCount - a.productCount)
     .map(({ casings, values }) => {
-      const name = capitalizeFirst(pickCasing(casings));
+      const name = pickCasing(casings);
       const displayValues = [...values.values()].map(pickCasing).sort();
       return { name, key: name, values: displayValues };
     });

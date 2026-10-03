@@ -105,14 +105,9 @@ describe("computeFilterData", () => {
     const named = (name) => product({ options: [{ name }], variants: [variant({ option1: "x" })] });
     const label = (...names) => computeFilterData(norm(names.map(named))).options[0].name;
 
-    it("always starts with a capital letter", () => {
-      expect(label("color")).toBe("Color");
-      expect(label("waist size")).toBe("Waist size");
-      expect(label(" color ")).toBe("Color");
-    });
-
-    it("capitalises the label even when the lowercase spelling is the common one", () => {
+    it("prefers a capitalised spelling over a lowercase one, however common", () => {
       expect(label("color", "color", "Color")).toBe("Color");
+      expect(label("Color", "color")).toBe("Color");
     });
 
     it("prefers the most common capitalised spelling, first-seen on a tie", () => {
@@ -120,13 +115,23 @@ describe("computeFilterData", () => {
       expect(label("Colour", "COLOUR")).toBe("Colour");
     });
 
-    it("leaves the rest of the casing alone", () => {
+    it("never re-cases a label: a name that only exists lowercase stays that way", () => {
+      expect(label("color")).toBe("color");
+      expect(label("waist size")).toBe("waist size");
+    });
+
+    it("keeps brand-style casing accurate", () => {
+      expect(label("iPhone model")).toBe("iPhone model");
+      expect(label("eBook format", "eBook format")).toBe("eBook format");
       expect(label("SIZE")).toBe("SIZE");
-      expect(label("iPhone model")).toBe("IPhone model");
+    });
+
+    it("trims whitespace", () => {
+      expect(label(" Color ")).toBe("Color");
     });
 
     it("keeps the label usable as the filter key", () => {
-      const [option] = computeFilterData(norm([named("color")])).options;
+      const [option] = computeFilterData(norm([named("Color")])).options;
       expect(option.key).toBe("Color");
     });
   });
