@@ -41,6 +41,11 @@ export default function StoreLensApp() {
   // adapter chosen for the current input, not the previous render's.
   const [adapter, setAdapter] = useState(defaultAdapter);
   const adapterRef = useRef(defaultAdapter);
+  // The adapter that loaded the products on screen. Filters, counts and the
+  // sidebar follow this, not `adapter`: pasting another store changes
+  // `adapter` immediately, while the previous store's products stay displayed
+  // until the new load completes.
+  const [loadedAdapter, setLoadedAdapter] = useState(defaultAdapter);
   const forceRefreshDiscoveryRef = useRef(false);
   const autoLoadPendingRef = useRef(false);
   // Whether the CURRENTLY EXECUTING applyUserInput() call was triggered by
@@ -169,6 +174,7 @@ export default function StoreLensApp() {
     // shouldn't leave the loading spinner stuck when products already loaded.
     try {
       setProducts(allProducts);
+      setLoadedAdapter(loadAdapter);
       setCurrentCollectionUrl(url);
       lastLoadWasAutoDefaultRef.current = isAutoDefaultLoad;
       resetFilters();
@@ -498,9 +504,9 @@ export default function StoreLensApp() {
     () => countActiveFilters(
       { searchQuery, selectedVendors, selectedTypes, selectedTags, selectedOptions, inStockOnly, saleOnly, priceRange },
       filterData,
-      adapter.capabilities
+      loadedAdapter.capabilities
     ),
-    [searchQuery, selectedVendors, selectedTypes, selectedTags, selectedOptions, inStockOnly, saleOnly, priceRange, filterData, adapter]
+    [searchQuery, selectedVendors, selectedTypes, selectedTags, selectedOptions, inStockOnly, saleOnly, priceRange, filterData, loadedAdapter]
   );
 
   // Update price range when products change
@@ -552,7 +558,7 @@ export default function StoreLensApp() {
       const newSearch = buildFilterSearch(
         { searchQuery, selectedVendors, selectedTypes, selectedTags, selectedOptions, inStockOnly, saleOnly, priceRange, sortBy },
         filterData,
-        adapter.capabilities
+        loadedAdapter.capabilities
       );
       if (newSearch !== window.location.search) {
         window.history.replaceState(null, "", window.location.pathname + newSearch);
@@ -571,7 +577,7 @@ export default function StoreLensApp() {
     priceRange,
     sortBy,
     filterData,
-    adapter,
+    loadedAdapter,
   ]);
 
   // Filter products
@@ -579,9 +585,9 @@ export default function StoreLensApp() {
     () => filterAndSortProducts(
       products,
       { searchQuery, selectedVendors, selectedTypes, selectedTags, selectedOptions, priceRange, inStockOnly, saleOnly, sortBy },
-      adapter.capabilities
+      loadedAdapter.capabilities
     ),
-    [products, searchQuery, selectedVendors, selectedTypes, selectedTags, selectedOptions, priceRange, inStockOnly, saleOnly, sortBy, adapter]
+    [products, searchQuery, selectedVendors, selectedTypes, selectedTags, selectedOptions, priceRange, inStockOnly, saleOnly, sortBy, loadedAdapter]
   );
 
   return (
@@ -607,7 +613,7 @@ export default function StoreLensApp() {
         {products.length > 0 && (
           <Sidebar
             filterData={filterData}
-            capabilities={adapter.capabilities}
+            capabilities={loadedAdapter.capabilities}
             searchQuery={searchQuery}
             setSearchQuery={setSearchQuery}
             selectedVendors={selectedVendors}

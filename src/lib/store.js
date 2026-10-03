@@ -9,10 +9,6 @@ export function parseUserInputToURL(input) {
   }
 }
 
-export function getOrigin(url) {
-  return url.origin;
-}
-
 export function getDisplayHost(url) {
   return url.host;
 }
