@@ -378,9 +378,10 @@ export default function StoreLensApp() {
         const discoveryAdapter = adapterRef.current;
         // Platforms without a collection listing skip discovery and open
         // their default collection instead.
-        const { collections, allProductsHandle } = discoveryAdapter.listCollections
-          ? await discoveryAdapter.listCollections(storeOrigin, controller.signal, { forceRefresh })
-          : { collections: [], allProductsHandle: discoveryAdapter.defaultCollection ?? null };
+        const { collections, allProductsHandle } =
+          discoveryAdapter.capabilities.collectionDiscovery !== false && discoveryAdapter.listCollections
+            ? await discoveryAdapter.listCollections(storeOrigin, controller.signal, { forceRefresh })
+            : { collections: [], allProductsHandle: discoveryAdapter.defaultCollection ?? null };
         if (!controller.signal.aborted) {
           setCollectionsState({
             status: "ready",
@@ -493,20 +494,13 @@ export default function StoreLensApp() {
   // shared between the mobile "Filters" toggle button's badge and Sidebar's
   // own Reset button, so the two stay in sync rather than each computing
   // "active" from a possibly-diverging copy of the same conditions.
-  // Platforms that don't report stock hide the in-stock checkbox, so the
-  // filter must neither apply nor count as active for them.
-  const stockFilterSupported = adapter.capabilities.variantStock !== false;
-
   const activeFilterCount = useMemo(
     () => countActiveFilters(
-      {
-        searchQuery, selectedVendors, selectedTypes, selectedTags, selectedOptions,
-        inStockOnly: stockFilterSupported ? inStockOnly : true,
-        saleOnly, priceRange,
-      },
-      filterData
+      { searchQuery, selectedVendors, selectedTypes, selectedTags, selectedOptions, inStockOnly, saleOnly, priceRange },
+      filterData,
+      adapter.capabilities
     ),
-    [searchQuery, selectedVendors, selectedTypes, selectedTags, selectedOptions, inStockOnly, stockFilterSupported, saleOnly, priceRange, filterData]
+    [searchQuery, selectedVendors, selectedTypes, selectedTags, selectedOptions, inStockOnly, saleOnly, priceRange, filterData, adapter]
   );
 
   // Update price range when products change
@@ -557,7 +551,8 @@ export default function StoreLensApp() {
     const timeoutId = setTimeout(() => {
       const newSearch = buildFilterSearch(
         { searchQuery, selectedVendors, selectedTypes, selectedTags, selectedOptions, inStockOnly, saleOnly, priceRange, sortBy },
-        filterData
+        filterData,
+        adapter.capabilities
       );
       if (newSearch !== window.location.search) {
         window.history.replaceState(null, "", window.location.pathname + newSearch);
@@ -576,15 +571,17 @@ export default function StoreLensApp() {
     priceRange,
     sortBy,
     filterData,
+    adapter,
   ]);
 
   // Filter products
   const filteredProducts = useMemo(
-    () => filterAndSortProducts(products, {
-      searchQuery, selectedVendors, selectedTypes, selectedTags, selectedOptions,
-      priceRange, inStockOnly: stockFilterSupported && inStockOnly, saleOnly, sortBy,
-    }),
-    [products, searchQuery, selectedVendors, selectedTypes, selectedTags, selectedOptions, priceRange, inStockOnly, stockFilterSupported, saleOnly, sortBy]
+    () => filterAndSortProducts(
+      products,
+      { searchQuery, selectedVendors, selectedTypes, selectedTags, selectedOptions, priceRange, inStockOnly, saleOnly, sortBy },
+      adapter.capabilities
+    ),
+    [products, searchQuery, selectedVendors, selectedTypes, selectedTags, selectedOptions, priceRange, inStockOnly, saleOnly, sortBy, adapter]
   );
 
   return (
@@ -598,6 +595,7 @@ export default function StoreLensApp() {
         urlHistory={urlHistory}
         onSelectHistory={handleSelectHistory}
         collections={collectionsState.collections}
+        collectionDiscovery={adapter.capabilities.collectionDiscovery !== false}
         collectionsStatus={collectionsState.status}
         collectionsError={collectionsState.error}
         selectedHandle={selectedHandle}

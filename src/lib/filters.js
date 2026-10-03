@@ -100,10 +100,26 @@ export function computeFilterData(products) {
   };
 }
 
-export function countActiveFilters(
-  { searchQuery, selectedVendors, selectedTypes, selectedTags, selectedOptions, inStockOnly, saleOnly, priceRange },
-  filterData
-) {
+// Selections for filters a platform can't populate (capabilities.* === false)
+// are ignored everywhere: a deep link carrying ?vendor=... must not filter a
+// catalog whose vendor control is hidden. Capabilities default to supported.
+function withoutUnsupportedSelections(state, capabilities = {}) {
+  return {
+    ...state,
+    selectedVendors: capabilities.vendors === false ? [] : state.selectedVendors,
+    selectedTypes: capabilities.categories === false ? [] : state.selectedTypes,
+    selectedTags: capabilities.tags === false ? [] : state.selectedTags,
+    selectedOptions: capabilities.variantOptions === false ? {} : state.selectedOptions,
+  };
+}
+
+export function countActiveFilters(state, filterData, capabilities = {}) {
+  const {
+    searchQuery, selectedVendors, selectedTypes, selectedTags, selectedOptions, saleOnly, priceRange,
+  } = withoutUnsupportedSelections(state, capabilities);
+  // A platform without stock data hides the checkbox, so it reads as the
+  // default (on) rather than as an active filter.
+  const inStockOnly = capabilities.variantStock === false ? true : state.inStockOnly;
   let count = 0;
   if (searchQuery) count++;
   if (selectedVendors.length > 0) count++;
@@ -123,10 +139,12 @@ function variantOptionValue(variant, optionKey) {
   return match ? variant.options?.[Number(match[1]) - 1] : undefined;
 }
 
-export function filterAndSortProducts(
-  products,
-  { searchQuery, selectedVendors, selectedTypes, selectedTags, selectedOptions, priceRange, inStockOnly, saleOnly, sortBy }
-) {
+export function filterAndSortProducts(products, state, capabilities = {}) {
+  const {
+    searchQuery, selectedVendors, selectedTypes, selectedTags, selectedOptions, priceRange, saleOnly, sortBy,
+  } = withoutUnsupportedSelections(state, capabilities);
+  // Without stock data nothing can be filtered by it.
+  const inStockOnly = capabilities.variantStock === false ? false : state.inStockOnly;
   let filtered = [...products];
 
   // Search
@@ -224,10 +242,11 @@ export function filterAndSortProducts(
   return filtered;
 }
 
-export function buildFilterSearch(
-  { searchQuery, selectedVendors, selectedTypes, selectedTags, selectedOptions, inStockOnly, saleOnly, priceRange, sortBy },
-  filterData
-) {
+export function buildFilterSearch(state, filterData, capabilities = {}) {
+  const {
+    searchQuery, selectedVendors, selectedTypes, selectedTags, selectedOptions, saleOnly, priceRange, sortBy,
+  } = withoutUnsupportedSelections(state, capabilities);
+  const inStockOnly = capabilities.variantStock === false ? true : state.inStockOnly;
   const params = new URLSearchParams();
   if (searchQuery) params.set("q", searchQuery);
   // Repeated params rather than a comma-joined string - a vendor/type/tag

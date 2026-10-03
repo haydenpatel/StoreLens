@@ -400,3 +400,68 @@ describe("buildFilterSearch", () => {
     expect(parseFilterParams(build(state))).toEqual(state);
   });
 });
+
+describe("capabilities", () => {
+  const filterData = { minPrice: 5, maxPrice: 50 };
+  const idle = { ...defaults, inStockOnly: true, priceRange: [5, 50] };
+  const runWith = (state, capabilities) =>
+    titles(filterAndSortProducts(catalog(), { ...defaults, ...state }, capabilities));
+
+  describe("filterAndSortProducts", () => {
+    it("ignores selections for filters the platform can't populate", () => {
+      expect(runWith({ selectedVendors: ["Nobody"] }, { vendors: false })).toHaveLength(4);
+      expect(runWith({ selectedTypes: ["Nope"] }, { categories: false })).toHaveLength(4);
+      expect(runWith({ selectedTags: ["nope"] }, { tags: false })).toHaveLength(4);
+      expect(runWith({ selectedOptions: { option1: ["Nope"] } }, { variantOptions: false })).toHaveLength(4);
+    });
+
+    it("still applies a selection when its capability is supported or unspecified", () => {
+      expect(runWith({ selectedVendors: ["Nobody"] }, { vendors: true })).toEqual([]);
+      expect(runWith({ selectedVendors: ["Nobody"] }, {})).toEqual([]);
+    });
+
+    it("applies other filters even when one is unsupported", () => {
+      expect(runWith({ selectedVendors: ["Acme"], saleOnly: true }, { vendors: false })).toEqual([
+        "Beta Red Hoodie",
+        "Cedar Mug",
+      ]);
+    });
+
+    it("doesn't filter by stock when the platform reports none", () => {
+      expect(runWith({ inStockOnly: true }, { variantStock: false })).toHaveLength(4);
+      expect(runWith({ inStockOnly: true }, { variantStock: true })).toHaveLength(2);
+    });
+  });
+
+  describe("countActiveFilters", () => {
+    const count = (state, capabilities) => countActiveFilters({ ...idle, ...state }, filterData, capabilities);
+
+    it("doesn't count selections for unsupported filters", () => {
+      expect(count({ selectedVendors: ["a"] }, { vendors: false })).toBe(0);
+      expect(count({ selectedTypes: ["a"] }, { categories: false })).toBe(0);
+      expect(count({ selectedTags: ["a"] }, { tags: false })).toBe(0);
+      expect(count({ selectedOptions: { option1: ["S"] } }, { variantOptions: false })).toBe(0);
+      expect(count({ selectedVendors: ["a"] }, { vendors: true })).toBe(1);
+    });
+
+    it("reads an unsupported stock filter as the untouched default", () => {
+      expect(count({ inStockOnly: false }, { variantStock: false })).toBe(0);
+      expect(count({ inStockOnly: false }, { variantStock: true })).toBe(1);
+    });
+  });
+
+  describe("buildFilterSearch", () => {
+    const build = (state, capabilities) => buildFilterSearch({ ...idle, ...state }, filterData, capabilities);
+
+    it("drops unsupported selections from the URL", () => {
+      expect(build({ selectedVendors: ["a"], selectedTags: ["t"] }, { vendors: false })).toBe("?tag=t");
+      expect(build({ selectedTypes: ["a"] }, { categories: false })).toBe("");
+      expect(build({ selectedOptions: { option1: ["S"] } }, { variantOptions: false })).toBe("");
+    });
+
+    it("doesn't write inStock=0 for a platform without stock data", () => {
+      expect(build({ inStockOnly: false }, { variantStock: false })).toBe("");
+      expect(build({ inStockOnly: false }, { variantStock: true })).toBe("?inStock=0");
+    });
+  });
+});
