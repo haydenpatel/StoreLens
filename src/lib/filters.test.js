@@ -1,11 +1,11 @@
 import { describe, it, expect } from "vitest";
 import {
   buildFilterSearch,
-  canonicalizeOptionKeys,
   computeFilterData,
   countActiveFilters,
   filterAndSortProducts,
   parseFilterParams,
+  restoreOptionSelections,
 } from "./filters";
 import { normalizeShopifyProduct } from "./platforms/shopify";
 import {
@@ -598,118 +598,67 @@ describe("capabilities", () => {
   });
 });
 
-describe("canonicalizeOptionKeys", () => {
+describe("restoreOptionSelections", () => {
   const products = scatteredOptionsCatalog();
   const filterOptions = computeFilterData(products).options;
-  const canon = (selected) => canonicalizeOptionKeys(selected, products, filterOptions);
+  const restore = (selected) => restoreOptionSelections(selected, filterOptions);
 
-  it("maps old positional keys to the name the old UI showed for them", () => {
-    // The first product (Cap) is Color, Length: option1 was labelled "Color".
-    expect(canon({ option1: ["Black"], option2: ["Short"] })).toEqual({
-      Color: ["Black"],
-      Length: ["Short"],
+  it("keeps selections for options the collection has", () => {
+    expect(restore({ Color: ["Black"], Length: ["Short"] })).toEqual({
+      options: { Color: ["Black"], Length: ["Short"] },
+      ignored: [],
     });
   });
 
-  it("matches saved names to the filter's own label, ignoring case", () => {
-    expect(canon({ size: ["Large"], " WAIST SIZE ": ["32"] })).toEqual({
-      Size: ["Large"],
-      "Waist size": ["32"],
+  it("matches names ignoring case and whitespace, returning the filter's spelling", () => {
+    expect(restore({ size: ["Large"], " WAIST SIZE ": ["32"] })).toEqual({
+      options: { Size: ["Large"], "Waist size": ["32"] },
+      ignored: [],
     });
   });
 
-  it("merges values when several keys land on one option", () => {
-    expect(canon({ option1: ["Black"], color: ["Navy", "Black"] })).toEqual({
-      Color: ["Black", "Navy"],
-    });
-  });
-
-  it("matches saved values to the filter's own casing", () => {
-    const labels = computeFilterData(products).options;
-    expect(canonicalizeOptionKeys({ size: ["large", " X-SMALL "] }, products, labels)).toEqual({
-      Size: ["Large", "X-Small"],
-    });
+  it("matches values ignoring case and whitespace, returning the filter's spelling", () => {
+    expect(restore({ size: ["large", " X-SMALL "] }).options).toEqual({ Size: ["Large", "X-Small"] });
   });
 
   it("de-duplicates values that match once their case is aligned", () => {
-    const labels = computeFilterData(products).options;
-    expect(canonicalizeOptionKeys({ Size: ["Large", "large"] }, products, labels)).toEqual({ Size: ["Large"] });
+    expect(restore({ Size: ["Large", "large"] }).options).toEqual({ Size: ["Large"] });
   });
 
-  it("keeps a saved value that the filter doesn't have", () => {
-    const labels = computeFilterData(products).options;
-    expect(canonicalizeOptionKeys({ Size: ["Gigantic"] }, products, labels)).toEqual({ Size: ["Gigantic"] });
-  });
-
-  it("keeps a name that no filter has", () => {
-    expect(canon({ Material: ["Cotton"] })).toEqual({ Material: ["Cotton"] });
-  });
-
-  it("keeps a positional key as is when no product has an option there", () => {
-    expect(canon({ option4: ["x"] })).toEqual({ option4: ["x"] });
-  });
-
-  describe("when the first product has no option at the old position", () => {
-    // The first product only has the dropped Title placeholder, as on stores
-    // where most products have no real options.
-    const placeholder = () =>
-      product({ options: [{ name: "Title", values: ["Default Title"] }], variants: [variant({ option1: "Default Title" })] });
-    const withOption = (name, ...values) =>
-      product({ options: [{ name }], variants: values.map((value) => variant({ option1: value })) });
-    const migrate = (selected, ...rest) => {
-      const products = norm([placeholder(), ...rest]);
-      return canonicalizeOptionKeys(selected, products, computeFilterData(products).options);
-    };
-
-    it("uses the option the saved values belong to", () => {
-      expect(migrate({ option1: ["Auburn"] }, withOption("Shade", "Auburn"), withOption("Size", "S"))).toEqual({
-        Shade: ["Auburn"],
-      });
-    });
-
-    it("matches the saved values ignoring case", () => {
-      expect(migrate({ option1: ["auburn"] }, withOption("Shade", "Auburn"))).toEqual({ Shade: ["Auburn"] });
-    });
-
-    it("prefers the option holding more of the saved values", () => {
-      const result = migrate(
-        { option1: ["Black", "Navy"] },
-        withOption("Base color", "Black"),
-        withOption("Color", "Black", "Navy")
-      );
-      expect(result).toEqual({ Color: ["Black", "Navy"] });
-    });
-
-    it("then prefers the option on more products, first-seen after that", () => {
-      expect(
-        migrate({ option1: ["Black"] }, withOption("Base color", "Black"), withOption("Color", "Black"), withOption("Color", "Black"))
-      ).toEqual({ Color: ["Black"] });
-      expect(
-        migrate({ option1: ["Black"] }, withOption("Base color", "Black"), withOption("Color", "Black"))
-      ).toEqual({ "Base color": ["Black"] });
-    });
-
-    it("keeps the key as is when the saved values match nothing", () => {
-      expect(migrate({ option1: ["Nonexistent"] }, withOption("Shade", "Auburn"))).toEqual({
-        option1: ["Nonexistent"],
-      });
+  it("merges keys that name the same option", () => {
+    expect(restore({ color: ["Navy"], Color: ["Black", "navy"] }).options).toEqual({
+      Color: ["Navy", "Black"],
     });
   });
 
-  it("uses the first product's option name even when the saved values live in another option", () => {
-    // The old UI labelled option1 with the first product's option1 name.
-    const result = canon({ option1: ["Large"] });
-    expect(result).toEqual({ Color: ["Large"] });
+  it("keeps a saved value that the option doesn't have", () => {
+    expect(restore({ Size: ["Gigantic"] }).options).toEqual({ Size: ["Gigantic"] });
   });
 
-  it("returns an empty object for no selections", () => {
-    expect(canon({})).toEqual({});
+  it("drops and reports an option the collection doesn't have", () => {
+    expect(restore({ Material: ["Cotton"], Size: ["Large"] })).toEqual({
+      options: { Size: ["Large"] },
+      ignored: ["Material"],
+    });
   });
 
-  it("produces keys that filter correctly after an old link is restored", () => {
-    const restored = canon({ option1: ["Black"] });
-    const result = titles(filterAndSortProducts(norm(rawScatteredOptionsCatalog()), { ...defaults, selectedOptions: restored }));
-    // Color is option1 on Cap/Jacket/Trousers and option2 on Shirt: all with Black.
-    expect(result).toEqual(["Cap", "Shirt"]);
+  it("no longer understands old positional keys: they are dropped and reported", () => {
+    expect(restore({ option1: ["Black"], option2: ["Short"] })).toEqual({
+      options: {},
+      ignored: ["option1", "option2"],
+    });
+  });
+
+  it("returns nothing for no selections", () => {
+    expect(restore({})).toEqual({ options: {}, ignored: [] });
+  });
+
+  it("produces keys that filter correctly after a link is restored", () => {
+    const { options } = restore({ size: ["large"] });
+    const result = titles(
+      filterAndSortProducts(norm(rawScatteredOptionsCatalog()), { ...defaults, selectedOptions: options })
+    );
+    expect(result).toEqual(["Jacket", "Shirt"]);
   });
 });
+

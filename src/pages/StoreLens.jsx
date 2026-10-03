@@ -9,11 +9,11 @@ import ProductGrid from "../components/ProductGrid";
 
 import {
   buildFilterSearch,
-  canonicalizeOptionKeys,
   computeFilterData,
   countActiveFilters,
   filterAndSortProducts,
   parseFilterParams,
+  restoreOptionSelections,
 } from "@/lib/filters";
 import { getDisplayOrigin, parseUserInputToURL } from "@/lib/store";
 import { defaultAdapter, detectAdapter, supportedPlatformNames } from "@/lib/platforms";
@@ -534,9 +534,15 @@ export default function StoreLensApp() {
     if (pending.selectedTypes !== undefined) setSelectedTypes(pending.selectedTypes);
     if (pending.selectedTags !== undefined) setSelectedTags(pending.selectedTags);
     if (pending.selectedOptions !== undefined) {
-      // Match saved option names to this collection's own labels, and map
-      // pre-name links (option1, option2, ...) onto them.
-      setSelectedOptions(canonicalizeOptionKeys(pending.selectedOptions, products, filterData.options));
+      // Match saved option names and values to this collection's own labels.
+      // Options it doesn't have can't filter anything, so say so instead of
+      // quietly emptying the list.
+      const { options, ignored } = restoreOptionSelections(pending.selectedOptions, filterData.options);
+      setSelectedOptions(options);
+      if (ignored.length > 0) {
+        const message = `Some filters in this link don't apply to this collection and were ignored (${ignored.join(", ")}).`;
+        setLoadNotice((prev) => (prev ? `${prev} ${message}` : message));
+      }
     }
     if (pending.inStockOnly !== undefined) setInStockOnly(pending.inStockOnly);
     if (pending.saleOnly !== undefined) setSaleOnly(pending.saleOnly);
