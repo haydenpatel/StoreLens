@@ -101,6 +101,13 @@ describe("computeFilterData", () => {
     });
   });
 
+  it("labels an option with its most common casing, first-seen on a tie", () => {
+    const named = (name) => product({ options: [{ name }], variants: [variant({ option1: "x" })] });
+    expect(computeFilterData(norm([named("color"), named("Color"), named("Color")])).options[0].name).toBe("Color");
+    expect(computeFilterData(norm([named("color"), named("Color")])).options[0].name).toBe("color");
+    expect(computeFilterData(norm([named(" Color ")])).options[0].name).toBe("Color");
+  });
+
   it("skips an option group none of whose variants have a value", () => {
     const products = norm([
       product({ options: [{ name: "Size" }], variants: [variant({ option1: null })] }),
@@ -541,8 +548,18 @@ describe("canonicalizeOptionKeys", () => {
     expect(canon({ Material: ["Cotton"] })).toEqual({ Material: ["Cotton"] });
   });
 
-  it("keeps a positional key as is when the first product has no such option", () => {
-    expect(canon({ option3: ["Large"] })).toEqual({ option3: ["Large"] });
+  it("keeps a positional key as is when no product has an option there", () => {
+    expect(canon({ option4: ["x"] })).toEqual({ option4: ["x"] });
+  });
+
+  it("falls back to the first product that has an option at that position", () => {
+    // Poster-style first product with only the dropped Title placeholder.
+    const placeholderFirst = norm([
+      product({ options: [{ name: "Title", values: ["Default Title"] }], variants: [variant({ option1: "Default Title" })] }),
+      product({ options: [{ name: "Shade" }], variants: [variant({ option1: "Auburn" })] }),
+    ]);
+    const labels = computeFilterData(placeholderFirst).options;
+    expect(canonicalizeOptionKeys({ option1: ["Auburn"] }, placeholderFirst, labels)).toEqual({ Shade: ["Auburn"] });
   });
 
   it("returns an empty object for no selections", () => {

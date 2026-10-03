@@ -89,7 +89,9 @@ export function computeFilterData(products) {
         if (value) values.add(value);
       });
       if (values.size === 0) return;
-      const group = optionGroups.get(key) ?? { name: String(option.name).trim(), values: new Set(), productCount: 0 };
+      const group = optionGroups.get(key) ?? { casings: new Map(), values: new Set(), productCount: 0 };
+      const casing = String(option.name).trim();
+      group.casings.set(casing, (group.casings.get(casing) ?? 0) + 1);
       values.forEach(value => group.values.add(value));
       group.productCount += 1;
       optionGroups.set(key, group);
@@ -107,11 +109,12 @@ export function computeFilterData(products) {
   // and in the URL (?options={"Size":["S"]}).
   const optionsArray = [...optionGroups.values()]
     .sort((a, b) => b.productCount - a.productCount)
-    .map(({ name, values }) => ({
-      name,
-      key: name,
-      values: Array.from(values).sort()
-    }));
+    .map(({ casings, values }) => {
+      // Stores sometimes mix casings ("Color" and "color"); label the group
+      // with the most common one, first-seen on a tie.
+      const name = [...casings.entries()].reduce((best, entry) => (entry[1] > best[1] ? entry : best))[0];
+      return { name, key: name, values: Array.from(values).sort() };
+    });
 
   return {
     vendors: Array.from(vendors).sort(),
@@ -126,14 +129,19 @@ export function computeFilterData(products) {
 
 // Links shared before options were keyed by name carry ?options={"option1":
 // [...]}. option1 was labelled with the first product's first option name, so
-// that is the name it maps to. Keys are also matched to the filter's own
-// label case-insensitively. Anything that matches no option is kept as is.
+// that is the name it maps to; if that product has no such option (e.g. it
+// only had the dropped Title placeholder) the first product that does decides.
+// Keys are also matched to the filter's own label case-insensitively. Anything
+// that matches no option is kept as is.
 export function canonicalizeOptionKeys(selectedOptions, products, filterOptions) {
   const labels = new Map(filterOptions.map(option => [normalizeOptionName(option.name), option.name]));
   const result = {};
   Object.entries(selectedOptions).forEach(([rawKey, values]) => {
     const legacy = /^option([1-3])$/.exec(rawKey);
-    const name = legacy ? products[0]?.options?.[Number(legacy[1]) - 1]?.name ?? rawKey : rawKey;
+    const position = legacy ? Number(legacy[1]) - 1 : -1;
+    const name = legacy
+      ? products.find(p => p.options?.[position])?.options[position].name ?? rawKey
+      : rawKey;
     const key = labels.get(normalizeOptionName(name)) ?? name;
     result[key] = [...new Set([...(result[key] ?? []), ...values])];
   });
