@@ -155,12 +155,49 @@ export function computeFilterData(products) {
   };
 }
 
+// The name an old positional key (option1..option3) meant. The old UI labelled
+// optionN with the first product's Nth option name, so that is the answer when
+// it exists. When the first product has none (e.g. it only had the dropped
+// Title placeholder), the saved values say which option was meant: the one that
+// holds the most of them at that position, then the one on more products,
+// then first-seen. With no evidence at all there is no name to give.
+function legacyOptionName(position, values, products) {
+  const original = products[0]?.options?.[position]?.name;
+  if (original) return original;
+
+  const wanted = new Set(values.map(normalizeOptionValue));
+  const candidates = new Map(); // normalized name -> { name, matched, productCount }
+  products.forEach(product => {
+    const name = product.options?.[position]?.name;
+    const key = normalizeOptionName(name);
+    if (!key) return;
+    const matched = new Set();
+    product.variants?.forEach(variant => {
+      const value = variant.options?.[position];
+      if (value != null && wanted.has(normalizeOptionValue(value))) matched.add(normalizeOptionValue(value));
+    });
+    if (matched.size === 0) return;
+    const entry = candidates.get(key) ?? { name, matched: new Set(), productCount: 0 };
+    matched.forEach(value => entry.matched.add(value));
+    entry.productCount += 1;
+    candidates.set(key, entry);
+  });
+
+  const best = [...candidates.values()].reduce(
+    (top, entry) =>
+      !top || entry.matched.size > top.matched.size ||
+      (entry.matched.size === top.matched.size && entry.productCount > top.productCount)
+        ? entry
+        : top,
+    null
+  );
+  return best?.name;
+}
+
 // Links shared before options were keyed by name carry ?options={"option1":
-// [...]}. option1 was labelled with the first product's first option name, so
-// that is the name it maps to; if that product has no such option (e.g. it
-// only had the dropped Title placeholder) the first product that does decides.
-// Keys and values are also matched to the filter's own labels
-// case-insensitively. Anything that matches no option is kept as is.
+// [...]}; legacyOptionName works out which option each meant. Keys and values
+// are also matched to the filter's own labels case-insensitively. Anything that
+// matches no option is kept as is.
 export function canonicalizeOptionKeys(selectedOptions, products, filterOptions) {
   const labels = new Map(filterOptions.map(option => [normalizeOptionName(option.name), option.name]));
   // option name -> (normalized value -> the value as the filter shows it)
@@ -173,10 +210,7 @@ export function canonicalizeOptionKeys(selectedOptions, products, filterOptions)
   const result = {};
   Object.entries(selectedOptions).forEach(([rawKey, values]) => {
     const legacy = /^option([1-3])$/.exec(rawKey);
-    const position = legacy ? Number(legacy[1]) - 1 : -1;
-    const name = legacy
-      ? products.find(p => p.options?.[position])?.options[position].name ?? rawKey
-      : rawKey;
+    const name = legacy ? legacyOptionName(Number(legacy[1]) - 1, values, products) ?? rawKey : rawKey;
     const key = labels.get(normalizeOptionName(name)) ?? name;
     const known = valueLabels.get(normalizeOptionName(name)) ?? new Map();
     const canonical = values.map(value => known.get(normalizeOptionValue(value)) ?? value);

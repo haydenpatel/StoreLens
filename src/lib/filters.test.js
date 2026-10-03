@@ -649,14 +649,57 @@ describe("canonicalizeOptionKeys", () => {
     expect(canon({ option4: ["x"] })).toEqual({ option4: ["x"] });
   });
 
-  it("falls back to the first product that has an option at that position", () => {
-    // Poster-style first product with only the dropped Title placeholder.
-    const placeholderFirst = norm([
-      product({ options: [{ name: "Title", values: ["Default Title"] }], variants: [variant({ option1: "Default Title" })] }),
-      product({ options: [{ name: "Shade" }], variants: [variant({ option1: "Auburn" })] }),
-    ]);
-    const labels = computeFilterData(placeholderFirst).options;
-    expect(canonicalizeOptionKeys({ option1: ["Auburn"] }, placeholderFirst, labels)).toEqual({ Shade: ["Auburn"] });
+  describe("when the first product has no option at the old position", () => {
+    // The first product only has the dropped Title placeholder, as on stores
+    // where most products have no real options.
+    const placeholder = () =>
+      product({ options: [{ name: "Title", values: ["Default Title"] }], variants: [variant({ option1: "Default Title" })] });
+    const withOption = (name, ...values) =>
+      product({ options: [{ name }], variants: values.map((value) => variant({ option1: value })) });
+    const migrate = (selected, ...rest) => {
+      const products = norm([placeholder(), ...rest]);
+      return canonicalizeOptionKeys(selected, products, computeFilterData(products).options);
+    };
+
+    it("uses the option the saved values belong to", () => {
+      expect(migrate({ option1: ["Auburn"] }, withOption("Shade", "Auburn"), withOption("Size", "S"))).toEqual({
+        Shade: ["Auburn"],
+      });
+    });
+
+    it("matches the saved values ignoring case", () => {
+      expect(migrate({ option1: ["auburn"] }, withOption("Shade", "Auburn"))).toEqual({ Shade: ["Auburn"] });
+    });
+
+    it("prefers the option holding more of the saved values", () => {
+      const result = migrate(
+        { option1: ["Black", "Navy"] },
+        withOption("Base color", "Black"),
+        withOption("Color", "Black", "Navy")
+      );
+      expect(result).toEqual({ Color: ["Black", "Navy"] });
+    });
+
+    it("then prefers the option on more products, first-seen after that", () => {
+      expect(
+        migrate({ option1: ["Black"] }, withOption("Base color", "Black"), withOption("Color", "Black"), withOption("Color", "Black"))
+      ).toEqual({ Color: ["Black"] });
+      expect(
+        migrate({ option1: ["Black"] }, withOption("Base color", "Black"), withOption("Color", "Black"))
+      ).toEqual({ "Base color": ["Black"] });
+    });
+
+    it("keeps the key as is when the saved values match nothing", () => {
+      expect(migrate({ option1: ["Nonexistent"] }, withOption("Shade", "Auburn"))).toEqual({
+        option1: ["Nonexistent"],
+      });
+    });
+  });
+
+  it("uses the first product's option name even when the saved values live in another option", () => {
+    // The old UI labelled option1 with the first product's option1 name.
+    const result = canon({ option1: ["Large"] });
+    expect(result).toEqual({ Color: ["Large"] });
   });
 
   it("returns an empty object for no selections", () => {
