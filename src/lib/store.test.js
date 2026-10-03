@@ -7,19 +7,10 @@ import {
   saveCollectionsCache,
 } from "./store";
 
+import { memoryStorage } from "./__fixtures__/test-helpers";
+
 const ORIGIN = "https://shop.example.com";
 const TTL_MS = 21600000; // 6 hours, mirrors store.js
-
-function memoryStorage() {
-  const data = new Map();
-  return {
-    getItem: (k) => (data.has(k) ? data.get(k) : null),
-    setItem: (k, v) => void data.set(k, String(v)),
-    removeItem: (k) => void data.delete(k),
-    clear: () => data.clear(),
-    _data: data,
-  };
-}
 
 beforeEach(() => {
   vi.stubGlobal("localStorage", memoryStorage());

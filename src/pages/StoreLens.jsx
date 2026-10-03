@@ -138,9 +138,12 @@ export default function StoreLensApp() {
     setLoadNotice(null);
     setProducts([]);
 
+    // Captured once: the user can paste a different store while this load is
+    // still in flight, which swaps adapterRef for the new store's adapter.
+    const loadAdapter = adapterRef.current;
     let result;
     try {
-      result = await adapterRef.current.fetchCollection(url, { signal: controller.signal });
+      result = await loadAdapter.fetchCollection(url, { signal: controller.signal });
     } catch (err) {
       // Superseded (aborted) - the newer call owns state from here. Anything
       // else, e.g. an invalid collection URL, is reported to the user.
@@ -176,7 +179,7 @@ export default function StoreLensApp() {
         );
       } else if (truncated) {
         setLoadNotice(
-          `This collection is larger than ${adapterRef.current.name}'s public catalog can page through — showing the first ${allProducts.length.toLocaleString()} products.`
+          `This collection is larger than ${loadAdapter.name}'s public catalog can page through — showing the first ${allProducts.length.toLocaleString()} products.`
         );
       }
 

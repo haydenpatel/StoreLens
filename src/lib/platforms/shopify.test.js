@@ -7,21 +7,9 @@ import {
 import { loadCollectionsCache } from "@/lib/store";
 import { collectionsPage, product, variant } from "../__fixtures__/shopify";
 
+import { jsonResponse, memoryStorage } from "../__fixtures__/test-helpers";
+
 const ORIGIN = "https://shop.example.com";
-
-function memoryStorage() {
-  const data = new Map();
-  return {
-    getItem: (k) => (data.has(k) ? data.get(k) : null),
-    setItem: (k, v) => void data.set(k, String(v)),
-    removeItem: (k) => void data.delete(k),
-    clear: () => data.clear(),
-  };
-}
-
-function jsonResponse(body, { ok = true, status = 200 } = {}) {
-  return { ok, status, statusText: ok ? "OK" : "Error", json: async () => body };
-}
 
 // Routes the two Shopify endpoints discovery uses. `listing` is a function of
 // the page number returning a response or throwing; `allProducts` maps a
