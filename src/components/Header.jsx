@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Package, Clock, RefreshCw, ArrowRight, Loader2 } from "lucide-react";
 import { supportedPlatformNames } from "@/lib/platforms";
+import { getDisplayOrigin } from "@/lib/store";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -35,10 +36,11 @@ export default function Header({
   onSelectHandle,
   onRetryCollections,
 }) {
+  // Recent Stores entries are origins that may carry a locale, so the label
+  // keeps it (shop.com and shop.com/en-ca are different markets).
   const getHostFromValue = (value) => {
     try {
-      const parsed = value.startsWith("http") ? new URL(value) : new URL(`https://${value}`);
-      return parsed.host;
+      return getDisplayOrigin(value.startsWith("http") ? value : `https://${value}`);
     } catch {
       return value;
     }

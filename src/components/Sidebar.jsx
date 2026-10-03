@@ -8,11 +8,13 @@ import { Search, X } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator"
 import { cn } from "@/lib/utils";
+import { currencySymbol } from "@/lib/currency";
 
 
 export default function Sidebar({
   filterData,
   capabilities = {},
+  labels = {},
   searchQuery,
   setSearchQuery,
   selectedVendors,
@@ -228,7 +230,7 @@ export default function Sidebar({
           {/* Price Range */}
           <div className="space-y-3">
             <Label className="text-sm font-medium">
-              Price Range: <span className="font-[350]">${priceRange[0]} - ${priceRange[1]}</span>
+              Price Range: <span className="font-[350]">{currencySymbol(filterData.currency)}{priceRange[0]} - {currencySymbol(filterData.currency)}{priceRange[1]}</span>
             </Label>
             <Slider
               min={filterData.minPrice}
@@ -243,7 +245,7 @@ export default function Sidebar({
           {/* Vendors */}
           {capabilities.vendors !== false && filterData.vendors.length > 0 && (
             <FilterSection
-              title="Vendor"
+              title={labels.vendors || "Vendor"}
               items={filterData.vendors}
               selected={selectedVendors}
               onToggle={(v) => toggleSelection(selectedVendors, setSelectedVendors, v)}
@@ -253,7 +255,7 @@ export default function Sidebar({
           {/* Product Types */}
           {capabilities.categories !== false && filterData.types.length > 0 && (
             <FilterSection
-              title="Product Type"
+              title={labels.categories || "Product Type"}
               items={filterData.types}
               selected={selectedTypes}
               onToggle={(v) => toggleSelection(selectedTypes, setSelectedTypes, v)}

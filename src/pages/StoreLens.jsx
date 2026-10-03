@@ -9,6 +9,7 @@ import ProductGrid from "../components/ProductGrid";
 
 import {
   buildFilterSearch,
+  canonicalizeOptionKeys,
   computeFilterData,
   countActiveFilters,
   filterAndSortProducts,
@@ -194,7 +195,9 @@ export default function StoreLensApp() {
         // (raced ahead of discovery's own history write below) would
         // otherwise bump other domains out of Recent Stores every time
         // someone just browses collections within the same store.
-        updateHistoryEntry(new URL(url).origin);
+        // The store's origin including any locale, so Recent Stores reopens
+        // the same market.
+        updateHistoryEntry(loadAdapter.parseUrl(new URL(url)).origin);
       }
     } finally {
       if (isCurrent()) {
@@ -394,9 +397,7 @@ export default function StoreLensApp() {
             error: null,
             allProductsHandle,
           });
-          // Plain origin only: a locale prefix belongs to the collection, not
-          // to the store entry shown in Recent Stores.
-          updateHistoryEntry(new URL(storeOrigin).origin);
+          updateHistoryEntry(storeOrigin);
           // Consume the flag here, against this exact discovery's fresh
           // result, rather than in a separate effect watching collectionsState:
           // that raced against a stale "ready" state left over from whichever
@@ -532,11 +533,18 @@ export default function StoreLensApp() {
     if (pending.selectedVendors !== undefined) setSelectedVendors(pending.selectedVendors);
     if (pending.selectedTypes !== undefined) setSelectedTypes(pending.selectedTypes);
     if (pending.selectedTags !== undefined) setSelectedTags(pending.selectedTags);
-    if (pending.selectedOptions !== undefined) setSelectedOptions(pending.selectedOptions);
+    if (pending.selectedOptions !== undefined) {
+      // Match saved option names to this collection's own labels, and map
+      // pre-name links (option1, option2, ...) onto them.
+      setSelectedOptions(canonicalizeOptionKeys(pending.selectedOptions, products, filterData.options));
+    }
     if (pending.inStockOnly !== undefined) setInStockOnly(pending.inStockOnly);
     if (pending.saleOnly !== undefined) setSaleOnly(pending.saleOnly);
     if (pending.priceRange !== undefined) setPriceRange(pending.priceRange);
     if (pending.sortBy !== undefined) setSortBy(pending.sortBy);
+    // Deliberately keyed on currentCollectionUrl alone (see above); products and
+    // filterData are read from the same render that set it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentCollectionUrl]);
 
   // ...and the write direction: reflect filter/sort state in the URL's query
@@ -613,6 +621,7 @@ export default function StoreLensApp() {
           <Sidebar
             filterData={filterData}
             capabilities={loadedAdapter.capabilities}
+            labels={loadedAdapter.labels}
             searchQuery={searchQuery}
             setSearchQuery={setSearchQuery}
             selectedVendors={selectedVendors}
@@ -681,6 +690,7 @@ export default function StoreLensApp() {
               totalProducts={products.length}
               sortBy={sortBy}
               setSortBy={setSortBy}
+              currency={filterData.currency}
             />
           )}
         </main>

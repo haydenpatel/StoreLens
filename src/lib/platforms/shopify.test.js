@@ -202,9 +202,50 @@ describe("normalizeShopifyProduct", () => {
     expect(n.available).toBe(false);
   });
 
-  it("drops trailing empty option slots but keeps their positions", () => {
-    const n = normalize(product({ variants: [variant({ option1: "Default Title", option2: null, option3: null })] }));
-    expect(n.variants[0].options).toEqual(["Default Title"]);
+  it("drops trailing empty option slots", () => {
+    const n = normalize(
+      product({
+        options: [{ name: "Size", values: ["S"] }],
+        variants: [variant({ option1: "S", option2: null, option3: null })],
+      })
+    );
+    expect(n.variants[0].options).toEqual(["S"]);
+  });
+
+  describe("the Title / Default Title placeholder option", () => {
+    it("is dropped: the product has no real options", () => {
+      const n = normalize(
+        product({
+          options: [{ name: "Title", values: ["Default Title"] }],
+          variants: [variant({ title: "Default Title", option1: "Default Title" })],
+        })
+      );
+      expect(n.options).toEqual([]);
+      expect(n.variants[0].options).toEqual([]);
+      // The variant itself is unchanged.
+      expect(n.variants[0].title).toBe("Default Title");
+    });
+
+    it("is kept when Title has real values", () => {
+      const n = normalize(
+        product({
+          options: [{ name: "Title", values: ["Hardback", "Paperback"] }],
+          variants: [variant({ option1: "Hardback" })],
+        })
+      );
+      expect(n.options).toEqual([{ name: "Title", values: ["Hardback", "Paperback"] }]);
+      expect(n.variants[0].options).toEqual(["Hardback"]);
+    });
+
+    it("is kept when the product has other options too", () => {
+      const n = normalize(
+        product({
+          options: [{ name: "Title", values: ["Default Title"] }, { name: "Size", values: ["S"] }],
+          variants: [variant({ option1: "Default Title", option2: "S" })],
+        })
+      );
+      expect(n.options.map((o) => o.name)).toEqual(["Title", "Size"]);
+    });
   });
 
   it.each([
@@ -359,6 +400,10 @@ describe("shopifyAdapter metadata", () => {
   it("exposes normalize, which maps a raw product to the neutral shape", () => {
     const n = shopifyAdapter.normalize(product({ handle: "tee", vendor: "Acme" }), ORIGIN);
     expect(n).toMatchObject({ handle: "tee", vendors: ["Acme"] });
+  });
+
+  it("labels its filter sections", () => {
+    expect(shopifyAdapter.labels).toEqual({ vendors: "Vendor", categories: "Product Type" });
   });
 
   it("identifies itself and supports every capability", () => {

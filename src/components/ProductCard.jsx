@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ExternalLink, Package } from "lucide-react";
 import { getDiscountData } from "@/lib/utils";
+import { formatMoney } from "@/lib/currency";
 
 function ProductCard({ product }) {
   const image = product.images?.[0]?.url || null;
@@ -58,8 +59,8 @@ function ProductCard({ product }) {
   const priceDisplay = minPrice === null
     ? "Price unavailable"
     : minPrice === maxPrice
-    ? `$${minPrice.toFixed(2)}`
-    : `$${minPrice.toFixed(2)} - $${maxPrice.toFixed(2)}`;
+    ? formatMoney(minPrice, product.currency)
+    : `${formatMoney(minPrice, product.currency)} - ${formatMoney(maxPrice, product.currency)}`;
 
   return (
     <Card className="group hover:shadow-lg transition-all duration-200 border-border">
@@ -89,7 +90,7 @@ function ProductCard({ product }) {
 
           {hasDiscount && inStock && (
             <Badge variant="secondary" className="absolute top-0 right-2 bg-chart-3 text-primary-foreground text-[10px] px-1.5 sm:text-xs sm:px-2">
-              Save ${discountAmount.toFixed(2)}{" "}
+              Save {formatMoney(discountAmount, product.currency)}{" "}
               {discountPercent >= 1
                 ? `(${discountPercent.toFixed(0)}% off)`
                 : `(${discountPercent.toFixed(1)}% off)`}   {/* show tiny discounts too */}
@@ -98,7 +99,7 @@ function ProductCard({ product }) {
 
           {hasDiscount && !inStock && (
             <Badge variant="secondary" className="absolute top-6 right-2 bg-chart-3 text-primary-foreground text-[10px] px-1.5 sm:text-xs sm:px-2">
-              Save ${discountAmount.toFixed(2)}{" "}
+              Save {formatMoney(discountAmount, product.currency)}{" "}
               {discountPercent >= 1
                 ? `(${discountPercent.toFixed(0)}% off)`
                 : `(${discountPercent.toFixed(1)}% off)`}   {/* show tiny discounts too */}

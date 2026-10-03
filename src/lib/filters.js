@@ -55,11 +55,20 @@ export function parseFilterParams(search) {
   return Object.keys(result).length > 0 ? result : null;
 }
 
+// Option names are compared ignoring case and surrounding whitespace, so
+// "Size" and "size " are one filter. Different names ("Waist size") are never
+// merged.
+export function normalizeOptionName(name) {
+  return String(name ?? "").trim().toLowerCase();
+}
+
 export function computeFilterData(products) {
   const vendors = new Set();
   const types = new Set();
   const tags = new Set();
-  const options = {};
+  // normalized name -> { name, values, productCount }, in first-seen order
+  const optionGroups = new Map();
+  let currency;
   let minPrice = Infinity;
   let maxPrice = 0;
 
@@ -67,37 +76,68 @@ export function computeFilterData(products) {
     product.vendors?.forEach(vendor => vendors.add(vendor));
     product.categories?.forEach(category => types.add(category));
     product.tags?.forEach(tag => tags.add(tag));
+    currency ??= product.currency;
 
-    // Extract variant options. Filters are keyed by position (option1,
-    // option2, ...) for now; name-keyed options are tracked in #27.
-    product.variants?.forEach(variant => {
-      variant.options?.forEach((value, index) => {
-        if (!value) return;
-        const key = `option${index + 1}`;
-        (options[key] ||= new Set()).add(value);
+    // Variant options are grouped by the option's name, wherever it sits in
+    // each product's option list, so every "Size" ends up in one filter.
+    product.options?.forEach((option, index) => {
+      const key = normalizeOptionName(option.name);
+      if (!key) return;
+      const values = new Set();
+      product.variants?.forEach(variant => {
+        const value = variant.options?.[index];
+        if (value) values.add(value);
       });
+      if (values.size === 0) return;
+      const group = optionGroups.get(key) ?? { name: String(option.name).trim(), values: new Set(), productCount: 0 };
+      values.forEach(value => group.values.add(value));
+      group.productCount += 1;
+      optionGroups.set(key, group);
+    });
 
+    product.variants?.forEach(variant => {
       const price = variant.price;
       if (price < minPrice) minPrice = price;
       if (price > maxPrice) maxPrice = price;
     });
   });
 
-  // Convert Sets to sorted arrays
-  const optionsArray = Object.entries(options).map(([key, values]) => ({
-    name: products[0]?.options?.[Number(key.slice("option".length)) - 1]?.name || key,
-    key,
-    values: Array.from(values).sort()
-  }));
+  // Options that more products have come first (so Size and Color lead);
+  // ties keep first-seen order. The label doubles as the key used in state
+  // and in the URL (?options={"Size":["S"]}).
+  const optionsArray = [...optionGroups.values()]
+    .sort((a, b) => b.productCount - a.productCount)
+    .map(({ name, values }) => ({
+      name,
+      key: name,
+      values: Array.from(values).sort()
+    }));
 
   return {
     vendors: Array.from(vendors).sort(),
     types: Array.from(types).sort(),
     tags: Array.from(tags).sort(),
     options: optionsArray,
+    currency,
     minPrice: minPrice === Infinity ? 0 : Math.floor(minPrice),
     maxPrice: maxPrice === 0 ? 1000 : Math.ceil(maxPrice)
   };
+}
+
+// Links shared before options were keyed by name carry ?options={"option1":
+// [...]}. option1 was labelled with the first product's first option name, so
+// that is the name it maps to. Keys are also matched to the filter's own
+// label case-insensitively. Anything that matches no option is kept as is.
+export function canonicalizeOptionKeys(selectedOptions, products, filterOptions) {
+  const labels = new Map(filterOptions.map(option => [normalizeOptionName(option.name), option.name]));
+  const result = {};
+  Object.entries(selectedOptions).forEach(([rawKey, values]) => {
+    const legacy = /^option([1-3])$/.exec(rawKey);
+    const name = legacy ? products[0]?.options?.[Number(legacy[1]) - 1]?.name ?? rawKey : rawKey;
+    const key = labels.get(normalizeOptionName(name)) ?? name;
+    result[key] = [...new Set([...(result[key] ?? []), ...values])];
+  });
+  return result;
 }
 
 // Selections for filters a platform can't populate (capabilities.* === false)
@@ -130,13 +170,6 @@ export function countActiveFilters(state, filterData, capabilities = {}) {
   if (saleOnly) count++;
   if (priceRange[0] !== filterData.minPrice || priceRange[1] !== filterData.maxPrice) count++;
   return count;
-}
-
-// Option filters are keyed option1..option3 (position in the variant's
-// options). Any other key matches nothing.
-function variantOptionValue(variant, optionKey) {
-  const match = /^option([1-3])$/.exec(optionKey);
-  return match ? variant.options?.[Number(match[1]) - 1] : undefined;
 }
 
 export function filterAndSortProducts(products, state, capabilities = {}) {
@@ -173,12 +206,15 @@ export function filterAndSortProducts(products, state, capabilities = {}) {
     );
   }
 
-  // Options (sizes, colors, etc)
-  Object.entries(selectedOptions).forEach(([optionKey, values]) => {
+  // Options (sizes, colors, etc), matched by option name
+  Object.entries(selectedOptions).forEach(([optionName, values]) => {
     if (values.length > 0) {
-      filtered = filtered.filter(p =>
-        p.variants?.some(v => values.includes(variantOptionValue(v, optionKey)))
-      );
+      const target = normalizeOptionName(optionName);
+      filtered = filtered.filter(p => {
+        // A product without this option can't match it.
+        const index = p.options?.findIndex(o => normalizeOptionName(o.name) === target) ?? -1;
+        return index >= 0 && p.variants?.some(v => values.includes(v.options?.[index]));
+      });
     }
   });
 

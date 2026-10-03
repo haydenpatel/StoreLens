@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   buildFilterSearch,
+  canonicalizeOptionKeys,
   computeFilterData,
   countActiveFilters,
   filterAndSortProducts,
@@ -48,11 +49,11 @@ describe("computeFilterData", () => {
     expect(data.maxPrice).toBe(50);
   });
 
-  it("builds option groups keyed option1..3 with names from the first product", () => {
+  it("builds option groups keyed and labelled by option name", () => {
     const { options } = computeFilterData(catalog());
     expect(options).toEqual([
-      { name: "Size", key: "option1", values: ["L", "M", "S"] },
-      { name: "Color", key: "option2", values: ["Blue"] },
+      { name: "Size", key: "Size", values: ["L", "M", "S"] },
+      { name: "Color", key: "Color", values: ["Blue"] },
     ]);
   });
 
@@ -71,21 +72,46 @@ describe("computeFilterData", () => {
     expect(data.options).toEqual([]);
   });
 
-  // KNOWN ISSUE, pinned so the refactor in #22 cannot change it by accident.
-  // #27 replaces this with name-keyed option filters. Today every product's
-  // optionN is merged into one group named after the *first* product, so
-  // sizes, colors and "Default Title" end up mixed together.
-  it("mixes different option names that share a position (known issue, see #27)", () => {
-    const { options } = computeFilterData(scatteredOptionsCatalog());
-    expect(options).toEqual([
-      {
-        name: "Color",
-        key: "option1",
-        values: ["Black", "Default Title", "Large", "Olive", "Small"],
-      },
-      { name: "Length", key: "option2", values: ["Black", "Regular", "Short"] },
-      { name: "option3", key: "option3", values: ["Large"] },
+  describe("option groups across a store whose options sit at different positions", () => {
+    it("gathers every product's option under its name, wherever it sits", () => {
+      const { options } = computeFilterData(scatteredOptionsCatalog());
+      expect(options).toEqual([
+        { name: "Color", key: "Color", values: ["Black", "Navy", "Olive"] },
+        // Shirt (option1), Jacket (option3) and Hat ("SIZE") all contribute.
+        { name: "Size", key: "Size", values: ["Large", "Small", "X-Small"] },
+        { name: "Length", key: "Length", values: ["Regular", "Short"] },
+        { name: "Waist size", key: "Waist size", values: ["32", "34"] },
+      ]);
+    });
+
+    it("has no Title or Default Title filter", () => {
+      const names = computeFilterData(scatteredOptionsCatalog()).options.map((o) => o.name);
+      expect(names).not.toContain("Title");
+    });
+
+    it("keeps differently named options separate", () => {
+      const names = computeFilterData(scatteredOptionsCatalog()).options.map((o) => o.name);
+      expect(names).toContain("Waist size");
+      expect(names).toContain("Size");
+    });
+
+    it("lists options that more products have first, ties in first-seen order", () => {
+      const names = computeFilterData(scatteredOptionsCatalog()).options.map((o) => o.name);
+      expect(names).toEqual(["Color", "Size", "Length", "Waist size"]);
+    });
+  });
+
+  it("skips an option group none of whose variants have a value", () => {
+    const products = norm([
+      product({ options: [{ name: "Size" }], variants: [variant({ option1: null })] }),
     ]);
+    expect(computeFilterData(products).options).toEqual([]);
+  });
+
+  it("reports the first currency found, if any", () => {
+    expect(computeFilterData(catalog()).currency).toBeUndefined();
+    const withCurrency = [{ ...catalog()[0], currency: "NZD" }, ...catalog().slice(1)];
+    expect(computeFilterData(withCurrency).currency).toBe("NZD");
   });
 });
 
@@ -132,24 +158,43 @@ describe("filterAndSortProducts", () => {
     });
   });
 
-  describe("option filters (keyed optionN)", () => {
+  describe("option filters (matched by option name)", () => {
     it("matches products with any variant having the option value", () => {
-      expect(run({ selectedOptions: { option1: ["M"] } })).toEqual(["Acme Blue Tee"]);
-      expect(run({ selectedOptions: { option1: ["S", "L"] } })).toEqual([
+      expect(run({ selectedOptions: { Size: ["M"] } })).toEqual(["Acme Blue Tee"]);
+      expect(run({ selectedOptions: { Size: ["S", "L"] } })).toEqual([
         "Acme Blue Tee",
         "Beta Red Hoodie",
       ]);
     });
 
-    it("ANDs different option keys", () => {
-      expect(run({ selectedOptions: { option1: ["L"], option2: ["Blue"] } })).toEqual([]);
-      expect(run({ selectedOptions: { option1: ["M"], option2: ["Blue"] } })).toEqual([
-        "Acme Blue Tee",
-      ]);
+    it("ANDs different option names, excluding products without that option", () => {
+      // Beta Red Hoodie has a Size but no Color option.
+      expect(run({ selectedOptions: { Size: ["L"], Color: ["Blue"] } })).toEqual([]);
+      expect(run({ selectedOptions: { Size: ["M"], Color: ["Blue"] } })).toEqual(["Acme Blue Tee"]);
     });
 
-    it("ignores an option key with no selected values", () => {
-      expect(run({ selectedOptions: { option1: [] } })).toHaveLength(4);
+    it("ignores an option name with no selected values", () => {
+      expect(run({ selectedOptions: { Size: [] } })).toHaveLength(4);
+    });
+
+    it("matches option names ignoring case and surrounding whitespace", () => {
+      expect(run({ selectedOptions: { " size ": ["M"] } })).toEqual(["Acme Blue Tee"]);
+    });
+
+    it("finds a size wherever it sits in each product's options", () => {
+      // Size is option1 on Shirt, option3 on Jacket and named "SIZE" on Hat.
+      const result = run({ selectedOptions: { Size: ["Large", "X-Small"] } }, scatteredOptionsCatalog());
+      expect(result).toEqual(["Hat", "Jacket", "Shirt"]);
+    });
+
+    it("keeps different options apart", () => {
+      expect(run({ selectedOptions: { "Waist size": ["32"] } }, scatteredOptionsCatalog())).toEqual(["Trousers"]);
+      expect(run({ selectedOptions: { Size: ["32"] } }, scatteredOptionsCatalog())).toEqual([]);
+    });
+
+    it("matches nothing for a name no product has, including old positional keys", () => {
+      expect(run({ selectedOptions: { Material: ["Cotton"] } })).toEqual([]);
+      expect(run({ selectedOptions: { option1: ["M"] } })).toEqual([]);
     });
   });
 
@@ -262,7 +307,7 @@ describe("countActiveFilters", () => {
     expect(count({ selectedVendors: ["a", "b"] })).toBe(1);
     expect(count({ selectedTypes: ["a"] })).toBe(1);
     expect(count({ selectedTags: ["a", "b", "c"] })).toBe(1);
-    expect(count({ selectedOptions: { option1: ["S"], option2: ["Blue"] } })).toBe(1);
+    expect(count({ selectedOptions: { Size: ["S"], Color: ["Blue"] } })).toBe(1);
     expect(count({ saleOnly: true })).toBe(1);
     expect(count({ priceRange: [6, 50] })).toBe(1);
   });
@@ -272,7 +317,7 @@ describe("countActiveFilters", () => {
   });
 
   it("does not count an option key whose values are empty", () => {
-    expect(count({ selectedOptions: { option1: [] } })).toBe(0);
+    expect(count({ selectedOptions: { Size: [] } })).toBe(0);
   });
 });
 
@@ -380,9 +425,9 @@ describe("buildFilterSearch", () => {
     expect(params.getAll("tag")).toEqual(["a"]);
   });
 
-  it("writes options as JSON keyed by optionN", () => {
-    const search = build({ selectedOptions: { option1: ["S", "M"] } });
-    expect(JSON.parse(new URLSearchParams(search).get("options"))).toEqual({ option1: ["S", "M"] });
+  it("writes options as JSON keyed by option name", () => {
+    const search = build({ selectedOptions: { Size: ["S", "M"] } });
+    expect(JSON.parse(new URLSearchParams(search).get("options"))).toEqual({ Size: ["S", "M"] });
   });
 
   it("round-trips through parseFilterParams", () => {
@@ -391,7 +436,7 @@ describe("buildFilterSearch", () => {
       selectedVendors: ["Acme, Inc."],
       selectedTypes: ["Shirts"],
       selectedTags: ["summer", "cotton"],
-      selectedOptions: { option1: ["S"], option2: ["Blue"] },
+      selectedOptions: { Size: ["S"], Color: ["Blue"] },
       inStockOnly: false,
       saleOnly: true,
       priceRange: [10, 40],
@@ -412,7 +457,7 @@ describe("capabilities", () => {
       expect(runWith({ selectedVendors: ["Nobody"] }, { vendors: false })).toHaveLength(4);
       expect(runWith({ selectedTypes: ["Nope"] }, { categories: false })).toHaveLength(4);
       expect(runWith({ selectedTags: ["nope"] }, { tags: false })).toHaveLength(4);
-      expect(runWith({ selectedOptions: { option1: ["Nope"] } }, { variantOptions: false })).toHaveLength(4);
+      expect(runWith({ selectedOptions: { Size: ["Nope"] } }, { variantOptions: false })).toHaveLength(4);
     });
 
     it("still applies a selection when its capability is supported or unspecified", () => {
@@ -440,7 +485,7 @@ describe("capabilities", () => {
       expect(count({ selectedVendors: ["a"] }, { vendors: false })).toBe(0);
       expect(count({ selectedTypes: ["a"] }, { categories: false })).toBe(0);
       expect(count({ selectedTags: ["a"] }, { tags: false })).toBe(0);
-      expect(count({ selectedOptions: { option1: ["S"] } }, { variantOptions: false })).toBe(0);
+      expect(count({ selectedOptions: { Size: ["S"] } }, { variantOptions: false })).toBe(0);
       expect(count({ selectedVendors: ["a"] }, { vendors: true })).toBe(1);
     });
 
@@ -456,12 +501,58 @@ describe("capabilities", () => {
     it("drops unsupported selections from the URL", () => {
       expect(build({ selectedVendors: ["a"], selectedTags: ["t"] }, { vendors: false })).toBe("?tag=t");
       expect(build({ selectedTypes: ["a"] }, { categories: false })).toBe("");
-      expect(build({ selectedOptions: { option1: ["S"] } }, { variantOptions: false })).toBe("");
+      expect(build({ selectedOptions: { Size: ["S"] } }, { variantOptions: false })).toBe("");
     });
 
     it("doesn't write inStock=0 for a platform without stock data", () => {
       expect(build({ inStockOnly: false }, { variantStock: false })).toBe("");
       expect(build({ inStockOnly: false }, { variantStock: true })).toBe("?inStock=0");
     });
+  });
+});
+
+describe("canonicalizeOptionKeys", () => {
+  const products = scatteredOptionsCatalog();
+  const filterOptions = computeFilterData(products).options;
+  const canon = (selected) => canonicalizeOptionKeys(selected, products, filterOptions);
+
+  it("maps old positional keys to the name the old UI showed for them", () => {
+    // The first product (Cap) is Color, Length: option1 was labelled "Color".
+    expect(canon({ option1: ["Black"], option2: ["Short"] })).toEqual({
+      Color: ["Black"],
+      Length: ["Short"],
+    });
+  });
+
+  it("matches saved names to the filter's own label, ignoring case", () => {
+    expect(canon({ size: ["Large"], " WAIST SIZE ": ["32"] })).toEqual({
+      Size: ["Large"],
+      "Waist size": ["32"],
+    });
+  });
+
+  it("merges values when several keys land on one option", () => {
+    expect(canon({ option1: ["Black"], color: ["Navy", "Black"] })).toEqual({
+      Color: ["Black", "Navy"],
+    });
+  });
+
+  it("keeps a name that no filter has", () => {
+    expect(canon({ Material: ["Cotton"] })).toEqual({ Material: ["Cotton"] });
+  });
+
+  it("keeps a positional key as is when the first product has no such option", () => {
+    expect(canon({ option3: ["Large"] })).toEqual({ option3: ["Large"] });
+  });
+
+  it("returns an empty object for no selections", () => {
+    expect(canon({})).toEqual({});
+  });
+
+  it("produces keys that filter correctly after an old link is restored", () => {
+    const restored = canon({ option1: ["Black"] });
+    const result = titles(filterAndSortProducts(norm(rawScatteredOptionsCatalog()), { ...defaults, selectedOptions: restored }));
+    // Color is option1 on Cap/Jacket/Trousers and option2 on Shirt: all with Black.
+    expect(result).toEqual(["Cap", "Shirt"]);
   });
 });

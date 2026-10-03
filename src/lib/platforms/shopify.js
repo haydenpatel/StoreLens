@@ -34,15 +34,28 @@ function normalizeComparePrice(value) {
   return compare > 0 ? compare : null;
 }
 
+// A product with no real options still has one option named "Title" whose only
+// value is "Default Title". It isn't something to filter by.
+function isPlaceholderOptions(options) {
+  return (
+    options.length === 1 &&
+    options[0].name === "Title" &&
+    options[0].values?.length === 1 &&
+    options[0].values[0] === "Default Title"
+  );
+}
+
 // Maps one raw /products.json entry onto the neutral product shape.
 export function normalizeShopifyProduct(raw, origin) {
+  const rawOptions = raw.options || [];
+  const placeholder = isPlaceholderOptions(rawOptions);
   const variants = (raw.variants || []).map((v) => ({
     id: v.id,
     title: v.title,
     price: parseFloat(v.price),
     compareAtPrice: normalizeComparePrice(v.compare_at_price),
     available: Boolean(v.available),
-    options: trimTrailingEmpty([v.option1, v.option2, v.option3]),
+    options: placeholder ? [] : trimTrailingEmpty([v.option1, v.option2, v.option3]),
   }));
 
   let url = null;
@@ -69,7 +82,7 @@ export function normalizeShopifyProduct(raw, origin) {
     available: variants.some((v) => v.available),
     createdAt: raw.created_at,
     variants,
-    options: (raw.options || []).map((o) => ({ name: o.name, values: o.values || [] })),
+    options: placeholder ? [] : rawOptions.map((o) => ({ name: o.name, values: o.values || [] })),
   };
 }
 
@@ -260,6 +273,8 @@ async function listCollections(origin, signal, { forceRefresh = false } = {}) {
 export const shopifyAdapter = {
   id: PLATFORM_ID,
   name: "Shopify",
+  // What the filter sections are called for this platform.
+  labels: { vendors: "Vendor", categories: "Product Type" },
   capabilities: {
     vendors: true,
     categories: true,
