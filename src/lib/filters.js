@@ -342,7 +342,9 @@ export function buildFilterSearch(state, filterData, capabilities = {}) {
   selectedVendors.forEach((v) => params.append("vendor", v));
   selectedTypes.forEach((t) => params.append("type", t));
   selectedTags.forEach((t) => params.append("tag", t));
-  if (Object.keys(selectedOptions).length > 0) params.set("options", JSON.stringify(selectedOptions));
+  // Options with nothing selected (e.g. a filter ticked then cleared) don't belong in the URL.
+  const activeOptions = Object.fromEntries(Object.entries(selectedOptions).filter(([, values]) => values.length > 0));
+  if (Object.keys(activeOptions).length > 0) params.set("options", JSON.stringify(activeOptions));
   if (!inStockOnly) params.set("inStock", "0");
   if (saleOnly) params.set("sale", "1");
   if (priceRange[0] !== filterData.minPrice || priceRange[1] !== filterData.maxPrice) {

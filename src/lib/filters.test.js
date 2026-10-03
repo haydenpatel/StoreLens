@@ -517,6 +517,12 @@ describe("buildFilterSearch", () => {
     expect(JSON.parse(new URLSearchParams(search).get("options"))).toEqual({ Size: ["S", "M"] });
   });
 
+  it("leaves options with nothing selected out of the URL", () => {
+    expect(build({ selectedOptions: { Size: [] } })).toBe("");
+    const search = build({ selectedOptions: { Size: [], Color: ["Blue"] } });
+    expect(JSON.parse(new URLSearchParams(search).get("options"))).toEqual({ Color: ["Blue"] });
+  });
+
   it("round-trips through parseFilterParams", () => {
     const state = {
       searchQuery: "blue tee",
