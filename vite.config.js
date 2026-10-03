@@ -12,6 +12,10 @@ export default defineConfig({
   resolve: {
     alias: {"@": path.resolve(__dirname, "./src")},
   },
+  test: {
+    environment: 'node',
+    include: ['src/**/*.test.{js,jsx}'],
+  },
   server: {
     host: true,
     port: 5173,
