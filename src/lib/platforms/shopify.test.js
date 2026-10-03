@@ -17,10 +17,10 @@ const ORIGIN = "https://shop.example.com";
 function routedFetch({ listing, probes = {} }) {
   return vi.fn(async (url) => {
     const u = new URL(url);
-    if (u.pathname === "/collections.json") {
+    if (u.pathname.endsWith("/collections.json")) {
       return listing(Number(u.searchParams.get("page")));
     }
-    const m = u.pathname.match(/^\/collections\/([^/]+)\/products\.json$/);
+    const m = u.pathname.match(/\/collections\/([^/]+)\/products\.json$/);
     if (m) {
       return probes[m[1]]
         ? jsonResponse({ products: [{ id: 1 }] })
@@ -65,10 +65,35 @@ describe("parseUrl", () => {
     });
   });
 
-  // Pinned current behaviour: only a leading /collections/ matches, so a
-  // locale-prefixed path is not recognised as a Shopify collection.
-  it("does not recognise a locale-prefixed collection path", () => {
-    expect(parse("/en-nzd/collections/all").collection).toBeNull();
+  describe("locale prefixes (Shopify Markets)", () => {
+    it("keeps the locale as part of the origin and finds the collection after it", () => {
+      expect(parse("/en-nz/collections/all/products")).toEqual({
+        origin: `${ORIGIN}/en-nz`,
+        collection: "all",
+      });
+      expect(parse("/fr/collections/tees")).toEqual({ origin: `${ORIGIN}/fr`, collection: "tees" });
+      expect(parse("/pt-br/collections/tees").origin).toBe(`${ORIGIN}/pt-br`);
+    });
+
+    it("accepts an upper-case locale", () => {
+      expect(parse("/EN-NZ/collections/all").origin).toBe(`${ORIGIN}/EN-NZ`);
+    });
+
+    it("does not treat longer first segments as a locale", () => {
+      expect(parse("/products/collections/tees")).toEqual({ origin: ORIGIN, collection: null });
+      expect(parse("/shop/collections/tees")).toEqual({ origin: ORIGIN, collection: null });
+    });
+
+    it("leaves a locale-only path as a bare store", () => {
+      expect(parse("/en-nz")).toEqual({ origin: ORIGIN, collection: null });
+    });
+
+    it("round-trips through collectionUrl so the locale carries into the request", () => {
+      const { origin, collection } = parse("/en-nz/collections/all/products");
+      const collectionUrl = shopifyAdapter.collectionUrl(origin, collection);
+      expect(collectionUrl).toBe(`${ORIGIN}/en-nz/collections/all`);
+      expect(getCollectionJsonUrl(collectionUrl)).toBe(`${ORIGIN}/en-nz/collections/all/products.json`);
+    });
   });
 });
 
@@ -174,9 +199,26 @@ describe("normalizeShopifyProduct", () => {
     expect(n.variants[0].options).toEqual(["Default Title"]);
   });
 
-  it("treats a zero or empty compare_at_price as no compare price", () => {
-    expect(normalize(product({ variants: [variant({ compare_at_price: null })] })).variants[0].compareAtPrice).toBeNull();
-    expect(normalize(product({ variants: [variant({ compare_at_price: "" })] })).variants[0].compareAtPrice).toBeNull();
+  it.each([
+    ["null", null],
+    ["an empty string", ""],
+    ["zero (\"0.00\")", "0.00"],
+    ["non-numeric", "n/a"],
+  ])("treats a compare_at_price of %s as no compare price", (_label, value) => {
+    const n = normalize(product({ variants: [variant({ compare_at_price: value })] }));
+    expect(n.variants[0].compareAtPrice).toBeNull();
+  });
+
+  it("keeps a real compare_at_price", () => {
+    const n = normalize(product({ variants: [variant({ compare_at_price: "12.50" })] }));
+    expect(n.variants[0].compareAtPrice).toBe(12.5);
+  });
+
+  it("accepts tags as an array or a comma-separated string", () => {
+    expect(normalize(product({ tags: ["a", "b"] })).tags).toEqual(["a", "b"]);
+    expect(normalize(product({ tags: "summer, cotton ,, gift" })).tags).toEqual(["summer", "cotton", "gift"]);
+    expect(normalize(product({ tags: "" })).tags).toEqual([]);
+    expect(normalize(product({ tags: null })).tags).toEqual([]);
   });
 });
 
@@ -203,6 +245,14 @@ describe("fetchCollection", () => {
     expect(fetchMock.mock.calls[0][0]).toBe(`${COLLECTION}/products.json?page=1&limit=250`);
     expect(result.products).toHaveLength(3);
     expect(result).toMatchObject({ pageError: null, truncated: false });
+  });
+
+  it("keeps a locale prefix in the request URL", async () => {
+    const fetchMock = pagedFetch([rawProducts(1)]);
+    vi.stubGlobal("fetch", fetchMock);
+
+    await shopifyAdapter.fetchCollection(`${ORIGIN}/en-nz/collections/tees`);
+    expect(fetchMock.mock.calls[0][0]).toBe(`${ORIGIN}/en-nz/collections/tees/products.json?page=1&limit=250`);
   });
 
   it("returns normalized products", async () => {
@@ -441,6 +491,19 @@ describe("listCollections", () => {
     const result = await shopifyAdapter.listCollections(ORIGIN);
     expect(result.collections).toHaveLength(250);
     expect(fetchMock.mock.calls.filter(([u]) => u.includes("/collections.json"))).toHaveLength(2);
+  });
+
+  it("discovers and caches collections per locale origin", async () => {
+    const localeOrigin = `${ORIGIN}/en-nz`;
+    const fetchMock = routedFetch({
+      listing: () => jsonResponse(collectionsPage([["tees", "Tees", 5]])),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await shopifyAdapter.listCollections(localeOrigin);
+    expect(fetchMock.mock.calls[0][0]).toContain(`${localeOrigin}/collections.json`);
+    expect(loadCollectionsCache("shopify", localeOrigin)).not.toBeNull();
+    expect(loadCollectionsCache("shopify", ORIGIN)).toBeNull();
   });
 
   it("caches results and serves the cache until forceRefresh", async () => {

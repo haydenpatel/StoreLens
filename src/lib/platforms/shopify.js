@@ -18,12 +18,29 @@ function trimTrailingEmpty(values) {
 }
 
 // Maps one raw /products.json entry onto the neutral product shape.
+// Shopify returns tags as an array from /products.json, but some endpoints
+// return a comma-separated string.
+function normalizeTags(tags) {
+  if (Array.isArray(tags)) return tags;
+  if (typeof tags === "string") {
+    return tags.split(",").map((tag) => tag.trim()).filter(Boolean);
+  }
+  return [];
+}
+
+// Shopify sends "0.00" (not null) when there is no compare-at price.
+function normalizeComparePrice(value) {
+  const compare = parseFloat(value);
+  return compare > 0 ? compare : null;
+}
+
+// Maps one raw /products.json entry onto the neutral product shape.
 export function normalizeShopifyProduct(raw, origin) {
   const variants = (raw.variants || []).map((v) => ({
     id: v.id,
     title: v.title,
     price: parseFloat(v.price),
-    compareAtPrice: v.compare_at_price ? parseFloat(v.compare_at_price) : null,
+    compareAtPrice: normalizeComparePrice(v.compare_at_price),
     available: Boolean(v.available),
     options: trimTrailingEmpty([v.option1, v.option2, v.option3]),
   }));
@@ -48,7 +65,7 @@ export function normalizeShopifyProduct(raw, origin) {
     description: raw.body_html,
     vendors: raw.vendor ? [raw.vendor] : [],
     categories: raw.product_type ? [raw.product_type] : [],
-    tags: Array.isArray(raw.tags) ? raw.tags : [],
+    tags: normalizeTags(raw.tags),
     available: variants.some((v) => v.available),
     createdAt: raw.created_at,
     variants,
@@ -255,9 +272,13 @@ export const shopifyAdapter = {
   // Shopify is the fallback: until another platform claims a URL it is
   // treated as Shopify, which is how StoreLens behaved before adapters.
   matchesUrl: () => true,
+  // Shopify Markets puts an optional locale in front of the collection path
+  // (/en-nz/collections/all). It is kept as part of the returned origin, so
+  // the market's pricing and listings carry through discovery, loading and
+  // the app route.
   parseUrl(url) {
-    const match = url.pathname.match(/^\/collections\/([^/]+)/);
-    return { origin: url.origin, collection: match ? match[1] : null };
+    const match = url.pathname.match(/^(\/[a-z]{2,3}(?:-[a-z0-9]{2,8})?)?\/collections\/([^/]+)/i);
+    return { origin: `${url.origin}${match?.[1] ?? ""}`, collection: match ? match[2] : null };
   },
   collectionUrl: (origin, collection) => `${origin}/collections/${collection}`,
   listCollections,

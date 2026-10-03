@@ -37,6 +37,9 @@
 
 /**
  * What a platform can supply. The UI hides filters it can't populate.
+ * `variantStock` means availability is reported at all (product-level is
+ * enough, copied onto each variant); when false the in-stock filter is hidden
+ * and ignored, and the adapter should report every product as available.
  * @typedef {Object} AdapterCapabilities
  * @property {boolean} vendors
  * @property {boolean} categories
@@ -61,9 +64,11 @@
  * @property {AdapterCapabilities} capabilities
  * @property {(url: URL) => boolean} matchesUrl               Cheap, URL-only check used by detection.
  * @property {(url: URL) => {origin: string, collection: string|null}} parseUrl
+ *   `origin` may carry a locale prefix (e.g. https://shop.example.com/en-nz) when the platform has one.
  * @property {(origin: string, collection: string) => string} collectionUrl
+ * @property {string} [defaultCollection]   Collection to auto-load for a bare store when the platform has no collection listing.
  * @property {(origin: string, signal?: AbortSignal, opts?: {forceRefresh?: boolean}) =>
- *   Promise<{collections: {handle: string, title: string, products_count: number|null}[], allProductsHandle: string|null}>} listCollections
+ *   Promise<{collections: {handle: string, title: string, products_count: number|null}[], allProductsHandle: string|null}>} listCollections   Optional: platforms without a listing omit it and set defaultCollection.
  * @property {(raw: any, origin: string) => NeutralProduct} normalize   Maps one raw platform product to the neutral shape.
  * @property {(collectionUrl: string, opts: {signal?: AbortSignal}) => Promise<FetchCollectionResult>} fetchCollection
  *   Throws on an invalid URL, and rethrows an abort. Everything else is reported in the result.

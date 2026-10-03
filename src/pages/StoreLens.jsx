@@ -375,11 +375,12 @@ export default function StoreLensApp() {
       const forceRefresh = forceRefreshDiscoveryRef.current;
       forceRefreshDiscoveryRef.current = false;
       try {
-        const { collections, allProductsHandle } = await adapterRef.current.listCollections(
-          storeOrigin,
-          controller.signal,
-          { forceRefresh }
-        );
+        const discoveryAdapter = adapterRef.current;
+        // Platforms without a collection listing skip discovery and open
+        // their default collection instead.
+        const { collections, allProductsHandle } = discoveryAdapter.listCollections
+          ? await discoveryAdapter.listCollections(storeOrigin, controller.signal, { forceRefresh })
+          : { collections: [], allProductsHandle: discoveryAdapter.defaultCollection ?? null };
         if (!controller.signal.aborted) {
           setCollectionsState({
             status: "ready",
@@ -387,7 +388,9 @@ export default function StoreLensApp() {
             error: null,
             allProductsHandle,
           });
-          updateHistoryEntry(storeOrigin);
+          // Plain origin only: a locale prefix belongs to the collection, not
+          // to the store entry shown in Recent Stores.
+          updateHistoryEntry(new URL(storeOrigin).origin);
           // Consume the flag here, against this exact discovery's fresh
           // result, rather than in a separate effect watching collectionsState:
           // that raced against a stale "ready" state left over from whichever
@@ -490,12 +493,20 @@ export default function StoreLensApp() {
   // shared between the mobile "Filters" toggle button's badge and Sidebar's
   // own Reset button, so the two stay in sync rather than each computing
   // "active" from a possibly-diverging copy of the same conditions.
+  // Platforms that don't report stock hide the in-stock checkbox, so the
+  // filter must neither apply nor count as active for them.
+  const stockFilterSupported = adapter.capabilities.variantStock !== false;
+
   const activeFilterCount = useMemo(
     () => countActiveFilters(
-      { searchQuery, selectedVendors, selectedTypes, selectedTags, selectedOptions, inStockOnly, saleOnly, priceRange },
+      {
+        searchQuery, selectedVendors, selectedTypes, selectedTags, selectedOptions,
+        inStockOnly: stockFilterSupported ? inStockOnly : true,
+        saleOnly, priceRange,
+      },
       filterData
     ),
-    [searchQuery, selectedVendors, selectedTypes, selectedTags, selectedOptions, inStockOnly, saleOnly, priceRange, filterData]
+    [searchQuery, selectedVendors, selectedTypes, selectedTags, selectedOptions, inStockOnly, stockFilterSupported, saleOnly, priceRange, filterData]
   );
 
   // Update price range when products change
@@ -571,9 +582,9 @@ export default function StoreLensApp() {
   const filteredProducts = useMemo(
     () => filterAndSortProducts(products, {
       searchQuery, selectedVendors, selectedTypes, selectedTags, selectedOptions,
-      priceRange, inStockOnly, saleOnly, sortBy,
+      priceRange, inStockOnly: stockFilterSupported && inStockOnly, saleOnly, sortBy,
     }),
-    [products, searchQuery, selectedVendors, selectedTypes, selectedTags, selectedOptions, priceRange, inStockOnly, saleOnly, sortBy]
+    [products, searchQuery, selectedVendors, selectedTypes, selectedTags, selectedOptions, priceRange, inStockOnly, stockFilterSupported, saleOnly, sortBy]
   );
 
   return (

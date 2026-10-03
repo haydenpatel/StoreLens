@@ -200,16 +200,18 @@ export default function Sidebar({
           </div>
 
           {/* In Stock Only */}
-          <div className="flex items-center space-x-2">
-            <Checkbox
-              id="inStock"
-              checked={inStockOnly}
-              onCheckedChange={setInStockOnly}
-            />
-            <Label htmlFor="inStock" className="text-sm cursor-pointer">
-              In stock only
-            </Label>
-          </div>
+          {capabilities.variantStock !== false && (
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="inStock"
+                checked={inStockOnly}
+                onCheckedChange={setInStockOnly}
+              />
+              <Label htmlFor="inStock" className="text-sm cursor-pointer">
+                In stock only
+              </Label>
+            </div>
+          )}
           
           {/* Sale Only */}
           <div className="flex items-center space-x-2">
