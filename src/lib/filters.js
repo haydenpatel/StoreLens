@@ -62,11 +62,36 @@ export function normalizeOptionName(name) {
   return String(name ?? "").trim().toLowerCase();
 }
 
+// Option values are compared the same way: "Tall", "tall" and " Tall " are one
+// value.
+export function normalizeOptionValue(value) {
+  return normalizeOptionName(value);
+}
+
+const startsUppercase = (text) => text.charAt(0) !== text.charAt(0).toLowerCase();
+
+// Picks how to show a name or value that stores spell several ways. A casing
+// that starts with a capital wins over one that doesn't ("Tall" over "tall");
+// among those, the most common wins, first-seen on a tie.
+function pickCasing(counts) {
+  const entries = [...counts.entries()];
+  const capitalised = entries.filter(([casing]) => startsUppercase(casing));
+  const pool = capitalised.length > 0 ? capitalised : entries;
+  return pool.reduce((best, entry) => (entry[1] > best[1] ? entry : best))[0];
+}
+
+const capitalizeFirst = (text) => text.charAt(0).toUpperCase() + text.slice(1);
+
+function countCasing(counts, casing) {
+  counts.set(casing, (counts.get(casing) ?? 0) + 1);
+}
+
 export function computeFilterData(products) {
   const vendors = new Set();
   const types = new Set();
   const tags = new Set();
-  // normalized name -> { name, values, productCount }, in first-seen order
+  // normalized name -> { casings, values, productCount }, in first-seen order;
+  // values: normalized value -> casing counts
   const optionGroups = new Map();
   let currency;
   let minPrice = Infinity;
@@ -83,16 +108,19 @@ export function computeFilterData(products) {
     product.options?.forEach((option, index) => {
       const key = normalizeOptionName(option.name);
       if (!key) return;
-      const values = new Set();
+      const seen = [];
       product.variants?.forEach(variant => {
         const value = variant.options?.[index];
-        if (value) values.add(value);
+        if (value && normalizeOptionValue(value)) seen.push(String(value).trim());
       });
-      if (values.size === 0) return;
-      const group = optionGroups.get(key) ?? { casings: new Map(), values: new Set(), productCount: 0 };
-      const casing = String(option.name).trim();
-      group.casings.set(casing, (group.casings.get(casing) ?? 0) + 1);
-      values.forEach(value => group.values.add(value));
+      if (seen.length === 0) return;
+      const group = optionGroups.get(key) ?? { casings: new Map(), values: new Map(), productCount: 0 };
+      countCasing(group.casings, String(option.name).trim());
+      seen.forEach(value => {
+        const valueKey = normalizeOptionValue(value);
+        if (!group.values.has(valueKey)) group.values.set(valueKey, new Map());
+        countCasing(group.values.get(valueKey), value);
+      });
       group.productCount += 1;
       optionGroups.set(key, group);
     });
@@ -105,15 +133,16 @@ export function computeFilterData(products) {
   });
 
   // Options that more products have come first (so Size and Color lead);
-  // ties keep first-seen order. The label doubles as the key used in state
-  // and in the URL (?options={"Size":["S"]}).
+  // ties keep first-seen order. Stores spell the same name and value several
+  // ways ("Color"/"color", "Tall"/"tall"), so each is shown once, in its
+  // preferred casing; a label always starts with a capital. The label doubles
+  // as the key used in state and in the URL (?options={"Size":["S"]}).
   const optionsArray = [...optionGroups.values()]
     .sort((a, b) => b.productCount - a.productCount)
     .map(({ casings, values }) => {
-      // Stores sometimes mix casings ("Color" and "color"); label the group
-      // with the most common one, first-seen on a tie.
-      const name = [...casings.entries()].reduce((best, entry) => (entry[1] > best[1] ? entry : best))[0];
-      return { name, key: name, values: Array.from(values).sort() };
+      const name = capitalizeFirst(pickCasing(casings));
+      const displayValues = [...values.values()].map(pickCasing).sort();
+      return { name, key: name, values: displayValues };
     });
 
   return {
@@ -131,10 +160,17 @@ export function computeFilterData(products) {
 // [...]}. option1 was labelled with the first product's first option name, so
 // that is the name it maps to; if that product has no such option (e.g. it
 // only had the dropped Title placeholder) the first product that does decides.
-// Keys are also matched to the filter's own label case-insensitively. Anything
-// that matches no option is kept as is.
+// Keys and values are also matched to the filter's own labels
+// case-insensitively. Anything that matches no option is kept as is.
 export function canonicalizeOptionKeys(selectedOptions, products, filterOptions) {
   const labels = new Map(filterOptions.map(option => [normalizeOptionName(option.name), option.name]));
+  // option name -> (normalized value -> the value as the filter shows it)
+  const valueLabels = new Map(
+    filterOptions.map(option => [
+      normalizeOptionName(option.name),
+      new Map(option.values.map(value => [normalizeOptionValue(value), value])),
+    ])
+  );
   const result = {};
   Object.entries(selectedOptions).forEach(([rawKey, values]) => {
     const legacy = /^option([1-3])$/.exec(rawKey);
@@ -143,7 +179,9 @@ export function canonicalizeOptionKeys(selectedOptions, products, filterOptions)
       ? products.find(p => p.options?.[position])?.options[position].name ?? rawKey
       : rawKey;
     const key = labels.get(normalizeOptionName(name)) ?? name;
-    result[key] = [...new Set([...(result[key] ?? []), ...values])];
+    const known = valueLabels.get(normalizeOptionName(name)) ?? new Map();
+    const canonical = values.map(value => known.get(normalizeOptionValue(value)) ?? value);
+    result[key] = [...new Set([...(result[key] ?? []), ...canonical])];
   });
   return result;
 }
@@ -218,10 +256,14 @@ export function filterAndSortProducts(products, state, capabilities = {}) {
   Object.entries(selectedOptions).forEach(([optionName, values]) => {
     if (values.length > 0) {
       const target = normalizeOptionName(optionName);
+      const wanted = new Set(values.map(normalizeOptionValue));
       filtered = filtered.filter(p => {
         // A product without this option can't match it.
         const index = p.options?.findIndex(o => normalizeOptionName(o.name) === target) ?? -1;
-        return index >= 0 && p.variants?.some(v => values.includes(v.options?.[index]));
+        return index >= 0 && p.variants?.some(v => {
+          const value = v.options?.[index];
+          return value != null && wanted.has(normalizeOptionValue(value));
+        });
       });
     }
   });

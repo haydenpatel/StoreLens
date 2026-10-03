@@ -101,11 +101,76 @@ describe("computeFilterData", () => {
     });
   });
 
-  it("labels an option with its most common casing, first-seen on a tie", () => {
+  describe("option label casing", () => {
     const named = (name) => product({ options: [{ name }], variants: [variant({ option1: "x" })] });
-    expect(computeFilterData(norm([named("color"), named("Color"), named("Color")])).options[0].name).toBe("Color");
-    expect(computeFilterData(norm([named("color"), named("Color")])).options[0].name).toBe("color");
-    expect(computeFilterData(norm([named(" Color ")])).options[0].name).toBe("Color");
+    const label = (...names) => computeFilterData(norm(names.map(named))).options[0].name;
+
+    it("always starts with a capital letter", () => {
+      expect(label("color")).toBe("Color");
+      expect(label("waist size")).toBe("Waist size");
+      expect(label(" color ")).toBe("Color");
+    });
+
+    it("capitalises the label even when the lowercase spelling is the common one", () => {
+      expect(label("color", "color", "Color")).toBe("Color");
+    });
+
+    it("prefers the most common capitalised spelling, first-seen on a tie", () => {
+      expect(label("COLOUR", "Colour", "Colour")).toBe("Colour");
+      expect(label("Colour", "COLOUR")).toBe("Colour");
+    });
+
+    it("leaves the rest of the casing alone", () => {
+      expect(label("SIZE")).toBe("SIZE");
+      expect(label("iPhone model")).toBe("IPhone model");
+    });
+
+    it("keeps the label usable as the filter key", () => {
+      const [option] = computeFilterData(norm([named("color")])).options;
+      expect(option.key).toBe("Color");
+    });
+  });
+
+  describe("option value casing", () => {
+    const lengths = (...values) =>
+      computeFilterData(
+        norm([
+          product({
+            options: [{ name: "Length" }],
+            variants: values.map((value) => variant({ option1: value })),
+          }),
+        ])
+      ).options[0].values;
+
+    it("condenses values that differ only by case", () => {
+      expect(lengths("Tall", "tall", "Regular")).toEqual(["Regular", "Tall"]);
+    });
+
+    it("ignores surrounding whitespace", () => {
+      expect(lengths("Tall", " Tall ", "Regular")).toEqual(["Regular", "Tall"]);
+    });
+
+    it("shows a capitalised spelling even if lowercase is more common", () => {
+      expect(lengths("tall", "tall", "Tall")).toEqual(["Tall"]);
+    });
+
+    it("keeps a value that only exists in lowercase as it is", () => {
+      expect(lengths("regular", "tall")).toEqual(["regular", "tall"]);
+    });
+
+    it("keeps values that are different apart", () => {
+      expect(lengths("Tall", "Talls", "Small")).toEqual(["Small", "Tall", "Talls"]);
+    });
+
+    it("merges across products", () => {
+      const products = norm([
+        product({ options: [{ name: "Length" }], variants: [variant({ option1: "Tall" })] }),
+        product({ options: [{ name: "length" }], variants: [variant({ option1: "tall" })] }),
+      ]);
+      expect(computeFilterData(products).options).toEqual([
+        { name: "Length", key: "Length", values: ["Tall"] },
+      ]);
+    });
   });
 
   it("skips an option group none of whose variants have a value", () => {
@@ -186,6 +251,16 @@ describe("filterAndSortProducts", () => {
 
     it("matches option names ignoring case and surrounding whitespace", () => {
       expect(run({ selectedOptions: { " size ": ["M"] } })).toEqual(["Acme Blue Tee"]);
+    });
+
+    it("matches option values ignoring case and surrounding whitespace", () => {
+      const products = norm([
+        product({ title: "A", options: [{ name: "Length" }], variants: [variant({ option1: "Tall" })] }),
+        product({ title: "B", options: [{ name: "Length" }], variants: [variant({ option1: "tall" })] }),
+        product({ title: "C", options: [{ name: "Length" }], variants: [variant({ option1: "Regular" })] }),
+      ]);
+      expect(run({ selectedOptions: { Length: ["Tall"] } }, products)).toEqual(["A", "B"]);
+      expect(run({ selectedOptions: { Length: [" TALL "] } }, products)).toEqual(["A", "B"]);
     });
 
     it("finds a size wherever it sits in each product's options", () => {
@@ -542,6 +617,23 @@ describe("canonicalizeOptionKeys", () => {
     expect(canon({ option1: ["Black"], color: ["Navy", "Black"] })).toEqual({
       Color: ["Black", "Navy"],
     });
+  });
+
+  it("matches saved values to the filter's own casing", () => {
+    const labels = computeFilterData(products).options;
+    expect(canonicalizeOptionKeys({ size: ["large", " X-SMALL "] }, products, labels)).toEqual({
+      Size: ["Large", "X-Small"],
+    });
+  });
+
+  it("de-duplicates values that match once their case is aligned", () => {
+    const labels = computeFilterData(products).options;
+    expect(canonicalizeOptionKeys({ Size: ["Large", "large"] }, products, labels)).toEqual({ Size: ["Large"] });
+  });
+
+  it("keeps a saved value that the filter doesn't have", () => {
+    const labels = computeFilterData(products).options;
+    expect(canonicalizeOptionKeys({ Size: ["Gigantic"] }, products, labels)).toEqual({ Size: ["Gigantic"] });
   });
 
   it("keeps a name that no filter has", () => {
