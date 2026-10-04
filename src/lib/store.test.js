@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
+  addressMatches,
+  appPathFor,
   getDisplayOrigin,
   loadCollectionsCache,
   parseUserInputToURL,
@@ -111,5 +113,46 @@ describe("collections cache", () => {
     });
     expect(() => saveCollectionsCache("shopify", ORIGIN, [], null)).not.toThrow();
     expect(loadCollectionsCache("shopify", ORIGIN)).toBeNull();
+  });
+});
+
+describe("appPathFor", () => {
+  it("builds /{host}{path} for a collection URL", () => {
+    expect(appPathFor(`${ORIGIN}/collections/tees`)).toBe("/shop.example.com/collections/tees");
+  });
+
+  it("is just the host for a bare origin", () => {
+    expect(appPathFor(ORIGIN)).toBe("/shop.example.com");
+    expect(appPathFor(`${ORIGIN}/`)).toBe("/shop.example.com");
+  });
+
+  it("keeps a locale prefix and a port", () => {
+    expect(appPathFor(`${ORIGIN}/en-nz`)).toBe("/shop.example.com/en-nz");
+    expect(appPathFor("http://localhost:8080/collections/all")).toBe("/localhost:8080/collections/all");
+  });
+
+  it("drops the query string and a trailing slash", () => {
+    expect(appPathFor(`${ORIGIN}/collections/tees/?page=2`)).toBe("/shop.example.com/collections/tees");
+  });
+});
+
+describe("addressMatches", () => {
+  it("matches the same path", () => {
+    expect(addressMatches("/shop.example.com/collections/tees", "/shop.example.com/collections/tees")).toBe(true);
+  });
+
+  it("ignores a trailing slash", () => {
+    expect(addressMatches("/shop.example.com", "/shop.example.com/")).toBe(true);
+  });
+
+  it("ignores the case of the host segment only", () => {
+    expect(addressMatches("/shop.example.com/collections/tees", "/Shop.Example.com/collections/tees")).toBe(true);
+    expect(addressMatches("/shop.example.com/collections/tees", "/shop.example.com/collections/TEES")).toBe(false);
+  });
+
+  it("does not match a different store or collection", () => {
+    expect(addressMatches("/other.example.com", "/shop.example.com")).toBe(false);
+    expect(addressMatches("/shop.example.com/collections/a", "/shop.example.com/collections/b")).toBe(false);
+    expect(addressMatches("/shop.example.com/en-nz", "/shop.example.com")).toBe(false);
   });
 });

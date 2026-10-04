@@ -17,6 +17,21 @@ export function getDisplayOrigin(origin) {
   return `${url.host}${url.pathname.replace(/\/$/, "")}`;
 }
 
+// The app path for a store or collection URL: "/{host}{pathname}", the same
+// shape loadFromLocation reads back, so an address can be rebuilt from it.
+export function appPathFor(url) {
+  const { host, pathname } = new URL(url);
+  return `/${host}${pathname}`.replace(/\/+$/, "");
+}
+
+// Whether the address bar already shows `path`. The host segment is a plain
+// path segment here, so the browser keeps whatever case a link used; a
+// trailing slash doesn't make it a different page.
+export function addressMatches(path, pathname) {
+  const normalize = (p) => p.replace(/^\/[^/]+/, (host) => host.toLowerCase()).replace(/\/+$/, "");
+  return normalize(path) === normalize(pathname);
+}
+
 // Bumping this invalidates every previously cached entry (old ones are just
 // orphaned under their old key) whenever the discovery/probe logic changes
 // in a way that could make stale cached results wrong or outdated. v3: keys
