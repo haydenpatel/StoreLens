@@ -131,7 +131,10 @@ async function fetchCollection(collectionUrl, { signal, maxPages = MAX_PRODUCT_P
     try {
       data = await response.json();
     } catch (err) {
-      throw new StoreError("unsupported-platform", { cause: err });
+      if (isAbort(err, signal)) throw err;
+      // A body that isn't JSON is a web page, not a feed; a read that fails
+      // part-way is the connection.
+      throw err instanceof SyntaxError ? new StoreError("unsupported-platform", { cause: err }) : await diagnose({ cause: err });
     }
     if (!Array.isArray(data?.products)) throw new StoreError("unsupported-platform");
     return {
@@ -171,7 +174,8 @@ async function fetchCollectionsPage(origin, page, signal) {
   try {
     data = await response.json();
   } catch (err) {
-    throw new StoreError("unsupported-platform", { cause: err });
+    if (isAbort(err, signal)) throw err;
+    throw new StoreError(err instanceof SyntaxError ? "unsupported-platform" : "blocked-or-offline", { cause: err });
   }
   return Array.isArray(data?.collections) ? data.collections : [];
 }

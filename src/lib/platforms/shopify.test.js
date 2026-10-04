@@ -430,6 +430,35 @@ describe("fetchCollection", () => {
       expect(result.pageError.kind).toBe("unsupported-platform");
     });
 
+    it("is blocked-or-offline when the body can't be read to the end", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (url) => {
+          if (new URL(url).pathname === "/products.json") throw new TypeError("Failed to fetch");
+          return { ok: true, status: 200, json: async () => Promise.reject(new TypeError("network error")) };
+        })
+      );
+      const result = await shopifyAdapter.fetchCollection(COLLECTION);
+      expect(result.pageError.kind).toBe("blocked-or-offline");
+    });
+
+    it("rethrows an abort that happens while the body is read", async () => {
+      const controller = new AbortController();
+      const abort = Object.assign(new Error("aborted"), { name: "AbortError" });
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => ({
+          ok: true,
+          status: 200,
+          json: async () => {
+            controller.abort();
+            throw abort;
+          },
+        }))
+      );
+      await expect(shopifyAdapter.fetchCollection(COLLECTION, { signal: controller.signal })).rejects.toBe(abort);
+    });
+
     it("is unsupported-platform when the JSON has no products list", async () => {
       vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ message: "hello" })));
       const result = await shopifyAdapter.fetchCollection(COLLECTION);
@@ -704,6 +733,14 @@ describe("listCollections", () => {
       vi.fn(async () => {
         throw new TypeError("Failed to fetch");
       })
+    );
+    await expect(shopifyAdapter.listCollections(ORIGIN)).rejects.toMatchObject({ kind: "blocked-or-offline" });
+  });
+
+  it("reports a listing body that can't be read to the end as an unreachable store", async () => {
+    vi.stubGlobal(
+      "fetch",
+      routedFetch({ listing: () => ({ ok: true, status: 200, json: async () => Promise.reject(new TypeError("network error")) }) })
     );
     await expect(shopifyAdapter.listCollections(ORIGIN)).rejects.toMatchObject({ kind: "blocked-or-offline" });
   });
