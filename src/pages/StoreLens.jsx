@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import { Loader2, AlertCircle, SlidersHorizontal, TriangleAlert } from "lucide-react";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Loader2, SlidersHorizontal } from "lucide-react";
+import Notice from "../components/Notice";
 import { Button } from "@/components/ui/button";
 
 import Header from "../components/Header";
@@ -24,11 +24,18 @@ export default function StoreLensApp() {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  // Shown as info: nothing is wrong, but the user has a next step to take.
+  const [infoNotice, setInfoNotice] = useState(null);
   // Shown as a warning: the list on screen is incomplete (a page failed, or the
   // platform's paging limit was hit).
   const [loadWarning, setLoadWarning] = useState(null);
   // Shown as a warning: parts of a shared link (filters) that couldn't be applied.
   const [linkWarning, setLinkWarning] = useState(null);
+  // Clears the message shown in place of the product list (error or info).
+  const clearMessage = () => {
+    setError(null);
+    setInfoNotice(null);
+  };
   const [urlHistory, setUrlHistory] = useState([]);
   const [collectionsState, setCollectionsState] = useState({
     status: "idle",
@@ -147,7 +154,7 @@ export default function StoreLensApp() {
     }
 
     setLoading(true);
-    setError(null);
+    clearMessage();
     setLoadWarning(null);
     setLinkWarning(null);
     setProducts([]);
@@ -267,7 +274,7 @@ export default function StoreLensApp() {
   };
 
   const handleSubmitStoreInput = () => {
-    setError(null);
+    clearMessage();
     applyUserInput(storeInput);
   };
 
@@ -304,7 +311,7 @@ export default function StoreLensApp() {
         setLoading(false);
         setProducts([]);
         setCurrentCollectionUrl("");
-        setError(null);
+        clearMessage();
         setLoadWarning(null);
         setLinkWarning(null);
         applyUserInput("");
@@ -423,7 +430,7 @@ export default function StoreLensApp() {
               nextLoadIsAutoDefaultRef.current = pendingAutoLoadIsUrlOriginatedRef.current;
               loadCollectionByHandle(allProductsHandle, storeOrigin);
             } else {
-              setError(
+              setInfoNotice(
                 "I couldn't automatically find an all-products collection for this store. Please choose a collection from the dropdown above."
               );
             }
@@ -483,12 +490,12 @@ export default function StoreLensApp() {
     // discovery on every keystroke re-rendered the whole app (including a
     // potentially large product grid), making typing feel sluggish. Actually
     // resolving the input now happens on submit (Enter or the Load button).
-    setError(null);
+    clearMessage();
     setStoreInput(value);
   };
 
   const handlePaste = (value) => {
-    setError(null);
+    clearMessage();
     applyUserInput(value);
   };
 
@@ -497,7 +504,7 @@ export default function StoreLensApp() {
   };
 
   const handleSelectHandle = (handle) => {
-    setError(null);
+    clearMessage();
     setSelectedHandle(handle);
     setInputHandle(handle);
     loadCollectionByHandle(handle, storeOrigin);
@@ -680,29 +687,19 @@ export default function StoreLensApp() {
             </div>
           )}
 
-          {error && (
-            <Alert variant="destructive" className="max-w-2xl mx-auto">
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          )}
+          {error && <Notice level="error">{error}</Notice>}
 
-          {/* w-fit so a short message doesn't leave empty space inside the border */}
+          {infoNotice && <Notice level="info">{infoNotice}</Notice>}
+
           {!loading && linkWarning && products.length > 0 && (
-            <Alert variant="warning" className="w-fit max-w-2xl mx-auto mb-6">
-              <TriangleAlert className="h-4 w-4" />
-              <AlertDescription>{linkWarning}</AlertDescription>
-            </Alert>
+            <Notice level="warning">{linkWarning}</Notice>
           )}
 
           {!loading && loadWarning && products.length > 0 && (
-            <Alert variant="warning" className="w-fit max-w-2xl mx-auto mb-6">
-              <TriangleAlert className="h-4 w-4" />
-              <AlertDescription>{loadWarning}</AlertDescription>
-            </Alert>
+            <Notice level="warning">{loadWarning}</Notice>
           )}
 
-          {!loading && !error && products.length === 0 && (
+          {!loading && !error && !infoNotice && products.length === 0 && (
             <div className="text-center py-20">
               <p className="text-muted-foreground text-lg">
                 Enter a {supportedPlatformNames()} store or collection URL above to get started
