@@ -224,8 +224,10 @@ async function main() {
   for (const platform of PLATFORMS) {
     const mine = rows.filter((r) => r.platform === platform);
     const passing = mine.filter((r) => r.status === "pass" || r.status === "warn").length;
-    const counts = Object.entries(Object.groupBy(mine, (r) => r.status))
-      .map(([status, list]) => `${list.length} ${status}`)
+    const tally = {};
+    for (const r of mine) tally[r.status] = (tally[r.status] ?? 0) + 1;
+    const counts = Object.entries(tally)
+      .map(([status, n]) => `${n} ${status}`)
       .join(", ");
     const verdict = passing > 0 ? "OK" : "FAILED";
     if (passing === 0) failed = true;

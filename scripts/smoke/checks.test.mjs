@@ -59,6 +59,14 @@ describe("validateShopifyPage", () => {
   });
 });
 
+describe("non-object entries", () => {
+  it("are reported as shape problems instead of throwing", () => {
+    expect(validateShopifyPage({ products: [{ ...shopifyProduct, variants: [null] }] })).toContain("variant is not an object");
+    expect(validateFourthwallPage({ current_page: 1, products: [{ ...fourthwallProduct, variants: ["S"] }] }, 1)).toContain("variant is not an object");
+    expect(validateBigCartelProducts([{ ...bigCartelProduct, options: [null] }])).toContain("option is not an object");
+  });
+});
+
 describe("validateShopifyCollections", () => {
   it("checks the keys discovery relies on", () => {
     expect(validateShopifyCollections({ collections: [{ handle: "a", title: "A", products_count: 1 }] })).toEqual([]);

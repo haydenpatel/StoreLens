@@ -18,6 +18,7 @@ function collect(items, check) {
 }
 
 function requireKeys(obj, keys, prefix) {
+  if (!isObject(obj)) return [`${prefix} is not an object`];
   return keys.filter((k) => !(k in obj)).map((k) => `${prefix}.${k} missing`);
 }
 
@@ -42,7 +43,7 @@ export function validateShopifyPage(data) {
       if (p.variants.length === 0) problems.push("product.variants is empty");
       for (const v of p.variants) {
         problems.push(...requireKeys(v, SHOPIFY_VARIANT_KEYS, "variant"));
-        if (!isNumeric(v.price)) problems.push("variant.price is not numeric");
+        if (isObject(v) && !isNumeric(v.price)) problems.push("variant.price is not numeric");
       }
     } else if ("variants" in p) problems.push("product.variants is not an array");
     return [...new Set(problems)];
@@ -73,6 +74,7 @@ export function validateFourthwallPage(data, page) {
       else {
         for (const v of p.variants) {
           found.push(...requireKeys(v, ["id", "title", "price"], "variant"));
+          if (!isObject(v)) continue;
           if (isObject(v.price)) {
             if (!Number.isFinite(v.price.cents)) found.push("variant.price.cents is not a number");
             if (typeof v.price.currency_iso !== "string") found.push("variant.price.currency_iso is not a string");
@@ -101,7 +103,7 @@ export function validateBigCartelProducts(data) {
     if (Array.isArray(p.options)) {
       for (const o of p.options) {
         found.push(...requireKeys(o, ["id", "name", "price", "sold_out"], "option"));
-        if (typeof o.sold_out !== "boolean") found.push("option.sold_out is not a boolean");
+        if (isObject(o) && typeof o.sold_out !== "boolean") found.push("option.sold_out is not a boolean");
       }
     } else if ("options" in p) found.push("product.options is not an array");
     return [...new Set(found)];
