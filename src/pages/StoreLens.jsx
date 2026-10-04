@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import { Loader2, AlertCircle, Info, SlidersHorizontal, TriangleAlert } from "lucide-react";
+import { Loader2, AlertCircle, SlidersHorizontal, TriangleAlert } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 
@@ -24,7 +24,9 @@ export default function StoreLensApp() {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [loadNotice, setLoadNotice] = useState(null);
+  // Shown as a warning: the list on screen is incomplete (a page failed, or the
+  // platform's paging limit was hit).
+  const [loadWarning, setLoadWarning] = useState(null);
   // Shown as a warning: parts of a shared link (filters) that couldn't be applied.
   const [linkWarning, setLinkWarning] = useState(null);
   const [urlHistory, setUrlHistory] = useState([]);
@@ -146,7 +148,7 @@ export default function StoreLensApp() {
 
     setLoading(true);
     setError(null);
-    setLoadNotice(null);
+    setLoadWarning(null);
     setLinkWarning(null);
     setProducts([]);
 
@@ -188,11 +190,11 @@ export default function StoreLensApp() {
       resetFilters();
 
       if (pageError) {
-        setLoadNotice(
+        setLoadWarning(
           `Loaded ${allProducts.length.toLocaleString()} products, but couldn't fetch the rest (${pageError.message}).`
         );
       } else if (truncated) {
-        setLoadNotice(
+        setLoadWarning(
           `This collection is larger than ${loadAdapter.name}'s public catalog can page through — showing the first ${allProducts.length.toLocaleString()} products.`
         );
       }
@@ -303,7 +305,7 @@ export default function StoreLensApp() {
         setProducts([]);
         setCurrentCollectionUrl("");
         setError(null);
-        setLoadNotice(null);
+        setLoadWarning(null);
         setLinkWarning(null);
         applyUserInput("");
       }
@@ -693,10 +695,10 @@ export default function StoreLensApp() {
             </Alert>
           )}
 
-          {!loading && loadNotice && products.length > 0 && (
-            <Alert className="w-fit max-w-2xl mx-auto mb-6">
-              <Info className="h-4 w-4" />
-              <AlertDescription>{loadNotice}</AlertDescription>
+          {!loading && loadWarning && products.length > 0 && (
+            <Alert variant="warning" className="w-fit max-w-2xl mx-auto mb-6">
+              <TriangleAlert className="h-4 w-4" />
+              <AlertDescription>{loadWarning}</AlertDescription>
             </Alert>
           )}
 
