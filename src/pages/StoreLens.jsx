@@ -250,7 +250,7 @@ export default function StoreLensApp() {
       // Only surface an error for genuinely invalid input — an empty
       // submission (e.g. pressing Enter on an empty box) isn't a mistake.
       if (value?.trim()) {
-        setError(`Please enter a valid ${supportedPlatformNames()} store or collection URL`);
+        setError("Please enter a valid store or collection URL");
       }
       return;
     }
