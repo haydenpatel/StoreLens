@@ -471,9 +471,11 @@ export default function StoreLensApp() {
           setCollectionsState({
             status: "error",
             collections: [],
+            // Short: it sits in the collection dropdown. The full explanation is
+            // the error below, when there is nothing else to show.
             error:
               err instanceof StoreError
-                ? describeStoreError(err, { supported: supportedPlatformNames() })
+                ? `Couldn't load collections: ${describeStoreErrorReason(err)}`
                 : err.message || "Couldn't load collections for this store",
             allProductsHandle: null,
           });
