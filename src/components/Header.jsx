@@ -2,7 +2,6 @@ import React from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Package, Clock, RefreshCw, ArrowRight, Loader2 } from "lucide-react";
-import { supportedPlatformNames } from "@/lib/platforms";
 import { getDisplayOrigin } from "@/lib/store";
 import {
   DropdownMenu,
@@ -90,7 +89,7 @@ export default function Header({
           <div className="flex gap-2 xl:order-2 sm:flex-1">
             <Input
               type="text"
-              placeholder={`Paste ${supportedPlatformNames()} store or collection URL`}
+              placeholder="Paste a store or collection URL"
               value={storeInput}
               onChange={(e) => onStoreInputChange(e.target.value)}
               onPaste={(e) => {
