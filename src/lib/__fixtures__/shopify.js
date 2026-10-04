@@ -89,8 +89,10 @@ export function catalog() {
 }
 
 // "Size" sits at option1 on some products, option2 on others and option3 on
-// others, and option1 also holds other option names. Mirrors a structure seen
-// on real Shopify stores; the products themselves are invented.
+// others, and the first option also holds other names such as Color. There is
+// a "Title"/"Default Title" placeholder product, a differently cased "SIZE",
+// and a distinct "Waist size". Mirrors a structure seen on real Shopify
+// stores; the products themselves are invented.
 export function scatteredOptionsCatalog() {
   return [
     product({
@@ -112,8 +114,21 @@ export function scatteredOptionsCatalog() {
       variants: [variant({ option1: "Olive", option2: "Regular", option3: "Large" })],
     }),
     product({
+      title: "Trousers",
+      options: [{ name: "Color" }, { name: "Waist size" }],
+      variants: [
+        variant({ option1: "Navy", option2: "32" }),
+        variant({ option1: "Navy", option2: "34" }),
+      ],
+    }),
+    product({
+      title: "Hat",
+      options: [{ name: "SIZE" }],
+      variants: [variant({ option1: "X-Small" })],
+    }),
+    product({
       title: "Poster",
-      options: [{ name: "Title" }],
+      options: [{ name: "Title", values: ["Default Title"] }],
       variants: [variant({ title: "Default Title", option1: "Default Title" })],
     }),
   ];

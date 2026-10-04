@@ -202,9 +202,50 @@ describe("normalizeShopifyProduct", () => {
     expect(n.available).toBe(false);
   });
 
-  it("drops trailing empty option slots but keeps their positions", () => {
-    const n = normalize(product({ variants: [variant({ option1: "Default Title", option2: null, option3: null })] }));
-    expect(n.variants[0].options).toEqual(["Default Title"]);
+  it("drops trailing empty option slots", () => {
+    const n = normalize(
+      product({
+        options: [{ name: "Size", values: ["S"] }],
+        variants: [variant({ option1: "S", option2: null, option3: null })],
+      })
+    );
+    expect(n.variants[0].options).toEqual(["S"]);
+  });
+
+  describe("the Title / Default Title placeholder option", () => {
+    it("is dropped: the product has no real options", () => {
+      const n = normalize(
+        product({
+          options: [{ name: "Title", values: ["Default Title"] }],
+          variants: [variant({ title: "Default Title", option1: "Default Title" })],
+        })
+      );
+      expect(n.options).toEqual([]);
+      expect(n.variants[0].options).toEqual([]);
+      // The placeholder's "Default Title" isn't a name worth showing.
+      expect(n.variants[0].title).toBe("");
+    });
+
+    it("is kept when Title has real values", () => {
+      const n = normalize(
+        product({
+          options: [{ name: "Title", values: ["Hardback", "Paperback"] }],
+          variants: [variant({ option1: "Hardback" })],
+        })
+      );
+      expect(n.options).toEqual([{ name: "Title", values: ["Hardback", "Paperback"] }]);
+      expect(n.variants[0].options).toEqual(["Hardback"]);
+    });
+
+    it("is kept when the product has other options too", () => {
+      const n = normalize(
+        product({
+          options: [{ name: "Title", values: ["Default Title"] }, { name: "Size", values: ["S"] }],
+          variants: [variant({ option1: "Default Title", option2: "S" })],
+        })
+      );
+      expect(n.options.map((o) => o.name)).toEqual(["Title", "Size"]);
+    });
   });
 
   it.each([
@@ -355,10 +396,82 @@ describe("fetchCollection", () => {
   });
 });
 
+describe("listCollections when the first path segment may not be a locale", () => {
+  const PLAIN = ORIGIN;
+  const LOCALE = `${ORIGIN}/uk`;
+  const tees = collectionsPage([["tees", "Tees", 5]]);
+
+  // Serves /collections.json (and the all-products probes) only for the
+  // origins marked as working; everything else is a 404.
+  const storeFetch = ({ plainWorks = false, localeWorks = false, localeEmpty = false }) =>
+    vi.fn(async (url) => {
+      const u = new URL(url);
+      const underLocale = u.pathname.startsWith("/uk/");
+      if (u.pathname.endsWith("/collections.json")) {
+        if (underLocale ? localeWorks : plainWorks) return jsonResponse(tees);
+        if (underLocale && localeEmpty) return jsonResponse({ collections: [] });
+      }
+      return jsonResponse({}, { ok: false, status: 404 });
+    });
+  const calledUnderLocale = (fetchMock) =>
+    fetchMock.mock.calls.some(([url]) => new URL(url).pathname.startsWith("/uk/"));
+
+  it("uses the locale origin when it works, and never asks for the plain one", async () => {
+    const fetchMock = storeFetch({ localeWorks: true });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await shopifyAdapter.listCollections(LOCALE);
+    expect(result.collections.map((c) => c.handle)).toEqual(["tees"]);
+    expect(result.origin).toBeUndefined();
+    expect(fetchMock.mock.calls.every(([url]) => new URL(url).pathname.startsWith("/uk/"))).toBe(true);
+  });
+
+  it("falls back to the plain origin when the locale one has nothing, and says so", async () => {
+    vi.stubGlobal("fetch", storeFetch({ plainWorks: true }));
+
+    const result = await shopifyAdapter.listCollections(LOCALE);
+    expect(result.origin).toBe(PLAIN);
+    expect(result.collections.map((c) => c.handle)).toEqual(["tees"]);
+    expect(loadCollectionsCache("shopify", PLAIN)).not.toBeNull();
+  });
+
+  it("falls back when the locale origin answers with an empty listing", async () => {
+    vi.stubGlobal("fetch", storeFetch({ plainWorks: true, localeEmpty: true }));
+    const result = await shopifyAdapter.listCollections(LOCALE);
+    expect(result.origin).toBe(PLAIN);
+  });
+
+  it("throws the locale origin's error when neither origin works", async () => {
+    vi.stubGlobal("fetch", storeFetch({}));
+    await expect(shopifyAdapter.listCollections(LOCALE)).rejects.toThrow(
+      "Failed to fetch collections (status 404)"
+    );
+  });
+
+  it("never tries a locale for a plain origin", async () => {
+    const fetchMock = storeFetch({ plainWorks: true });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await shopifyAdapter.listCollections(PLAIN);
+    expect(result.origin).toBeUndefined();
+    expect(calledUnderLocale(fetchMock)).toBe(false);
+  });
+
+  it("rethrows an abort instead of falling back", async () => {
+    const abort = Object.assign(new Error("aborted"), { name: "AbortError" });
+    vi.stubGlobal("fetch", vi.fn(async () => { throw abort; }));
+    await expect(shopifyAdapter.listCollections(LOCALE)).rejects.toBe(abort);
+  });
+});
+
 describe("shopifyAdapter metadata", () => {
   it("exposes normalize, which maps a raw product to the neutral shape", () => {
     const n = shopifyAdapter.normalize(product({ handle: "tee", vendor: "Acme" }), ORIGIN);
     expect(n).toMatchObject({ handle: "tee", vendors: ["Acme"] });
+  });
+
+  it("labels its filter sections", () => {
+    expect(shopifyAdapter.labels).toEqual({ vendors: "Vendor", categories: "Product Type" });
   });
 
   it("identifies itself and supports every capability", () => {

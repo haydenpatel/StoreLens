@@ -7,6 +7,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { currencySymbol } from "@/lib/currency";
 import ProductCard from "./ProductCard";
 
 // Rendering a DOM card per product doesn't scale to collections with
@@ -14,7 +15,7 @@ import ProductCard from "./ProductCard";
 // sentinel below the grid reveals more as the user scrolls near it.
 const CHUNK_SIZE = 60;
 
-function ProductGrid({ products, totalProducts, sortBy, setSortBy }) {
+function ProductGrid({ products, totalProducts, sortBy, setSortBy, currency }) {
   const [visibleCount, setVisibleCount] = useState(CHUNK_SIZE);
   const [productsForReset, setProductsForReset] = useState(products);
   const sentinelRef = useRef(null);
@@ -80,7 +81,7 @@ function ProductGrid({ products, totalProducts, sortBy, setSortBy }) {
               <SelectItem value="price-desc">Price: High to Low</SelectItem>
               <SelectItem value="newest">Newest First</SelectItem>
               <SelectItem value="discount-percent">Discount %: High to Low</SelectItem>
-              <SelectItem value="discount-amount">Discount $: High to Low</SelectItem>
+              <SelectItem value="discount-amount">Discount {currencySymbol(currency)}: High to Low</SelectItem>
             </SelectContent>
           </Select>
         </div>
