@@ -18,6 +18,9 @@ import {
 import { getDisplayOrigin, parseUserInputToURL } from "@/lib/store";
 import { defaultAdapter, detectAdapter, supportedPlatformNames } from "@/lib/platforms";
 
+// Where Recent Stores lived before the key was renamed from shopify-specific.
+const LEGACY_HISTORY_KEY = "shopify-url-history";
+
 export default function StoreLensApp() {
   const [storeInput, setStoreInput] = useState("");
   const [storeOrigin, setStoreOrigin] = useState("");
@@ -107,7 +110,14 @@ export default function StoreLensApp() {
   // Load URL history from localStorage
   useEffect(() => {
     try {
-      const saved = localStorage.getItem(historyKey);
+      let saved = localStorage.getItem(historyKey);
+      // Carry Recent Stores over from the key used before it was renamed.
+      const legacy = localStorage.getItem(LEGACY_HISTORY_KEY);
+      if (saved === null && legacy !== null) {
+        saved = legacy;
+        localStorage.setItem(historyKey, legacy);
+      }
+      localStorage.removeItem(LEGACY_HISTORY_KEY);
       if (saved) {
         setUrlHistory(JSON.parse(saved));
       }
