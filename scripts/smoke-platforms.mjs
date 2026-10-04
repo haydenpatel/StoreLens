@@ -63,7 +63,7 @@ async function request(url) {
 
 // Collects findings for one store. `gone` short-circuits everything else.
 function newReport() {
-  return { fails: [], warns: [], gone: null, note: "" };
+  return { fails: [], warns: [], gone: null, note: "", cors: null };
 }
 
 // Handles the failure modes common to every first request. Returns true if the
@@ -93,6 +93,7 @@ function gate(report, res) {
 function inspect(report, res, problems) {
   const found = [...checkCors(res.headers), ...problems];
   report.fails.push(...found);
+  report.cors ??= res.headers.get("access-control-allow-origin");
   return found.length === 0;
 }
 
@@ -175,6 +176,7 @@ async function checkBigCartel({ shop }) {
 const CHECKERS = { shopify: checkShopify, fourthwall: checkFourthwall, bigcartel: checkBigCartel };
 
 function summarise(report) {
+  if (report.cors && !report.fails.length && !report.gone) report.note = `CORS ${report.cors}; ${report.note}`;
   if (report.fails.length) return { status: "fail", detail: report.fails.join("; ") };
   if (report.gone) return { status: "gone", detail: report.gone };
   if (report.warns.length) return { status: "warn", detail: [report.note, ...report.warns].filter(Boolean).join("; ") };
