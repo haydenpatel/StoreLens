@@ -69,8 +69,9 @@
  * @property {(origin: string, collection: string) => string} collectionUrl
  * @property {string} [defaultCollection]   Collection to auto-load for a bare store when the platform has no collection listing.
  * @property {(origin: string, signal?: AbortSignal, opts?: {forceRefresh?: boolean}) =>
- *   Promise<{collections: {handle: string, title: string, products_count: number|null}[], allProductsHandle: string|null}>} [listCollections]
+ *   Promise<{collections: {handle: string, title: string, products_count: number|null}[], allProductsHandle: string|null, origin?: string}>} [listCollections]
  *   Optional: platforms without a listing omit it and set defaultCollection.
+ *   `origin`, when present, is the origin that actually worked (e.g. a locale prefix turned out not to be one); the caller switches to it.
  * @property {(raw: any, origin: string) => NeutralProduct} normalize   Maps one raw platform product to the neutral shape.
  * @property {(collectionUrl: string, opts: {signal?: AbortSignal}) => Promise<FetchCollectionResult>} fetchCollection
  *   Throws on an invalid URL, and rethrows an abort. Everything else is reported in the result.

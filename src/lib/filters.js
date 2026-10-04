@@ -157,10 +157,11 @@ export function computeFilterData(products) {
 
 // Matches option selections read from a link to this collection's own filters.
 // Names and values are compared ignoring case and surrounding whitespace and
-// come back in the filter's spelling. A name the collection has no option for
-// (a stale or hand-edited link, or an old positional ?options={"option1":...}
-// link) can't filter anything, so it is dropped and reported in `ignored`
-// rather than emptying the list. Saved values the option doesn't have are kept.
+// come back in the filter's spelling. Only the parts that fit this collection
+// are applied: an option it doesn't have (a stale or hand-edited link, or an
+// old positional ?options={"option1":...} link) and a value the option doesn't
+// have can't filter anything, so they are dropped and reported in `ignored`
+// ("Material", "Size: Gigantic") rather than emptying the list.
 export function restoreOptionSelections(selectedOptions, filterOptions) {
   const byName = new Map(
     filterOptions.map(option => [
@@ -180,8 +181,16 @@ export function restoreOptionSelections(selectedOptions, filterOptions) {
       if (values.length > 0) ignored.push(name);
       return;
     }
-    const canonical = values.map(value => match.values.get(normalizeOptionValue(value)) ?? value);
-    options[match.key] = [...new Set([...(options[match.key] ?? []), ...canonical])];
+    const known = [];
+    values.forEach(value => {
+      const canonical = match.values.get(normalizeOptionValue(value));
+      if (canonical === undefined) ignored.push(`${match.key}: ${value}`);
+      else known.push(canonical);
+    });
+    // An option left with no applicable values isn't a filter at all.
+    if (known.length > 0) {
+      options[match.key] = [...new Set([...(options[match.key] ?? []), ...known])];
+    }
   });
   return { options, ignored };
 }

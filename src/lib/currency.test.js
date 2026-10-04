@@ -44,6 +44,19 @@ describe("formatMoney", () => {
     }
   });
 
+  it("can show whole units, as the price-range label does", () => {
+    expect(formatMoney(10, undefined, { decimals: 0 })).toBe("$10");
+    expect(formatMoney(10, "USD", { decimals: 0 })).toBe("$10");
+    expect(formatMoney(1234, "EUR", { decimals: 0 })).toBe("\u20ac1,234");
+  });
+
+  it("separates a code-style symbol from the amount, like the card amounts", () => {
+    // CHF's narrow symbol is the code itself.
+    expect(currencySymbol("CHF")).toBe("CHF");
+    expect(formatMoney(10, "CHF", { decimals: 0 })).toBe("CHF\u00a010");
+    expect(formatMoney(10, "CHF")).toBe("CHF\u00a010.00");
+  });
+
   it("falls back to code and amount for an invalid currency", () => {
     expect(formatMoney(5, "nope!")).toBe("nope! 5.00");
   });

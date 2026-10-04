@@ -406,10 +406,18 @@ export default function StoreLensApp() {
         const discoveryAdapter = adapterRef.current;
         // Platforms without a collection listing skip discovery and open
         // their default collection instead.
-        const { collections, allProductsHandle } =
+        const { collections, allProductsHandle, origin: resolvedOrigin } =
           discoveryAdapter.capabilities.collectionDiscovery !== false && discoveryAdapter.listCollections
             ? await discoveryAdapter.listCollections(storeOrigin, controller.signal, { forceRefresh })
             : { collections: [], allProductsHandle: discoveryAdapter.defaultCollection ?? null };
+        if (!controller.signal.aborted && resolvedOrigin && resolvedOrigin !== storeOrigin) {
+          // The adapter found the store under a different origin (e.g. /uk was
+          // a page, not a locale). Switch to it and let discovery run again
+          // (a cache hit now) so the pending auto-load picks up from there.
+          setStoreOrigin(resolvedOrigin);
+          setStoreInput(getDisplayOrigin(resolvedOrigin));
+          return;
+        }
         if (!controller.signal.aborted) {
           setCollectionsState({
             status: "ready",

@@ -190,7 +190,7 @@ async function probeAllProductsCollection(origin, existingHandles, signal) {
   return null;
 }
 
-async function listCollections(origin, signal, { forceRefresh = false } = {}) {
+async function discoverCollections(origin, signal, { forceRefresh = false } = {}) {
   const cached = forceRefresh ? null : loadCollectionsCache(PLATFORM_ID, origin);
   if (cached) {
     return cached;
@@ -267,6 +267,36 @@ async function listCollections(origin, signal, { forceRefresh = false } = {}) {
 
   saveCollectionsCache(PLATFORM_ID, origin, filtered, allProductsHandle);
   return { collections: filtered, allProductsHandle };
+}
+
+const hasUsableCollections = (result) => result.collections.length > 0 || Boolean(result.allProductsHandle);
+
+// parseUrl treats a short first path segment (/en-nz) as a Markets locale, but
+// it could just as well be an ordinary page (/uk). When nothing can be found
+// under the locale-bearing origin, try the plain origin; if that works the
+// result carries `origin` so the caller switches to it.
+async function listCollections(origin, signal, options = {}) {
+  const plainOrigin = new URL(origin).origin;
+  if (plainOrigin === origin) return discoverCollections(origin, signal, options);
+
+  let primary;
+  let primaryError;
+  try {
+    primary = await discoverCollections(origin, signal, options);
+  } catch (err) {
+    if (err?.name === "AbortError") throw err;
+    primaryError = err;
+  }
+  if (primary && hasUsableCollections(primary)) return primary;
+
+  try {
+    const fallback = await discoverCollections(plainOrigin, signal, options);
+    if (hasUsableCollections(fallback)) return { ...fallback, origin: plainOrigin };
+  } catch (err) {
+    if (err?.name === "AbortError") throw err;
+  }
+  if (primaryError) throw primaryError;
+  return primary;
 }
 
 /** @type {import("./types").PlatformAdapter} */

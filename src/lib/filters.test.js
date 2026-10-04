@@ -637,8 +637,29 @@ describe("restoreOptionSelections", () => {
     });
   });
 
-  it("keeps a saved value that the option doesn't have", () => {
-    expect(restore({ Size: ["Gigantic"] }).options).toEqual({ Size: ["Gigantic"] });
+  it("drops and reports a value the option doesn't have", () => {
+    expect(restore({ Size: ["Large", "Gigantic"] })).toEqual({
+      options: { Size: ["Large"] },
+      ignored: ["Size: Gigantic"],
+    });
+  });
+
+  it("leaves out an option none of whose saved values apply", () => {
+    expect(restore({ Size: ["Gigantic"], Color: ["Black"] })).toEqual({
+      options: { Color: ["Black"] },
+      ignored: ["Size: Gigantic"],
+    });
+  });
+
+  it("reports each unknown name and value", () => {
+    expect(restore({ Material: ["Cotton"], Size: ["Nope", "Large"] }).ignored).toEqual([
+      "Material",
+      "Size: Nope",
+    ]);
+  });
+
+  it("reports an unknown value in the filter's spelling of the option name", () => {
+    expect(restore({ size: ["Gigantic"] }).ignored).toEqual(["Size: Gigantic"]);
   });
 
   it("drops and reports an option the collection doesn't have", () => {
