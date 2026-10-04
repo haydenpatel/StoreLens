@@ -15,7 +15,7 @@ import {
   parseFilterParams,
   restoreOptionSelections,
 } from "@/lib/filters";
-import { getDisplayOrigin, parseUserInputToURL } from "@/lib/store";
+import { addressMatches, appPathFor, getDisplayOrigin, parseUserInputToURL } from "@/lib/store";
 import { defaultAdapter, detectAdapter, supportedPlatformNames } from "@/lib/platforms";
 import { StoreError, describeStoreError, describeStoreErrorReason } from "@/lib/errors";
 
@@ -147,6 +147,21 @@ export default function StoreLensApp() {
   const nextLoadIsAutoDefaultRef = useRef(false);
   const lastLoadWasAutoDefaultRef = useRef(false);
 
+  // Nothing is going to show for the store or collection just asked for (its
+  // discovery found nothing to open, or its collection failed to load), so drop
+  // the previous page: no stale grid or filters under the new message, and an
+  // address bar that names what was asked for instead of what is gone. The
+  // attempt is pushed so Back returns to the previous page; one that came from
+  // the address bar itself (a deep link, Back/Forward) only normalizes in place,
+  // since pushing there would trap Back in a loop.
+  const showFailedStore = (path, fromAddressBar) => {
+    setProducts([]);
+    setCurrentCollectionUrl("");
+    if (addressMatches(path, window.location.pathname)) return;
+    if (fromAddressBar) window.history.replaceState(null, "", path);
+    else window.history.pushState(null, "", path);
+  };
+
   const fetchCollection = async (url) => {
     fetchCollectionAbortRef.current?.abort();
     const controller = new AbortController();
@@ -154,6 +169,9 @@ export default function StoreLensApp() {
     const isCurrent = () => !controller.signal.aborted;
     const isAutoDefaultLoad = nextLoadIsAutoDefaultRef.current;
     nextLoadIsAutoDefaultRef.current = false;
+    // Read now: isUrlOriginatedRef is only set during applyUserInput's own
+    // synchronous run, which is when a load driven by the address bar starts.
+    const fromAddressBar = isUrlOriginatedRef.current || isAutoDefaultLoad;
     // Any load that isn't part of a URL-originated chain (isUrlOriginatedRef
     // covers an explicit handle in the URL; isAutoDefaultLoad covers a bare
     // domain's auto-resolved default, which resolves asynchronously after
@@ -190,6 +208,7 @@ export default function StoreLensApp() {
       if (isCurrent()) {
         setError(describeStoreError(err, { supported: supportedPlatformNames() }));
         setLoading(false);
+        showFailedStore(appPathFor(url), fromAddressBar);
       }
       return;
     }
@@ -201,6 +220,7 @@ export default function StoreLensApp() {
     if (allProducts.length === 0) {
       setError(describeStoreError(pageError ?? new StoreError("empty"), { supported: supportedPlatformNames() }));
       setLoading(false);
+      showFailedStore(appPathFor(url), fromAddressBar);
       return;
     }
 
@@ -463,6 +483,7 @@ export default function StoreLensApp() {
               setInfoNotice(
                 "I couldn't automatically find an all-products collection for this store. Please choose a collection from the dropdown above."
               );
+              showFailedStore(appPathFor(storeOrigin), pendingAutoLoadIsUrlOriginatedRef.current);
             }
           }
         }
@@ -486,6 +507,7 @@ export default function StoreLensApp() {
                 ? describeStoreError(err, { supported: supportedPlatformNames() })
                 : "I couldn't find a collection of products to load. Please paste the full collection URL and try again."
             );
+            showFailedStore(appPathFor(storeOrigin), pendingAutoLoadIsUrlOriginatedRef.current);
           }
         }
       }
