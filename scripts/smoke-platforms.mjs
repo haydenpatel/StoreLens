@@ -61,7 +61,7 @@ async function request(url) {
   return requestOnce(url);
 }
 
-// Collects findings for one store. `gone` short-circuits everything else.
+// Collects findings for one store. A fail outranks `gone` when both are set.
 function newReport() {
   return { fails: [], warns: [], gone: null, note: "", cors: null };
 }
@@ -89,6 +89,13 @@ function gate(report, res) {
   return true;
 }
 
+// A page after the first one disappearing is drift, not a vanished store: turn
+// the `gone` the gate recorded into a failure that keeps its reason.
+function failLaterPage(report, what) {
+  report.fails.push(report.gone ? `${what}: ${report.gone}` : `${what} unusable`);
+  report.gone = null;
+}
+
 // Checks CORS and shape of an OK response; true if both are fine.
 function inspect(report, res, problems) {
   const found = [...checkCors(res.headers), ...problems];
@@ -112,7 +119,9 @@ async function checkShopify({ host, collection }) {
 
   if (count === SHOPIFY_PAGE_SIZE) {
     const page2 = await request(`${base}&page=2`);
-    if (!gate(report, page2) || !inspect(report, page2, validateShopifyPage(page2.data))) {
+    if (!gate(report, page2)) {
+      failLaterPage(report, "page 2");
+    } else if (!inspect(report, page2, validateShopifyPage(page2.data))) {
       report.fails.push("page 2 unusable");
     } else if (page2.data.products[0]?.id === page1.data.products[0].id) {
       report.fails.push("page 2 repeats page 1 (paging ignored)");
@@ -137,10 +146,8 @@ async function checkFourthwall({ host }) {
   let total = 0;
   for (let page = 1; page <= FOURTHWALL_MAX_PAGES; page++) {
     const res = await request(`https://${host}/collections/all/${page}.json`);
-    if (page === 1) {
-      if (!gate(report, res)) return report;
-    } else if (!gate(report, res)) {
-      report.fails.push(`page ${page} unusable`);
+    if (!gate(report, res)) {
+      if (page > 1) failLaterPage(report, `page ${page}`);
       return report;
     }
     if (!inspect(report, res, validateFourthwallPage(res.data, page))) return report;
