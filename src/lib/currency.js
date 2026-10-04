@@ -3,15 +3,14 @@
 
 const FALLBACK_SYMBOL = "$";
 
-// One formatter per use so the symbol in a label ("Discount $") and the symbol
+// One formatter for both uses so the symbol in a label ("Discount $") and the symbol
 // in an amount ("$20.00") always agree: both use the narrow symbol, so NZD, AUD
 // and CAD all show "$".
-function currencyFormat(currency, options = {}) {
+function currencyFormat(currency) {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency,
     currencyDisplay: "narrowSymbol",
-    ...options,
   });
 }
 

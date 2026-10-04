@@ -238,6 +238,9 @@ export default function StoreLensApp() {
   // immediately: normalizing the display to a clean host, kicking off
   // collection discovery, and loading a collection URL's handle right away.
   const applyUserInput = (value) => {
+    // Every way of switching store comes through here (paste, submit, Recent
+    // Stores, Back/Forward), so a message about the previous one must not linger.
+    clearMessage();
     const parsed = parseUserInputToURL(value);
     if (!parsed) {
       setStoreInput(value);
