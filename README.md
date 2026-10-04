@@ -63,6 +63,18 @@ npm run dev
 
 Run the tests with `npm test` (they run offline against synthetic fixtures, never real store data) and lint with `npm run lint`.
 
+### Platform feed smoke check
+
+The unit tests can't notice a platform changing its feed (Fourthwall's and Big Cartel's are undocumented or legacy), so a separate script checks live sample stores:
+
+```bash
+npm run smoke
+```
+
+For each sample store it requests the feed with `Origin: https://storelens.pages.dev` and checks the HTTP status, an `Access-Control-Allow-Origin` header, the response shape, that paging terminates, and that the fields the adapters read still exist. It prints a pass/fail table (about 10 seconds) and exits non-zero only if a platform has no passing store. A store that was removed, locked or emptied shows as `GONE` rather than failing, so refresh the sample lists in `scripts/smoke-platforms.config.mjs` when that happens.
+
+It hits real stores, so it isn't part of `npm test` or CI. **Run it by hand before each release.** It reads feeds in memory only and never saves responses.
+
 ## Status and Limitations
 
 StoreLens is currently in ***early alpha*** (0.1).
