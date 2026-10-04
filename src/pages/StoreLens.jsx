@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import { Loader2, AlertCircle, Info, SlidersHorizontal } from "lucide-react";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Loader2, SlidersHorizontal } from "lucide-react";
+import Notice from "../components/Notice";
 import { Button } from "@/components/ui/button";
 
 import Header from "../components/Header";
@@ -13,9 +13,13 @@ import {
   countActiveFilters,
   filterAndSortProducts,
   parseFilterParams,
+  restoreOptionSelections,
 } from "@/lib/filters";
 import { getDisplayOrigin, parseUserInputToURL } from "@/lib/store";
 import { defaultAdapter, detectAdapter, supportedPlatformNames } from "@/lib/platforms";
+
+// Where Recent Stores lived before the key was renamed from shopify-specific.
+const LEGACY_HISTORY_KEY = "shopify-url-history";
 
 export default function StoreLensApp() {
   const [storeInput, setStoreInput] = useState("");
@@ -23,7 +27,18 @@ export default function StoreLensApp() {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [loadNotice, setLoadNotice] = useState(null);
+  // Shown as info: nothing is wrong, but the user has a next step to take.
+  const [infoNotice, setInfoNotice] = useState(null);
+  // Shown as a warning: the list on screen is incomplete (a page failed, or the
+  // platform's paging limit was hit).
+  const [loadWarning, setLoadWarning] = useState(null);
+  // Shown as a warning: parts of a shared link (filters) that couldn't be applied.
+  const [linkWarning, setLinkWarning] = useState(null);
+  // Clears the message shown in place of the product list (error or info).
+  const clearMessage = () => {
+    setError(null);
+    setInfoNotice(null);
+  };
   const [urlHistory, setUrlHistory] = useState([]);
   const [collectionsState, setCollectionsState] = useState({
     status: "idle",
@@ -33,6 +48,9 @@ export default function StoreLensApp() {
   });
   const [selectedHandle, setSelectedHandle] = useState("");
   const [currentCollectionUrl, setCurrentCollectionUrl] = useState("");
+  // Bumped once per successful load, even when it reloads the collection that
+  // is already on screen (so currentCollectionUrl doesn't change).
+  const [loadVersion, setLoadVersion] = useState(0);
   const [inputHandle, setInputHandle] = useState("");
   const [discoveryRetryNonce, setDiscoveryRetryNonce] = useState(0);
   const [isFilterDrawerOpen, setIsFilterDrawerOpen] = useState(false);
@@ -64,7 +82,7 @@ export default function StoreLensApp() {
   // waiting to be applied once a collection's own data has settled - see the
   // restore effect below for why it can't just be applied immediately.
   const pendingFilterParamsRef = useRef(null);
-  const historyKey = "shopify-url-history";
+  const historyKey = "storelens-url-history";
   const updateHistoryEntry = (entry) => {
     if (!entry) return;
     setUrlHistory((prev) => {
@@ -92,7 +110,14 @@ export default function StoreLensApp() {
   // Load URL history from localStorage
   useEffect(() => {
     try {
-      const saved = localStorage.getItem(historyKey);
+      let saved = localStorage.getItem(historyKey);
+      // Carry Recent Stores over from the key used before it was renamed.
+      const legacy = localStorage.getItem(LEGACY_HISTORY_KEY);
+      if (saved === null && legacy !== null) {
+        saved = legacy;
+        localStorage.setItem(historyKey, legacy);
+      }
+      localStorage.removeItem(LEGACY_HISTORY_KEY);
       if (saved) {
         setUrlHistory(JSON.parse(saved));
       }
@@ -139,8 +164,9 @@ export default function StoreLensApp() {
     }
 
     setLoading(true);
-    setError(null);
-    setLoadNotice(null);
+    clearMessage();
+    setLoadWarning(null);
+    setLinkWarning(null);
     setProducts([]);
 
     // Captured once: the user can paste a different store while this load is
@@ -176,15 +202,16 @@ export default function StoreLensApp() {
       setProducts(allProducts);
       setLoadedAdapter(loadAdapter);
       setCurrentCollectionUrl(url);
+      setLoadVersion((version) => version + 1);
       lastLoadWasAutoDefaultRef.current = isAutoDefaultLoad;
       resetFilters();
 
       if (pageError) {
-        setLoadNotice(
+        setLoadWarning(
           `Loaded ${allProducts.length.toLocaleString()} products, but couldn't fetch the rest (${pageError.message}).`
         );
       } else if (truncated) {
-        setLoadNotice(
+        setLoadWarning(
           `This collection is larger than ${loadAdapter.name}'s public catalog can page through — showing the first ${allProducts.length.toLocaleString()} products.`
         );
       }
@@ -194,7 +221,9 @@ export default function StoreLensApp() {
         // (raced ahead of discovery's own history write below) would
         // otherwise bump other domains out of Recent Stores every time
         // someone just browses collections within the same store.
-        updateHistoryEntry(new URL(url).origin);
+        // The store's origin including any locale, so Recent Stores reopens
+        // the same market.
+        updateHistoryEntry(loadAdapter.parseUrl(new URL(url)).origin);
       }
     } finally {
       if (isCurrent()) {
@@ -219,6 +248,9 @@ export default function StoreLensApp() {
   // immediately: normalizing the display to a clean host, kicking off
   // collection discovery, and loading a collection URL's handle right away.
   const applyUserInput = (value) => {
+    // Every way of switching store comes through here (paste, submit, Recent
+    // Stores, Back/Forward), so a message about the previous one must not linger.
+    clearMessage();
     const parsed = parseUserInputToURL(value);
     if (!parsed) {
       setStoreInput(value);
@@ -228,7 +260,7 @@ export default function StoreLensApp() {
       // Only surface an error for genuinely invalid input — an empty
       // submission (e.g. pressing Enter on an empty box) isn't a mistake.
       if (value?.trim()) {
-        setError(`Please enter a valid ${supportedPlatformNames()} store or collection URL`);
+        setError("Please enter a valid store or collection URL");
       }
       return;
     }
@@ -255,11 +287,11 @@ export default function StoreLensApp() {
   };
 
   const handleSubmitStoreInput = () => {
-    setError(null);
+    clearMessage();
     applyUserInput(storeInput);
   };
 
-  // Deep link support: /<domain> or /<domain>/collections/<handle> in the
+  // Deep link support: /<domain> or /<domain><collection path> in the
   // URL path loads that store (and collection, if given) - on first load,
   // and again on Back/Forward. That's the same shape applyUserInput()
   // already accepts from the paste box, so no separate parsing is needed -
@@ -292,8 +324,9 @@ export default function StoreLensApp() {
         setLoading(false);
         setProducts([]);
         setCurrentCollectionUrl("");
-        setError(null);
-        setLoadNotice(null);
+        clearMessage();
+        setLoadWarning(null);
+        setLinkWarning(null);
         applyUserInput("");
       }
     } finally {
@@ -383,10 +416,18 @@ export default function StoreLensApp() {
         const discoveryAdapter = adapterRef.current;
         // Platforms without a collection listing skip discovery and open
         // their default collection instead.
-        const { collections, allProductsHandle } =
+        const { collections, allProductsHandle, origin: resolvedOrigin } =
           discoveryAdapter.capabilities.collectionDiscovery !== false && discoveryAdapter.listCollections
             ? await discoveryAdapter.listCollections(storeOrigin, controller.signal, { forceRefresh })
             : { collections: [], allProductsHandle: discoveryAdapter.defaultCollection ?? null };
+        if (!controller.signal.aborted && resolvedOrigin && resolvedOrigin !== storeOrigin) {
+          // The adapter found the store under a different origin (e.g. /uk was
+          // a page, not a locale). Switch to it and let discovery run again
+          // (a cache hit now) so the pending auto-load picks up from there.
+          setStoreOrigin(resolvedOrigin);
+          setStoreInput(getDisplayOrigin(resolvedOrigin));
+          return;
+        }
         if (!controller.signal.aborted) {
           setCollectionsState({
             status: "ready",
@@ -394,9 +435,7 @@ export default function StoreLensApp() {
             error: null,
             allProductsHandle,
           });
-          // Plain origin only: a locale prefix belongs to the collection, not
-          // to the store entry shown in Recent Stores.
-          updateHistoryEntry(new URL(storeOrigin).origin);
+          updateHistoryEntry(storeOrigin);
           // Consume the flag here, against this exact discovery's fresh
           // result, rather than in a separate effect watching collectionsState:
           // that raced against a stale "ready" state left over from whichever
@@ -412,7 +451,7 @@ export default function StoreLensApp() {
               nextLoadIsAutoDefaultRef.current = pendingAutoLoadIsUrlOriginatedRef.current;
               loadCollectionByHandle(allProductsHandle, storeOrigin);
             } else {
-              setError(
+              setInfoNotice(
                 "I couldn't automatically find an all-products collection for this store. Please choose a collection from the dropdown above."
               );
             }
@@ -450,8 +489,8 @@ export default function StoreLensApp() {
   };
 
   // Keep the currently-loaded collection selectable in the dropdown even when
-  // /collections.json (and the all-products probe) didn't happen to include
-  // it — otherwise the Select ends up holding a value with no matching item.
+  // the platform's collection discovery didn't happen to include it —
+  // otherwise the Select ends up holding a value with no matching item.
   useEffect(() => {
     if (collectionsState.status !== "ready" || !inputHandle) return;
     setSelectedHandle(inputHandle);
@@ -472,12 +511,12 @@ export default function StoreLensApp() {
     // discovery on every keystroke re-rendered the whole app (including a
     // potentially large product grid), making typing feel sluggish. Actually
     // resolving the input now happens on submit (Enter or the Load button).
-    setError(null);
+    clearMessage();
     setStoreInput(value);
   };
 
   const handlePaste = (value) => {
-    setError(null);
+    clearMessage();
     applyUserInput(value);
   };
 
@@ -486,7 +525,7 @@ export default function StoreLensApp() {
   };
 
   const handleSelectHandle = (handle) => {
-    setError(null);
+    clearMessage();
     setSelectedHandle(handle);
     setInputHandle(handle);
     loadCollectionByHandle(handle, storeOrigin);
@@ -518,8 +557,9 @@ export default function StoreLensApp() {
   // Restore filter/sort state from the URL once a collection's own data has
   // settled - both resetFilters() (called on every successful load) and the
   // price-range effect above would otherwise immediately overwrite it with
-  // defaults. Keyed on currentCollectionUrl (changes exactly once per
-  // successful load) rather than filterData/products directly, since those
+  // defaults. Keyed on loadVersion (changes exactly once per successful load,
+  // including a reload of the same collection with a different query string,
+  // e.g. via Back/Forward) rather than filterData/products directly, since those
   // also transiently reset to empty at the START of a load, before the real
   // data arrives - reacting to that would apply these against the wrong
   // (empty) filterData and consume the pending params before the real
@@ -532,12 +572,25 @@ export default function StoreLensApp() {
     if (pending.selectedVendors !== undefined) setSelectedVendors(pending.selectedVendors);
     if (pending.selectedTypes !== undefined) setSelectedTypes(pending.selectedTypes);
     if (pending.selectedTags !== undefined) setSelectedTags(pending.selectedTags);
-    if (pending.selectedOptions !== undefined) setSelectedOptions(pending.selectedOptions);
+    if (pending.selectedOptions !== undefined) {
+      // Match saved option names and values to this collection's own labels.
+      // Options it doesn't have can't filter anything, so say so instead of
+      // quietly emptying the list.
+      const { options, ignored } = restoreOptionSelections(pending.selectedOptions, filterData.options);
+      setSelectedOptions(options);
+      if (ignored.length > 0) {
+        const message = `Some filters in this link don't apply to this collection and were ignored (${ignored.join(", ")}).`;
+        setLinkWarning(message);
+      }
+    }
     if (pending.inStockOnly !== undefined) setInStockOnly(pending.inStockOnly);
     if (pending.saleOnly !== undefined) setSaleOnly(pending.saleOnly);
     if (pending.priceRange !== undefined) setPriceRange(pending.priceRange);
     if (pending.sortBy !== undefined) setSortBy(pending.sortBy);
-  }, [currentCollectionUrl]);
+    // Deliberately keyed on loadVersion alone (see above); products and
+    // filterData are read from the same render that set it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadVersion]);
 
   // ...and the write direction: reflect filter/sort state in the URL's query
   // string as it changes, so a filtered/sorted view is bookmarkable too - not
@@ -613,6 +666,7 @@ export default function StoreLensApp() {
           <Sidebar
             filterData={filterData}
             capabilities={loadedAdapter.capabilities}
+            labels={loadedAdapter.labels}
             searchQuery={searchQuery}
             setSearchQuery={setSearchQuery}
             selectedVendors={selectedVendors}
@@ -654,21 +708,21 @@ export default function StoreLensApp() {
             </div>
           )}
 
-          {error && (
-            <Alert variant="destructive" className="max-w-2xl mx-auto">
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
+          {error && <Notice level="error">{error}</Notice>}
+
+          {infoNotice && (
+            <Notice level="info" onDismiss={() => setInfoNotice(null)}>{infoNotice}</Notice>
           )}
 
-          {!loading && loadNotice && products.length > 0 && (
-            <Alert className="max-w-2xl mx-auto mb-6">
-              <Info className="h-4 w-4" />
-              <AlertDescription>{loadNotice}</AlertDescription>
-            </Alert>
+          {!loading && linkWarning && products.length > 0 && (
+            <Notice level="warning" onDismiss={() => setLinkWarning(null)}>{linkWarning}</Notice>
           )}
 
-          {!loading && !error && products.length === 0 && (
+          {!loading && loadWarning && products.length > 0 && (
+            <Notice level="warning" onDismiss={() => setLoadWarning(null)}>{loadWarning}</Notice>
+          )}
+
+          {!loading && !error && !infoNotice && products.length === 0 && (
             <div className="text-center py-20">
               <p className="text-muted-foreground text-lg">
                 Enter a {supportedPlatformNames()} store or collection URL above to get started
@@ -681,6 +735,7 @@ export default function StoreLensApp() {
               totalProducts={products.length}
               sortBy={sortBy}
               setSortBy={setSortBy}
+              currency={filterData.currency}
             />
           )}
         </main>

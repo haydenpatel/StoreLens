@@ -28,11 +28,11 @@
  * @property {string[]} vendors
  * @property {string[]} categories
  * @property {string[]} tags
- * @property {string} [currency]          ISO 4217 code when the platform provides one.
+ * @property {string} [currency]          ISO 4217 code when the platform provides one; the UI falls back to "$".
  * @property {boolean} available
  * @property {string} [createdAt]          ISO 8601.
  * @property {NeutralVariant[]} variants
- * @property {NeutralOption[]} options
+ * @property {NeutralOption[]} options    Named option groups; variants[].options[i] belongs to options[i].
  */
 
 /**
@@ -62,14 +62,16 @@
  * @property {string} id
  * @property {string} name                                    Shown in user-facing copy.
  * @property {AdapterCapabilities} capabilities
+ * @property {{vendors: string, categories: string}} labels   Filter section titles, e.g. "Vendor"/"Artists".
  * @property {(url: URL) => boolean} matchesUrl               Cheap, URL-only check used by detection.
  * @property {(url: URL) => {origin: string, collection: string|null}} parseUrl
  *   `origin` may carry a locale prefix (e.g. https://shop.example.com/en-nz) when the platform has one.
  * @property {(origin: string, collection: string) => string} collectionUrl
  * @property {string} [defaultCollection]   Collection to auto-load for a bare store when the platform has no collection listing.
  * @property {(origin: string, signal?: AbortSignal, opts?: {forceRefresh?: boolean}) =>
- *   Promise<{collections: {handle: string, title: string, products_count: number|null}[], allProductsHandle: string|null}>} [listCollections]
+ *   Promise<{collections: {handle: string, title: string, products_count: number|null}[], allProductsHandle: string|null, origin?: string}>} [listCollections]
  *   Optional: platforms without a listing omit it and set defaultCollection.
+ *   `origin`, when present, is the origin that actually worked (e.g. a locale prefix turned out not to be one); the caller switches to it.
  * @property {(raw: any, origin: string) => NeutralProduct} normalize   Maps one raw platform product to the neutral shape.
  * @property {(collectionUrl: string, opts: {signal?: AbortSignal}) => Promise<FetchCollectionResult>} fetchCollection
  *   Throws on an invalid URL, and rethrows an abort. Everything else is reported in the result.

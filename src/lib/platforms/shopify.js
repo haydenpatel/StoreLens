@@ -34,15 +34,30 @@ function normalizeComparePrice(value) {
   return compare > 0 ? compare : null;
 }
 
+// A product with no real options still has one option named "Title" whose only
+// value is "Default Title". It isn't something to filter by.
+function isPlaceholderOptions(options) {
+  return (
+    options.length === 1 &&
+    options[0].name === "Title" &&
+    options[0].values?.length === 1 &&
+    options[0].values[0] === "Default Title"
+  );
+}
+
 // Maps one raw /products.json entry onto the neutral product shape.
 export function normalizeShopifyProduct(raw, origin) {
+  const rawOptions = raw.options || [];
+  const placeholder = isPlaceholderOptions(rawOptions);
   const variants = (raw.variants || []).map((v) => ({
     id: v.id,
-    title: v.title,
+    // The placeholder's lone variant is called "Default Title"; with no real
+    // options it has nothing worth showing as a variant name.
+    title: placeholder ? "" : v.title,
     price: parseFloat(v.price),
     compareAtPrice: normalizeComparePrice(v.compare_at_price),
     available: Boolean(v.available),
-    options: trimTrailingEmpty([v.option1, v.option2, v.option3]),
+    options: placeholder ? [] : trimTrailingEmpty([v.option1, v.option2, v.option3]),
   }));
 
   let url = null;
@@ -69,7 +84,7 @@ export function normalizeShopifyProduct(raw, origin) {
     available: variants.some((v) => v.available),
     createdAt: raw.created_at,
     variants,
-    options: (raw.options || []).map((o) => ({ name: o.name, values: o.values || [] })),
+    options: placeholder ? [] : rawOptions.map((o) => ({ name: o.name, values: o.values || [] })),
   };
 }
 
@@ -177,7 +192,7 @@ async function probeAllProductsCollection(origin, existingHandles, signal) {
   return null;
 }
 
-async function listCollections(origin, signal, { forceRefresh = false } = {}) {
+async function discoverCollections(origin, signal, { forceRefresh = false } = {}) {
   const cached = forceRefresh ? null : loadCollectionsCache(PLATFORM_ID, origin);
   if (cached) {
     return cached;
@@ -256,10 +271,42 @@ async function listCollections(origin, signal, { forceRefresh = false } = {}) {
   return { collections: filtered, allProductsHandle };
 }
 
+const hasUsableCollections = (result) => result.collections.length > 0 || Boolean(result.allProductsHandle);
+
+// parseUrl treats a short first path segment (/en-nz) as a Markets locale, but
+// it could just as well be an ordinary page (/uk). When nothing can be found
+// under the locale-bearing origin, try the plain origin; if that works the
+// result carries `origin` so the caller switches to it.
+async function listCollections(origin, signal, options = {}) {
+  const plainOrigin = new URL(origin).origin;
+  if (plainOrigin === origin) return discoverCollections(origin, signal, options);
+
+  let primary;
+  let primaryError;
+  try {
+    primary = await discoverCollections(origin, signal, options);
+  } catch (err) {
+    if (err?.name === "AbortError") throw err;
+    primaryError = err;
+  }
+  if (primary && hasUsableCollections(primary)) return primary;
+
+  try {
+    const fallback = await discoverCollections(plainOrigin, signal, options);
+    if (hasUsableCollections(fallback)) return { ...fallback, origin: plainOrigin };
+  } catch (err) {
+    if (err?.name === "AbortError") throw err;
+  }
+  if (primaryError) throw primaryError;
+  return primary;
+}
+
 /** @type {import("./types").PlatformAdapter} */
 export const shopifyAdapter = {
   id: PLATFORM_ID,
   name: "Shopify",
+  // What the filter sections are called for this platform.
+  labels: { vendors: "Vendor", categories: "Product Type" },
   capabilities: {
     vendors: true,
     categories: true,
