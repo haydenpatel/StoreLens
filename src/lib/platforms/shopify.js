@@ -1,4 +1,6 @@
 import { loadCollectionsCache, saveCollectionsCache } from "@/lib/store";
+import { StoreError, diagnoseFailure, isAbort, kindFromStatus, probeUrl } from "@/lib/errors";
+import { fetchPages, fetchWithRetry } from "./requests";
 
 const PLATFORM_ID = "shopify";
 
@@ -106,56 +108,80 @@ export function getCollectionJsonUrl(url) {
   }
 }
 
-async function fetchCollection(collectionUrl, { signal, maxPages = MAX_PRODUCT_PAGES } = {}) {
+async function fetchCollection(collectionUrl, { signal, maxPages = MAX_PRODUCT_PAGES, onProgress } = {}) {
   const jsonUrl = getCollectionJsonUrl(collectionUrl);
   const origin = new URL(collectionUrl).origin;
+  // Every Shopify store answers this, so it tells "this collection doesn't
+  // exist" apart from "this store can't be read" when the first page fails.
+  const probe = () => probeUrl(`${origin}/products.json?limit=1`, signal);
 
-  const products = [];
-  let page = 1;
-  let hasMore = true;
-  let pageError = null;
-
-  while (hasMore && page <= maxPages) {
+  const fetchPage = async (page) => {
+    // Only the first page is worth a probe: if it loaded, the store is readable.
+    // And a later page that is "not found" isn't a missing collection (page 1
+    // proved it exists): the store just stopped returning products.
+    const diagnose = async (details) => {
+      const err = await diagnoseFailure({ ...details, probe: page === 1 ? probe : undefined });
+      return page > 1 && err.kind === "not-found" ? new StoreError("empty", { status: err.status, cause: err }) : err;
+    };
+    let response;
     try {
-      const response = await fetch(`${jsonUrl}?page=${page}&limit=${PAGE_SIZE}`, { signal });
-      if (!response.ok) {
-        throw new Error(`Failed to fetch page ${page} (status ${response.status})`);
-      }
-      const data = await response.json();
-      if (data.products && data.products.length > 0) {
-        // Push in place rather than spreading into a new array each page —
-        // for a collection near the 1000-page cap, re-copying the whole
-        // accumulated array on every iteration is O(n²).
-        for (const raw of data.products) {
-          products.push(normalizeShopifyProduct(raw, origin));
-        }
-        page++;
-        hasMore = data.products.length === PAGE_SIZE;
-      } else {
-        hasMore = false;
-      }
+      response = await fetchWithRetry(`${jsonUrl}?page=${page}&limit=${PAGE_SIZE}`, { signal });
     } catch (err) {
-      // Superseded: the caller owns what happens next.
-      if (signal?.aborted) throw err;
-      pageError = err;
-      hasMore = false;
+      if (isAbort(err, signal)) throw err;
+      throw await diagnose({ cause: err });
     }
-  }
+    if (!response.ok) throw await diagnose({ status: response.status });
 
-  return { products, pageError, truncated: page > maxPages && hasMore };
+    let data;
+    try {
+      data = await response.json();
+    } catch (err) {
+      if (isAbort(err, signal)) throw err;
+      // A body that isn't JSON is a web page, not a feed; a read that fails
+      // part-way is the connection.
+      throw err instanceof SyntaxError ? new StoreError("unsupported-platform", { cause: err }) : await diagnose({ cause: err });
+    }
+    if (!Array.isArray(data?.products)) throw new StoreError("unsupported-platform");
+    return {
+      items: data.products.map((raw) => normalizeShopifyProduct(raw, origin)),
+      done: data.products.length < PAGE_SIZE,
+    };
+  };
+
+  // Pages are fetched one at a time: a collection's length is only known once
+  // a short page comes back, and most are a page or two.
+  const { items, pageError, truncated } = await fetchPages({
+    fetchPage,
+    concurrency: 1,
+    maxPages,
+    signal,
+    onProgress,
+  });
+  return { products: items, pageError, truncated };
 }
 
 async function fetchCollectionsPage(origin, page, signal) {
-  const response = await fetch(
-    `${origin}/collections.json?limit=250&page=${page}`,
-    { signal }
-  );
-  if (!response.ok) {
-    const errorMessage = `Failed to fetch collections (status ${response.status})`;
-    console.error(`Collection discovery failed for ${origin}: ${response.status} ${response.statusText}`);
-    throw new Error(errorMessage);
+  let response;
+  try {
+    response = await fetchWithRetry(`${origin}/collections.json?limit=250&page=${page}`, { signal });
+  } catch (err) {
+    if (isAbort(err, signal)) throw err;
+    throw new StoreError("blocked-or-offline", { cause: err });
   }
-  const data = await response.json();
+  if (!response.ok) {
+    console.error(`Collection discovery failed for ${origin}: ${response.status} ${response.statusText}`);
+    // A 404 here isn't a missing collection: the store has no listing at all,
+    // which is what a store on another platform looks like.
+    const kind = response.status === 404 || response.status === 410 ? "unsupported-platform" : kindFromStatus(response.status);
+    throw new StoreError(kind, { status: response.status });
+  }
+  let data;
+  try {
+    data = await response.json();
+  } catch (err) {
+    if (isAbort(err, signal)) throw err;
+    throw new StoreError(err instanceof SyntaxError ? "unsupported-platform" : "blocked-or-offline", { cause: err });
+  }
   return Array.isArray(data?.collections) ? data.collections : [];
 }
 
