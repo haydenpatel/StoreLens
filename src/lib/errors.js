@@ -12,8 +12,10 @@ export const FAILURE_KINDS = {
     reason: "the store is locked or blocking access",
   },
   "blocked-or-offline": {
-    message:
-      "Couldn't reach this store from the browser. It may be offline, or it may not allow other sites to read its products.",
+    // Stores on an unsupported platform usually land here too (they send no CORS
+    // headers), so say what does work.
+    message: (supported) =>
+      `Couldn't reach this store from the browser. It may be offline, or it may not allow other sites to read its products.${supported ? ` StoreLens works with ${supported} stores.` : ""}`,
     reason: "the store couldn't be reached",
   },
   "unsupported-platform": {

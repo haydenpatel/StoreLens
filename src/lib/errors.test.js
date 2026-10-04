@@ -36,6 +36,12 @@ describe("describeStoreError", () => {
     expect(message).toContain("Alpha, Beta or Gamma");
   });
 
+  it("also lists them when a store can't be reached, since an unsupported platform usually looks like that", () => {
+    const message = describeStoreError(new StoreError("blocked-or-offline"), { supported: SUPPORTED });
+    expect(message).toContain("Alpha, Beta or Gamma");
+    expect(describeStoreError(new StoreError("blocked-or-offline"))).not.toContain("undefined");
+  });
+
   it("still reads sensibly without a platform list", () => {
     expect(describeStoreError(new StoreError("unsupported-platform"))).not.toContain("undefined");
   });
