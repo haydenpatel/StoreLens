@@ -353,6 +353,13 @@ describe("fetchCollection", () => {
     expect(fetchMock.mock.calls.some(([url]) => new URL(url).pathname === "/products.json")).toBe(false);
   });
 
+  it("doesn't call a later page's 404 a missing collection", async () => {
+    vi.stubGlobal("fetch", pagedFetch([rawProducts(250), 404]));
+    const result = await shopifyAdapter.fetchCollection(COLLECTION);
+    expect(result.products).toHaveLength(250);
+    expect(result.pageError).toMatchObject({ kind: "empty", status: 404 });
+  });
+
   it("retries a page that is rate limited, then carries on", async () => {
     let calls = 0;
     vi.stubGlobal(

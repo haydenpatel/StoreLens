@@ -25,7 +25,7 @@ export const FAILURE_KINDS = {
   },
   empty: {
     message: "No products found in this collection.",
-    reason: "no more products were returned",
+    reason: "the store stopped returning products",
   },
   "rate-limited": {
     message: "The store is limiting requests right now. Wait a moment and try again.",

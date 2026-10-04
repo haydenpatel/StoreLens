@@ -117,7 +117,12 @@ async function fetchCollection(collectionUrl, { signal, maxPages = MAX_PRODUCT_P
 
   const fetchPage = async (page) => {
     // Only the first page is worth a probe: if it loaded, the store is readable.
-    const diagnose = (details) => diagnoseFailure({ ...details, probe: page === 1 ? probe : undefined });
+    // And a later page that is "not found" isn't a missing collection (page 1
+    // proved it exists): the store just stopped returning products.
+    const diagnose = async (details) => {
+      const err = await diagnoseFailure({ ...details, probe: page === 1 ? probe : undefined });
+      return page > 1 && err.kind === "not-found" ? new StoreError("empty", { status: err.status, cause: err }) : err;
+    };
     let response;
     try {
       response = await fetchWithRetry(`${jsonUrl}?page=${page}&limit=${PAGE_SIZE}`, { signal });
