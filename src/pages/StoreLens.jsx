@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import { Loader2, AlertCircle, Info, SlidersHorizontal } from "lucide-react";
+import { Loader2, AlertCircle, Info, SlidersHorizontal, TriangleAlert } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 
@@ -25,6 +25,8 @@ export default function StoreLensApp() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [loadNotice, setLoadNotice] = useState(null);
+  // Shown as a warning: parts of a shared link (filters) that couldn't be applied.
+  const [linkWarning, setLinkWarning] = useState(null);
   const [urlHistory, setUrlHistory] = useState([]);
   const [collectionsState, setCollectionsState] = useState({
     status: "idle",
@@ -145,6 +147,7 @@ export default function StoreLensApp() {
     setLoading(true);
     setError(null);
     setLoadNotice(null);
+    setLinkWarning(null);
     setProducts([]);
 
     // Captured once: the user can paste a different store while this load is
@@ -301,6 +304,7 @@ export default function StoreLensApp() {
         setCurrentCollectionUrl("");
         setError(null);
         setLoadNotice(null);
+        setLinkWarning(null);
         applyUserInput("");
       }
     } finally {
@@ -546,7 +550,7 @@ export default function StoreLensApp() {
       setSelectedOptions(options);
       if (ignored.length > 0) {
         const message = `Some filters in this link don't apply to this collection and were ignored (${ignored.join(", ")}).`;
-        setLoadNotice((prev) => (prev ? `${prev} ${message}` : message));
+        setLinkWarning(message);
       }
     }
     if (pending.inStockOnly !== undefined) setInStockOnly(pending.inStockOnly);
@@ -681,8 +685,16 @@ export default function StoreLensApp() {
             </Alert>
           )}
 
+          {/* w-fit so a short message doesn't leave empty space inside the border */}
+          {!loading && linkWarning && products.length > 0 && (
+            <Alert variant="warning" className="w-fit max-w-2xl mx-auto mb-6">
+              <TriangleAlert className="h-4 w-4" />
+              <AlertDescription>{linkWarning}</AlertDescription>
+            </Alert>
+          )}
+
           {!loading && loadNotice && products.length > 0 && (
-            <Alert className="max-w-2xl mx-auto mb-6">
+            <Alert className="w-fit max-w-2xl mx-auto mb-6">
               <Info className="h-4 w-4" />
               <AlertDescription>{loadNotice}</AlertDescription>
             </Alert>
