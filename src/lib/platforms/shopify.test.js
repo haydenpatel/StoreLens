@@ -271,7 +271,16 @@ describe("normalizeShopifyProduct", () => {
   });
 });
 
+// Runs a call that may sleep between retries to completion on fake timers.
+async function settled(promise) {
+  await vi.runAllTimersAsync();
+  return promise;
+}
+
 describe("fetchCollection", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
   const COLLECTION = `${ORIGIN}/collections/tees`;
   const rawProducts = (n, start = 0) =>
     Array.from({ length: n }, (_, i) => product({ id: start + i, handle: `p-${start + i}` }));
@@ -333,20 +342,149 @@ describe("fetchCollection", () => {
   });
 
   it("keeps what loaded and reports the error when a later page fails", async () => {
-    vi.stubGlobal("fetch", pagedFetch([rawProducts(250), 500]));
+    const fetchMock = pagedFetch([rawProducts(250), 500]);
+    vi.stubGlobal("fetch", fetchMock);
 
-    const result = await shopifyAdapter.fetchCollection(COLLECTION);
+    const result = await settled(shopifyAdapter.fetchCollection(COLLECTION));
     expect(result.products).toHaveLength(250);
-    expect(result.pageError.message).toBe("Failed to fetch page 2 (status 500)");
+    expect(result.pageError).toMatchObject({ kind: "server-error", status: 500 });
     expect(result.truncated).toBe(false);
+    // A later page doesn't probe: the store already proved readable.
+    expect(fetchMock.mock.calls.some(([url]) => new URL(url).pathname === "/products.json")).toBe(false);
   });
 
-  it("reports a first-page failure with no products", async () => {
-    vi.stubGlobal("fetch", pagedFetch([404]));
-
+  it("doesn't call a later page's 404 a missing collection", async () => {
+    vi.stubGlobal("fetch", pagedFetch([rawProducts(250), 404]));
     const result = await shopifyAdapter.fetchCollection(COLLECTION);
-    expect(result.products).toEqual([]);
-    expect(result.pageError.message).toBe("Failed to fetch page 1 (status 404)");
+    expect(result.products).toHaveLength(250);
+    expect(result.pageError).toMatchObject({ kind: "empty", status: 404 });
+  });
+
+  it("retries a page that is rate limited, then carries on", async () => {
+    let calls = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => (++calls === 1 ? jsonResponse({}, { ok: false, status: 429 }) : jsonResponse({ products: rawProducts(2) })))
+    );
+    const result = await settled(shopifyAdapter.fetchCollection(COLLECTION));
+    expect(result.products).toHaveLength(2);
+    expect(result.pageError).toBeNull();
+    expect(calls).toBe(2);
+  });
+
+  it("reports rate limiting once retries run out", async () => {
+    vi.stubGlobal("fetch", pagedFetch([rawProducts(250), 429]));
+    const result = await settled(shopifyAdapter.fetchCollection(COLLECTION));
+    expect(result.products).toHaveLength(250);
+    expect(result.pageError.kind).toBe("rate-limited");
+  });
+
+  it("reports the running product count as pages arrive", async () => {
+    vi.stubGlobal("fetch", pagedFetch([rawProducts(250), rawProducts(10, 250)]));
+    const onProgress = vi.fn();
+    await shopifyAdapter.fetchCollection(COLLECTION, { onProgress });
+    expect(onProgress.mock.calls.map(([p]) => p.loaded)).toEqual([250, 260]);
+  });
+
+  describe("when the first page fails", () => {
+    // Routes the collection page and the store-wide probe separately.
+    const routed = ({ page, probe }) =>
+      vi.fn(async (url) => {
+        const isProbe = new URL(url).pathname === "/products.json";
+        const handler = isProbe ? probe : page;
+        if (handler instanceof Error) throw handler;
+        return jsonResponse(handler.body ?? {}, { ok: handler.status === 200, status: handler.status });
+      });
+
+    it("is not-found when the store itself is readable", async () => {
+      vi.stubGlobal("fetch", routed({ page: { status: 404 }, probe: { status: 200, body: { products: [] } } }));
+      const result = await shopifyAdapter.fetchCollection(COLLECTION);
+      expect(result.products).toEqual([]);
+      expect(result.pageError).toMatchObject({ kind: "not-found", status: 404 });
+    });
+
+    it("probes the plain origin, not a locale path", async () => {
+      const fetchMock = routed({ page: { status: 404 }, probe: { status: 200 } });
+      vi.stubGlobal("fetch", fetchMock);
+      await shopifyAdapter.fetchCollection(`${ORIGIN}/en-nz/collections/tees`);
+      expect(fetchMock.mock.calls.map(([url]) => url)).toContain(`${ORIGIN}/products.json?limit=1`);
+    });
+
+    it("is unsupported-platform when the store has no product listing either", async () => {
+      vi.stubGlobal("fetch", routed({ page: { status: 404 }, probe: { status: 404 } }));
+      const result = await shopifyAdapter.fetchCollection(COLLECTION);
+      expect(result.pageError.kind).toBe("unsupported-platform");
+    });
+
+    it("is blocked-or-offline when nothing can be read from the browser", async () => {
+      vi.stubGlobal("fetch", routed({ page: new TypeError("Failed to fetch"), probe: new TypeError("Failed to fetch") }));
+      const result = await shopifyAdapter.fetchCollection(COLLECTION);
+      expect(result.pageError.kind).toBe("blocked-or-offline");
+      expect(result.pageError.cause).toBeInstanceOf(TypeError);
+    });
+
+    it("is locked for a 403, without probing", async () => {
+      const fetchMock = routed({ page: { status: 403 }, probe: { status: 200 } });
+      vi.stubGlobal("fetch", fetchMock);
+      const result = await shopifyAdapter.fetchCollection(COLLECTION);
+      expect(result.pageError.kind).toBe("locked");
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("is unsupported-platform when the response isn't JSON", async () => {
+      vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, status: 200, json: async () => Promise.reject(new SyntaxError("Unexpected token <")) })));
+      const result = await shopifyAdapter.fetchCollection(COLLECTION);
+      expect(result.pageError.kind).toBe("unsupported-platform");
+    });
+
+    it("is blocked-or-offline when the body can't be read to the end", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (url) => {
+          if (new URL(url).pathname === "/products.json") throw new TypeError("Failed to fetch");
+          return { ok: true, status: 200, json: async () => Promise.reject(new TypeError("network error")) };
+        })
+      );
+      const result = await shopifyAdapter.fetchCollection(COLLECTION);
+      expect(result.pageError.kind).toBe("blocked-or-offline");
+    });
+
+    it("rethrows an abort that happens while the body is read", async () => {
+      const controller = new AbortController();
+      const abort = Object.assign(new Error("aborted"), { name: "AbortError" });
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => ({
+          ok: true,
+          status: 200,
+          json: async () => {
+            controller.abort();
+            throw abort;
+          },
+        }))
+      );
+      await expect(shopifyAdapter.fetchCollection(COLLECTION, { signal: controller.signal })).rejects.toBe(abort);
+    });
+
+    it("is unsupported-platform when the JSON has no products list", async () => {
+      vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ message: "hello" })));
+      const result = await shopifyAdapter.fetchCollection(COLLECTION);
+      expect(result.pageError.kind).toBe("unsupported-platform");
+    });
+
+    it("does not report a diagnosis for a cancelled load", async () => {
+      const controller = new AbortController();
+      const abort = Object.assign(new Error("aborted"), { name: "AbortError" });
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (url) => {
+          if (new URL(url).pathname === "/products.json") throw abort;
+          controller.abort();
+          return jsonResponse({}, { ok: false, status: 404 });
+        })
+      );
+      await expect(shopifyAdapter.fetchCollection(COLLECTION, { signal: controller.signal })).rejects.toBe(abort);
+    });
   });
 
   it("reports truncation when the page limit is reached with more to come", async () => {
@@ -390,9 +528,11 @@ describe("fetchCollection", () => {
   });
 
   it("treats a failure while not aborted as a page error", async () => {
-    vi.stubGlobal("fetch", pagedFetch([new Error("network down")]));
+    vi.stubGlobal("fetch", pagedFetch([rawProducts(250), new Error("network down")]));
     const result = await shopifyAdapter.fetchCollection(COLLECTION);
-    expect(result.pageError.message).toBe("network down");
+    expect(result.products).toHaveLength(250);
+    expect(result.pageError.kind).toBe("blocked-or-offline");
+    expect(result.pageError.cause.message).toBe("network down");
   });
 });
 
@@ -443,9 +583,11 @@ describe("listCollections when the first path segment may not be a locale", () =
 
   it("throws the locale origin's error when neither origin works", async () => {
     vi.stubGlobal("fetch", storeFetch({}));
-    await expect(shopifyAdapter.listCollections(LOCALE)).rejects.toThrow(
-      "Failed to fetch collections (status 404)"
-    );
+    // No listing at all (a 404) is what a store on another platform looks like.
+    await expect(shopifyAdapter.listCollections(LOCALE)).rejects.toMatchObject({
+      kind: "unsupported-platform",
+      status: 404,
+    });
   });
 
   it("never tries a locale for a plain origin", async () => {
@@ -574,12 +716,69 @@ describe("listCollections", () => {
   });
 
   it("throws the listing error when the listing fails and no probe finds anything", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.stubGlobal(
+        "fetch",
+        routedFetch({ listing: () => jsonResponse({}, { ok: false, status: 500 }) })
+      );
+
+      const result = expect(shopifyAdapter.listCollections(ORIGIN)).rejects.toMatchObject({
+        kind: "server-error",
+        status: 500,
+      });
+      await vi.runAllTimersAsync();
+      await result;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("reports an unreadable store when the listing can't be fetched and nothing else works", async () => {
     vi.stubGlobal(
       "fetch",
-      routedFetch({ listing: () => jsonResponse({}, { ok: false, status: 500 }) })
+      vi.fn(async () => {
+        throw new TypeError("Failed to fetch");
+      })
     );
+    await expect(shopifyAdapter.listCollections(ORIGIN)).rejects.toMatchObject({ kind: "blocked-or-offline" });
+  });
 
-    await expect(shopifyAdapter.listCollections(ORIGIN)).rejects.toThrow("Failed to fetch collections (status 500)");
+  it("reports a listing body that can't be read to the end as an unreachable store", async () => {
+    vi.stubGlobal(
+      "fetch",
+      routedFetch({ listing: () => ({ ok: true, status: 200, json: async () => Promise.reject(new TypeError("network error")) }) })
+    );
+    await expect(shopifyAdapter.listCollections(ORIGIN)).rejects.toMatchObject({ kind: "blocked-or-offline" });
+  });
+
+  it("reports a listing that isn't JSON as an unsupported store", async () => {
+    vi.stubGlobal(
+      "fetch",
+      routedFetch({ listing: () => ({ ok: true, status: 200, json: async () => Promise.reject(new SyntaxError("x")) }) })
+    );
+    await expect(shopifyAdapter.listCollections(ORIGIN)).rejects.toMatchObject({ kind: "unsupported-platform" });
+  });
+
+  it("retries a rate-limited listing page", async () => {
+    vi.useFakeTimers();
+    try {
+      let listingCalls = 0;
+      vi.stubGlobal(
+        "fetch",
+        routedFetch({
+          listing: () =>
+            ++listingCalls === 1
+              ? jsonResponse({}, { ok: false, status: 429 })
+              : jsonResponse(collectionsPage([["tees", "Tees", 3]])),
+        })
+      );
+      const result = shopifyAdapter.listCollections(ORIGIN);
+      await vi.runAllTimersAsync();
+      expect((await result).collections.map((c) => c.handle)).toEqual(["tees"]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("returns an empty result (not an error) when the listing works but is empty", async () => {

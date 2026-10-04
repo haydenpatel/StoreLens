@@ -53,7 +53,7 @@
 /**
  * @typedef {Object} FetchCollectionResult
  * @property {NeutralProduct[]} products
- * @property {Error|null} pageError   A page failed part-way; products holds what was loaded.
+ * @property {Error|null} pageError   A page failed; products holds what loaded before it (nothing if the first page failed).
  * @property {boolean} truncated      The platform's paging limit was hit; more products exist.
  */
 
@@ -73,8 +73,10 @@
  *   Optional: platforms without a listing omit it and set defaultCollection.
  *   `origin`, when present, is the origin that actually worked (e.g. a locale prefix turned out not to be one); the caller switches to it.
  * @property {(raw: any, origin: string) => NeutralProduct} normalize   Maps one raw platform product to the neutral shape.
- * @property {(collectionUrl: string, opts: {signal?: AbortSignal}) => Promise<FetchCollectionResult>} fetchCollection
+ * @property {(collectionUrl: string, opts: {signal?: AbortSignal, onProgress?: (p: {loaded: number}) => void}) => Promise<FetchCollectionResult>} fetchCollection
  *   Throws on an invalid URL, and rethrows an abort. Everything else is reported in the result.
+ *   `pageError` is a StoreError (see lib/errors.js) when the failure is one the UI can explain.
+ *   `onProgress` is called with the running product count after each page.
  */
 
 export {};
