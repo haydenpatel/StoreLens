@@ -17,6 +17,7 @@ import {
 } from "@/lib/filters";
 import { getDisplayOrigin, parseUserInputToURL } from "@/lib/store";
 import { defaultAdapter, detectAdapter, supportedPlatformNames } from "@/lib/platforms";
+import { StoreError, describeStoreError, describeStoreErrorReason } from "@/lib/errors";
 
 // Where Recent Stores lived before the key was renamed from shopify-specific.
 const LEGACY_HISTORY_KEY = "shopify-url-history";
@@ -26,6 +27,8 @@ export default function StoreLensApp() {
   const [storeOrigin, setStoreOrigin] = useState("");
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(false);
+  // Products fetched so far by the load in progress, for large collections.
+  const [loadProgress, setLoadProgress] = useState(0);
   const [error, setError] = useState(null);
   // Shown as info: nothing is wrong, but the user has a next step to take.
   const [infoNotice, setInfoNotice] = useState(null);
@@ -164,6 +167,7 @@ export default function StoreLensApp() {
     }
 
     setLoading(true);
+    setLoadProgress(0);
     clearMessage();
     setLoadWarning(null);
     setLinkWarning(null);
@@ -174,12 +178,17 @@ export default function StoreLensApp() {
     const loadAdapter = adapterRef.current;
     let result;
     try {
-      result = await loadAdapter.fetchCollection(url, { signal: controller.signal });
+      result = await loadAdapter.fetchCollection(url, {
+        signal: controller.signal,
+        onProgress: ({ loaded }) => {
+          if (isCurrent()) setLoadProgress(loaded);
+        },
+      });
     } catch (err) {
       // Superseded (aborted) - the newer call owns state from here. Anything
       // else, e.g. an invalid collection URL, is reported to the user.
       if (isCurrent()) {
-        setError(err.message);
+        setError(describeStoreError(err, { supported: supportedPlatformNames() }));
         setLoading(false);
       }
       return;
@@ -190,7 +199,7 @@ export default function StoreLensApp() {
     const { products: allProducts, pageError, truncated } = result;
 
     if (allProducts.length === 0) {
-      setError(pageError?.message || "No products found in this collection");
+      setError(describeStoreError(pageError ?? new StoreError("empty"), { supported: supportedPlatformNames() }));
       setLoading(false);
       return;
     }
@@ -208,7 +217,7 @@ export default function StoreLensApp() {
 
       if (pageError) {
         setLoadWarning(
-          `Loaded ${allProducts.length.toLocaleString()} products, but couldn't fetch the rest (${pageError.message}).`
+          `Loaded ${allProducts.length.toLocaleString()} products, but couldn't fetch the rest (${describeStoreErrorReason(pageError)}).`
         );
       } else if (truncated) {
         setLoadWarning(
@@ -462,13 +471,18 @@ export default function StoreLensApp() {
           setCollectionsState({
             status: "error",
             collections: [],
-            error: err.message || "Couldn't load collections for this store",
+            error:
+              err instanceof StoreError
+                ? describeStoreError(err, { supported: supportedPlatformNames() })
+                : err.message || "Couldn't load collections for this store",
             allProductsHandle: null,
           });
           if (autoLoadPendingRef.current) {
             autoLoadPendingRef.current = false;
             setError(
-              "I couldn't find a collection of products to load. Please paste the full collection URL and try again."
+              err instanceof StoreError
+                ? describeStoreError(err, { supported: supportedPlatformNames() })
+                : "I couldn't find a collection of products to load. Please paste the full collection URL and try again."
             );
           }
         }
@@ -703,8 +717,13 @@ export default function StoreLensApp() {
           )}
 
           {loading && (
-            <div className="flex items-center justify-center h-64">
+            <div className="flex flex-col items-center justify-center gap-3 h-64">
               <Loader2 className="w-8 h-8 animate-spin text-primary" />
+              {loadProgress > 0 && (
+                <p className="text-sm text-muted-foreground">
+                  Loaded {loadProgress.toLocaleString()} products…
+                </p>
+              )}
             </div>
           )}
 
