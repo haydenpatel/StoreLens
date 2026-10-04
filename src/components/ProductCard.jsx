@@ -29,24 +29,19 @@ function ProductCard({ product }) {
     let cur = '';
     let used = 0;
     for (let i = 0; i < variantTitles.length; i++) {
-      if (variantTitles[i] === 'Default Title') { // LTTStore.com - skip 'Default Title'
+      const title = variantTitles[i];
+      const sep = cur.length ? ', ' : '';
+      if ((cur + sep + title).length <= maxChars) {
+        cur = cur + sep + title;
         used++;
-        continue;
       } else {
-        const title = variantTitles[i];
-        const sep = cur.length ? ', ' : '';
-        if ((cur + sep + title).length <= maxChars) {
-          cur = cur + sep + title;
+        // If nothing has been added yet, truncate the first title to fit
+        if (!cur.length) {
+          const fit = Math.max(0, maxChars - 3);
+          cur = title.slice(0, fit) + (title.length > fit ? '...' : '');
           used++;
-        } else {
-          // If nothing has been added yet, truncate the first title to fit
-          if (!cur.length) {
-            const fit = Math.max(0, maxChars - 3);
-            cur = title.slice(0, fit) + (title.length > fit ? '...' : '');
-            used++;
-          }
-          break;
         }
+        break;
       }
     }
     variantsDisplay = cur;

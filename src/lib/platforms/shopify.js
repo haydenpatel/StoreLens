@@ -51,7 +51,9 @@ export function normalizeShopifyProduct(raw, origin) {
   const placeholder = isPlaceholderOptions(rawOptions);
   const variants = (raw.variants || []).map((v) => ({
     id: v.id,
-    title: v.title,
+    // The placeholder's lone variant is called "Default Title"; with no real
+    // options it has nothing worth showing as a variant name.
+    title: placeholder ? "" : v.title,
     price: parseFloat(v.price),
     compareAtPrice: normalizeComparePrice(v.compare_at_price),
     available: Boolean(v.available),

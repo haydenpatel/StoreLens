@@ -222,8 +222,8 @@ describe("normalizeShopifyProduct", () => {
       );
       expect(n.options).toEqual([]);
       expect(n.variants[0].options).toEqual([]);
-      // The variant itself is unchanged.
-      expect(n.variants[0].title).toBe("Default Title");
+      // The placeholder's "Default Title" isn't a name worth showing.
+      expect(n.variants[0].title).toBe("");
     });
 
     it("is kept when Title has real values", () => {

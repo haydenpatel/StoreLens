@@ -255,7 +255,7 @@ export default function Sidebar({
           {/* Product Types */}
           {capabilities.categories !== false && filterData.types.length > 0 && (
             <FilterSection
-              title={labels.categories || "Product Type"}
+              title={labels.categories || "Category"}
               items={filterData.types}
               selected={selectedTypes}
               onToggle={(v) => toggleSelection(selectedTypes, setSelectedTypes, v)}

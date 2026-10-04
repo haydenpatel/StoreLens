@@ -79,7 +79,7 @@ export default function StoreLensApp() {
   // waiting to be applied once a collection's own data has settled - see the
   // restore effect below for why it can't just be applied immediately.
   const pendingFilterParamsRef = useRef(null);
-  const historyKey = "shopify-url-history";
+  const historyKey = "storelens-url-history";
   const updateHistoryEntry = (entry) => {
     if (!entry) return;
     setUrlHistory((prev) => {
@@ -281,7 +281,7 @@ export default function StoreLensApp() {
     applyUserInput(storeInput);
   };
 
-  // Deep link support: /<domain> or /<domain>/collections/<handle> in the
+  // Deep link support: /<domain> or /<domain><collection path> in the
   // URL path loads that store (and collection, if given) - on first load,
   // and again on Back/Forward. That's the same shape applyUserInput()
   // already accepts from the paste box, so no separate parsing is needed -
@@ -479,8 +479,8 @@ export default function StoreLensApp() {
   };
 
   // Keep the currently-loaded collection selectable in the dropdown even when
-  // /collections.json (and the all-products probe) didn't happen to include
-  // it — otherwise the Select ends up holding a value with no matching item.
+  // the platform's collection discovery didn't happen to include it —
+  // otherwise the Select ends up holding a value with no matching item.
   useEffect(() => {
     if (collectionsState.status !== "ready" || !inputHandle) return;
     setSelectedHandle(inputHandle);
