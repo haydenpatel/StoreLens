@@ -700,14 +700,16 @@ export default function StoreLensApp() {
 
           {error && <Notice level="error">{error}</Notice>}
 
-          {infoNotice && <Notice level="info">{infoNotice}</Notice>}
+          {infoNotice && (
+            <Notice level="info" onDismiss={() => setInfoNotice(null)}>{infoNotice}</Notice>
+          )}
 
           {!loading && linkWarning && products.length > 0 && (
-            <Notice level="warning">{linkWarning}</Notice>
+            <Notice level="warning" onDismiss={() => setLinkWarning(null)}>{linkWarning}</Notice>
           )}
 
           {!loading && loadWarning && products.length > 0 && (
-            <Notice level="warning">{loadWarning}</Notice>
+            <Notice level="warning" onDismiss={() => setLoadWarning(null)}>{loadWarning}</Notice>
           )}
 
           {!loading && !error && !infoNotice && products.length === 0 && (
