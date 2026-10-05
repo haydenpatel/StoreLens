@@ -1,11 +1,13 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import StoreLensApp from "./StoreLens";
 import { detectAdapter } from "@/lib/platforms";
 import { product, variant } from "../lib/__fixtures__/shopify";
 import { fakeShopifyFetch } from "../lib/__fixtures__/fake-shopify-fetch";
+import { fakeStoresFetch } from "../lib/__fixtures__/fake-stores-fetch";
+import * as fw from "../lib/__fixtures__/fourthwall";
 import { jsonResponse } from "../lib/__fixtures__/test-helpers";
 
 // Wraps the real resolveAdapter so a test can make store resolution slow, or fail
@@ -453,5 +455,178 @@ describe("a collection that fails part-way", () => {
       await screen.findByText("Loaded 250 products, but couldn't fetch the rest (the store couldn't be reached).", {}, { timeout: 3000 })
     ).not.toBeNull();
     await heading(250, 250);
+  });
+});
+
+describe("a Fourthwall shop", () => {
+  const F = "merch.example.com";
+  const fwItem = (title, price) =>
+    fw.product({ title, handle: title.toLowerCase().replace(/ /g, "-"), price, variants: [fw.variant("S", { cents: price * 100 }), fw.variant("M", { cents: price * 100 })] });
+  const shop = () => ({
+    collections: {
+      all: [fwItem("Echo Tee", 20), fwItem("Foxtrot Hoodie", 40), fwItem("Golf Cap", 15)],
+      tees: [fwItem("Echo Tee", 20), fwItem("Hotel Tee", 25)],
+    },
+  });
+  const stub = (stores, override, options) => {
+    const fetchMock = fakeStoresFetch(stores, override, options);
+    vi.stubGlobal("fetch", fetchMock);
+    return fetchMock;
+  };
+  const detectionCalls = (fetchMock, host) =>
+    fetchMock.calls.filter((u) => u.host === host && u.pathname === "/collections/all.json");
+  const platformCache = (host) => JSON.parse(window.localStorage.getItem(`storelens:platform:v1:https://${host}`) ?? "null");
+
+  it("is recognised from a bare domain, loads 'all', and hides what Fourthwall can't supply", async () => {
+    stub({ fourthwall: { [F]: shop() } });
+    openAt("/");
+    const user = userEvent.setup();
+
+    await user.click(input());
+    await user.paste(F);
+
+    await heading(3, 3);
+    expect(titleShown("Echo Tee")).not.toBeNull();
+    expect(pushedPaths()).toEqual([`/${F}/collections/all`]);
+    // No collection listing to choose from (only the sort control is left), and
+    // none of the filters Fourthwall has no data for.
+    expect(screen.getAllByRole("combobox")).toHaveLength(1);
+    expect(screen.queryByText("Vendor")).toBeNull();
+    expect(screen.queryByText("Tags")).toBeNull();
+    expect(screen.queryByText("Product Type")).toBeNull();
+  });
+
+  it("is recognised from a deep link on a custom domain, and keeps the address as it was", async () => {
+    stub({ fourthwall: { [F]: shop() } });
+    openAt(`/${F}/collections/tees?q=hotel`);
+
+    await heading(1, 2);
+    expect(titleShown("Hotel Tee")).not.toBeNull();
+    expect(titleShown("Echo Tee")).toBeNull();
+    expect(here()).toBe(`/${F}/collections/tees?q=hotel`);
+    expect(pushedPaths()).toEqual([]);
+  });
+
+  it("loads a pasted /collections/all/products URL with a locale, and links products on it", async () => {
+    const fetchMock = stub({ fourthwall: { [F]: shop() } });
+    openAt("/");
+    const user = userEvent.setup();
+
+    await user.click(input());
+    await user.paste(`https://${F}/en-nzd/collections/all/products`);
+
+    await heading(3, 3);
+    expect(input().value).toBe(`${F}/en-nzd`);
+    expect(fetchMock.calls.some((u) => u.pathname === "/en-nzd/collections/all/1.json")).toBe(true);
+    expect(document.querySelector('a[href^="https://merch.example.com/en-nzd/products/"]')).not.toBeNull();
+    expect(JSON.parse(window.localStorage.getItem("storelens-url-history"))).toEqual([`https://${F}/en-nzd`]);
+  });
+
+  it("says its option names are guessed, and the notice can be dismissed", async () => {
+    stub({ fourthwall: { [F]: shop() } });
+    openAt(`/${F}/collections/all`);
+    await heading(3, 3);
+
+    const notice = await screen.findByText(/Fourthwall doesn't name variant options/);
+    expect(notice).not.toBeNull();
+    await userEvent.setup().click(within(notice.closest('[role="alert"]')).getByRole("button", { name: "Dismiss" }));
+    expect(screen.queryByText(/Fourthwall doesn't name variant options/)).toBeNull();
+  });
+
+  it("filters by the guessed 'Size' option", async () => {
+    stub({ fourthwall: { [F]: shop() } });
+    openAt(`/${F}/collections/all`);
+    await heading(3, 3);
+    expect(screen.getAllByText("Size").length).toBeGreaterThan(0);
+  });
+
+  it("reports a missing collection as not found, without naming another platform", async () => {
+    stub({ fourthwall: { [F]: shop() } });
+    openAt("/");
+    const user = userEvent.setup();
+
+    await user.click(input());
+    await user.paste(`${F}/collections/nope`);
+
+    const message = await screen.findByText(/That collection wasn't found/);
+    expect(message.textContent).not.toMatch(/shopify/i);
+    expect(pushedPaths()).toEqual([`/${F}/collections/nope`]);
+  });
+
+  it("remembers the platform after a load, and skips the check next time", async () => {
+    const fetchMock = stub({ fourthwall: { [F]: shop() } });
+    openAt(`/${F}/collections/all`);
+    await heading(3, 3);
+    expect(platformCache(F).platformId).toBe("fourthwall");
+    expect(detectionCalls(fetchMock, F)).toHaveLength(1);
+
+    cleanup();
+    openAt(`/${F}/collections/tees`);
+    await heading(2, 2);
+    expect(detectionCalls(fetchMock, F)).toHaveLength(1);
+  });
+
+  it("forgets the remembered platform when a load fails", async () => {
+    stub({ fourthwall: { [F]: shop() } });
+    window.localStorage.setItem(`storelens:platform:v1:https://${F}`, JSON.stringify({ platformId: "fourthwall", cachedAt: Date.now() }));
+    openAt(`/${F}/collections/nope`);
+
+    expect(await screen.findByText(/That collection wasn't found/)).not.toBeNull();
+    expect(platformCache(F)).toBeNull();
+  });
+
+  it("shows what was pasted straight away while the platform is still being worked out", async () => {
+    const release = deferred();
+    slowResolve.override = (url, options, real) => (url.host === F ? release.promise.then(() => real(url, options)) : undefined);
+    stub({ fourthwall: { [F]: shop() } });
+    openAt("/");
+    const user = userEvent.setup();
+
+    await user.click(input());
+    await user.paste(F);
+    expect(input().value).toBe(F);
+    expect(screen.queryByText(/Showing/)).toBeNull();
+
+    await act(async () => release.release());
+    await heading(3, 3);
+  });
+
+  it("loads a big shop a few pages at a time with a running count, and keeps what loaded if a page fails", async () => {
+    const big = Array.from({ length: 300 }, (_, i) => fwItem(`Item ${i + 1}`, 10 + (i % 30)));
+    const failPage = (url) => {
+      if (url.host === F && url.pathname === "/collections/all/10.json") throw new TypeError("Failed to fetch");
+    };
+    stub({ fourthwall: { [F]: { collections: { all: big } } } }, failPage);
+    openAt(`/${F}/collections/all`);
+
+    expect(
+      await screen.findByText("Loaded 180 products, but couldn't fetch the rest (the store couldn't be reached).", {}, { timeout: 4000 })
+    ).not.toBeNull();
+    await heading(180, 180);
+  });
+});
+
+describe("a Shopify store next to Fourthwall", () => {
+  it("is still recognised as Shopify, and remembered once it loads", async () => {
+    const fetchMock = fakeStoresFetch({ shopify: { [A]: storeA() } });
+    vi.stubGlobal("fetch", fetchMock);
+    openAt(`/${A}/collections/tees`);
+
+    await heading(3, 3);
+    expect(fetchMock.calls.filter((u) => u.host === A && u.pathname === "/collections/all.json")).toHaveLength(1);
+    expect(JSON.parse(window.localStorage.getItem(`storelens:platform:v1:https://${A}`)).platformId).toBe("shopify");
+    // Its own controls are still there: the collection dropdown and the sort.
+    expect(screen.getAllByRole("combobox")).toHaveLength(2);
+
+    cleanup();
+    openAt(`/${A}/collections/mugs`);
+    await heading(2, 2);
+    expect(fetchMock.calls.filter((u) => u.host === A && u.pathname === "/collections/all.json")).toHaveLength(1);
+  });
+
+  it("is not mistaken for Fourthwall when the shop has no 'all' collection", async () => {
+    vi.stubGlobal("fetch", fakeStoresFetch({ shopify: { [A]: { collections: { tees: storeA().collections.tees } } } }));
+    openAt(`/${A}/collections/tees`);
+    await heading(3, 3);
   });
 });
