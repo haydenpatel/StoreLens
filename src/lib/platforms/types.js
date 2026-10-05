@@ -46,7 +46,6 @@
  * @property {boolean} tags
  * @property {boolean} variantOptions
  * @property {boolean} variantStock
- * @property {boolean} description
  * @property {boolean} collectionDiscovery
  */
 
@@ -72,7 +71,6 @@
  *   Promise<{collections: {handle: string, title: string, products_count: number|null}[], allProductsHandle: string|null, origin?: string}>} [listCollections]
  *   Optional: platforms without a listing omit it and set defaultCollection.
  *   `origin`, when present, is the origin that actually worked (e.g. a locale prefix turned out not to be one); the caller switches to it.
- * @property {(raw: any, origin: string) => NeutralProduct} normalize   Maps one raw platform product to the neutral shape.
  * @property {(collectionUrl: string, opts: {signal?: AbortSignal, onProgress?: (p: {loaded: number}) => void}) => Promise<FetchCollectionResult>} fetchCollection
  *   Throws on an invalid URL, and rethrows an abort. Everything else is reported in the result.
  *   `pageError` is a StoreError (see lib/errors.js) when the failure is one the UI can explain.

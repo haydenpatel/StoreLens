@@ -607,11 +607,6 @@ describe("listCollections when the first path segment may not be a locale", () =
 });
 
 describe("shopifyAdapter metadata", () => {
-  it("exposes normalize, which maps a raw product to the neutral shape", () => {
-    const n = shopifyAdapter.normalize(product({ handle: "tee", vendor: "Acme" }), ORIGIN);
-    expect(n).toMatchObject({ handle: "tee", vendors: ["Acme"] });
-  });
-
   it("labels its filter sections", () => {
     expect(shopifyAdapter.labels).toEqual({ vendors: "Vendor", categories: "Product Type" });
   });
