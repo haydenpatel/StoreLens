@@ -7,9 +7,9 @@
 //   node scripts/major-upgrades.mjs [--dry-run]
 //
 // Needs `npm` and an authenticated `gh` (GH_TOKEN) on PATH. No `npm ci`:
-// `npm outdated` reads package.json and the registry, so nothing is installed
-// or run. An upgrade is skipped if any issue (open or closed) already has its
-// title, so a second run creates nothing new.
+// it asks the registry for each direct dependency's latest version, so nothing
+// is installed or run. An upgrade is skipped if any issue (open or closed)
+// already has its title, so a second run creates nothing new.
 
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -42,17 +42,17 @@ export function releasesUrl(repositoryUrl, name) {
     : `https://www.npmjs.com/package/${name}`;
 }
 
-// pkg: parsed package.json. outdated: parsed `npm outdated --json`.
+// pkg: parsed package.json. latest: { name: { latest } } from the registry.
 // Returns [{ title, upgrades: [{ name, range, latest }] }], one per issue.
-export function findMajorUpgrades(pkg, outdated) {
+export function findMajorUpgrades(pkg, latest) {
   const declared = { ...pkg.dependencies, ...pkg.devDependencies };
   const majors = new Map();
   for (const [name, range] of Object.entries(declared)) {
-    const latest = outdated[name]?.latest;
-    if (EXCLUDED.has(name) || !latest) continue;
+    const latestVersion = latest[name]?.latest;
+    if (EXCLUDED.has(name) || !latestVersion) continue;
     const from = rangeMajor(range);
-    const to = Number.parseInt(latest, 10);
-    if (from !== null && to > from) majors.set(name, { name, range, latest });
+    const to = Number.parseInt(latestVersion, 10);
+    if (from !== null && to > from) majors.set(name, { name, range, latest: latestVersion });
   }
 
   const upgrades = [];
@@ -94,14 +94,17 @@ function run(command, args) {
   return execFileSync(command, args, { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
 }
 
-// `npm outdated` exits 1 whenever anything is outdated; the JSON is still on stdout.
-function npmOutdated() {
-  try {
-    return JSON.parse(run("npm", ["outdated", "--json"]) || "{}");
-  } catch (error) {
-    if (error.status === 1 && error.stdout) return JSON.parse(error.stdout);
-    throw error;
-  }
+// Latest published version of every direct dependency, as { name: { latest } }.
+// Asks the registry directly: `npm outdated` omits a package whose installed or
+// locked version is already the newest its range allows, so on a clean checkout
+// it never reports a newer major for an up-to-date package.
+function latestVersions(pkg) {
+  const names = Object.keys({ ...pkg.dependencies, ...pkg.devDependencies });
+  return Object.fromEntries(
+    names
+      .filter((name) => !EXCLUDED.has(name))
+      .map((name) => [name, { latest: run("npm", ["view", name, "version"]).trim() }]),
+  );
 }
 
 function linkFor(name) {
@@ -115,7 +118,7 @@ function linkFor(name) {
 function main() {
   const dryRun = process.argv.includes("--dry-run");
   const pkg = JSON.parse(readFileSync("package.json", "utf8"));
-  const found = findMajorUpgrades(pkg, npmOutdated());
+  const found = findMajorUpgrades(pkg, latestVersions(pkg));
 
   const existing = new Set(
     JSON.parse(
