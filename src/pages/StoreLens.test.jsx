@@ -7,6 +7,19 @@ import { product, variant } from "../lib/__fixtures__/shopify";
 import { fakeShopifyFetch } from "../lib/__fixtures__/fake-shopify-fetch";
 import { jsonResponse } from "../lib/__fixtures__/test-helpers";
 
+// Wraps the real resolveAdapter so a test can make store resolution slow, or fail
+// it, for chosen URLs. `slowResolve.override(url, options, real)` replaces the
+// answer; when it is unset (or returns undefined) the real one is used.
+const slowResolve = vi.hoisted(() => ({ override: null }));
+vi.mock("@/lib/platforms", async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    resolveAdapter: (url, options) =>
+      slowResolve.override?.(url, options, actual.resolveAdapter) ?? actual.resolveAdapter(url, options),
+  };
+});
+
 // jsdom has neither observer (nor matchMedia, below); the product grid and the
 // Radix controls need them.
 class NoopObserver {
@@ -88,6 +101,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  slowResolve.override = null;
   cleanup();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -318,6 +332,106 @@ describe("switching stores when the abandoned request is aborted (rejects)", () 
     expect(titleShown("Echo Hat")).not.toBeNull();
     expect(screen.queryByRole("alert")).toBeNull();
     expect(window.location.pathname).toBe(`/${B}/collections/all`);
+  });
+});
+
+describe("store resolution that takes a while", () => {
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const slowFor = (host, wait) => (url, options, real) =>
+    url.host === host ? sleep(wait).then(() => real(url, options)) : undefined;
+  const aborted = () => new DOMException("The operation was aborted.", "AbortError");
+
+  it("lets a later paste win, and the earlier store changes nothing when it finally resolves", async () => {
+    const slowA = deferred();
+    slowResolve.override = (url, options, real) => (url.host === A ? slowA.promise.then(() => real(url, options)) : undefined);
+    const fetchMock = fakeShopifyFetch({ [A]: storeA(), [B]: storeB() });
+    vi.stubGlobal("fetch", fetchMock);
+    openAt("/");
+    const user = userEvent.setup();
+
+    await user.click(input());
+    await user.paste(A);
+    await user.clear(input());
+    await user.paste(B);
+    await heading(2, 2);
+
+    await act(async () => slowA.release());
+    await sleep(50);
+
+    expect(titleShown("Echo Hat")).not.toBeNull();
+    expect(titleShown("Alpha Tee")).toBeNull();
+    expect(window.location.pathname).toBe(`/${B}/collections/all`);
+    expect(pushedPaths()).toEqual([`/${B}/collections/all`]);
+    expect(fetchMock.calls.filter((url) => url.host === A)).toEqual([]);
+    expect(JSON.parse(window.localStorage.getItem("storelens-url-history"))).toEqual([`https://${B}`]);
+  });
+
+  it("ignores an earlier resolution that is aborted and rejects, without an error", async () => {
+    slowResolve.override = (url, options, real) =>
+      url.host === A
+        ? new Promise((_, reject) => options.signal.addEventListener("abort", () => reject(aborted())))
+        : real(url, options);
+    vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: storeA(), [B]: storeB() }));
+    openAt("/");
+    const user = userEvent.setup();
+
+    await user.click(input());
+    await user.paste(A);
+    await user.clear(input());
+    await user.paste(B);
+    await heading(2, 2);
+    await sleep(50);
+
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(window.location.pathname).toBe(`/${B}/collections/all`);
+  });
+
+  it("a deep link still applies its filters after resolving slowly", async () => {
+    slowResolve.override = slowFor(A, 30);
+    vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: storeA() }));
+    openAt(`/${A}/collections/tees?vendor=Acme`);
+
+    await heading(2, 3);
+    expect(titleShown("Bravo Tee")).toBeNull();
+    expect(here()).toBe(`/${A}/collections/tees?vendor=Acme`);
+    expect(pushedPaths()).toEqual([]);
+  });
+
+  it("a bare-domain deep link still replaces its entry after resolving slowly", async () => {
+    slowResolve.override = slowFor(A, 30);
+    vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: storeA() }));
+    openAt(`/${A}`);
+
+    await heading(3, 3);
+    expect(replacedPaths()).toContain(`/${A}/collections/all`);
+    expect(pushedPaths()).toEqual([]);
+  });
+
+  it("a failed deep link still replaces rather than pushes after resolving slowly", async () => {
+    slowResolve.override = slowFor(A, 30);
+    const refuse = (url) =>
+      url.host === A && url.pathname === "/collections/all/products.json" && url.searchParams.get("limit") !== "1"
+        ? jsonResponse({}, { ok: false, status: 403 })
+        : undefined;
+    vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: storeA() }, refuse));
+    openAt(`/${A}`);
+
+    expect(await screen.findByText(/password protected or blocking access/)).not.toBeNull();
+    expect(pushedPaths()).toEqual([]);
+    expect(replacedPaths()).toContain(`/${A}/collections/all`);
+  });
+
+  it("shows the error when resolving fails for a reason other than being superseded", async () => {
+    slowResolve.override = (url, options, real) =>
+      url.host === A ? Promise.reject(new TypeError("Failed to fetch")) : real(url, options);
+    vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: storeA() }));
+    openAt("/");
+    const user = userEvent.setup();
+
+    await user.click(input());
+    await user.paste(A);
+
+    expect(await screen.findByText("Failed to fetch")).not.toBeNull();
   });
 });
 

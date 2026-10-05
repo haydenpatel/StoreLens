@@ -37,6 +37,8 @@
 
 /**
  * What a platform can supply. The UI hides filters it can't populate.
+ * The keys here are mirrored by `CAPABILITY_KEYS` in `__fixtures__/adapter-contract.js`,
+ * which the adapter tests check against; keep the two in step by hand.
  * `variantStock` means availability is reported at all (product-level is
  * enough, copied onto each variant); when false the in-stock filter is hidden
  * and ignored, and the adapter should report every product as available.
@@ -62,7 +64,9 @@
  * @property {string} name                                    Shown in user-facing copy.
  * @property {AdapterCapabilities} capabilities
  * @property {{vendors: string, categories: string}} labels   Filter section titles, e.g. "Vendor"/"Artists".
- * @property {(url: URL) => boolean} matchesUrl               Cheap, URL-only check used by detection.
+ * @property {(url: URL) => boolean} matchesUrl               Cheap, URL-only check used by detection. Detection that needs a network
+ *   request (a custom domain that can't be told from its URL) doesn't go here: it plugs into the registry's
+ *   `resolveAdapter` (see platforms/index.js), after this check.
  * @property {(url: URL) => {origin: string, collection: string|null}} parseUrl
  *   `origin` may carry a locale prefix (e.g. https://shop.example.com/en-nz) when the platform has one.
  * @property {(origin: string, collection: string) => string} collectionUrl
