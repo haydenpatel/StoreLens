@@ -63,6 +63,8 @@ npm run dev
 
 `npm install` also installs the git hooks in `.githooks/` (run it again after changing one). They refuse commits and merges on `main`: work on a branch (one per issue) and merge through a pull request.
 
+Dependabot (`.github/dependabot.yml`) opens one grouped upgrade PR per month for npm packages and one for GitHub Actions, plus grouped security fixes as they come. Review and merge them like any other PR once `test` passes.
+
 Run the tests with `npm test` (they run offline against synthetic fixtures, never real store data) and lint with `npm run lint`.
 
 ### Platform feed smoke check

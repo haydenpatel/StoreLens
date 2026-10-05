@@ -1,0 +1,36 @@
+# Dependabot: one grouped upgrade PR per ecosystem each month, and grouped
+# security fixes as they come. PRs are labelled like the rest of the repo and
+# merge like any other PR once `test` passes.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      npm-version-updates:
+        applies-to: version-updates
+        patterns: ["*"]
+      npm-security-updates:
+        applies-to: security-updates
+        patterns: ["*"]
+    labels: ["chore", "priority: low"]
+    commit-message:
+      prefix: chore
+      include: scope
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions-version-updates:
+        applies-to: version-updates
+        patterns: ["*"]
+      actions-security-updates:
+        applies-to: security-updates
+        patterns: ["*"]
+    labels: ["chore", "priority: low"]
+    commit-message:
+      prefix: chore
+      include: scope
