@@ -26,10 +26,11 @@ export const EXCLUDED = new Set(["@types/node"]);
 
 export const LABELS = ["chore", "priority: low"];
 
-// First number in a range: "^0.554.0" -> 0, "~7.2.2" -> 7, ">=9" -> 9.
+// Highest major a range allows, from the first number of each version in it:
+// "^0.554.0" -> 0, "~7.2.2" -> 7, "^18 || ^19" -> 19, ">=1.2 <3" -> 3.
 export function rangeMajor(range) {
-  const match = /\d+/.exec(range);
-  return match ? Number(match[0]) : null;
+  const majors = [...range.matchAll(/(?<![\d.])\d+/g)].map((match) => Number(match[0]));
+  return majors.length ? Math.max(...majors) : null;
 }
 
 // "git+https://github.com/vitejs/vite.git" -> "https://github.com/vitejs/vite/releases".

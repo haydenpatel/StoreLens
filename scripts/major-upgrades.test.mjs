@@ -19,6 +19,12 @@ describe("rangeMajor", () => {
     expect(rangeMajor(">=9")).toBe(9);
     expect(rangeMajor("latest")).toBeNull();
   });
+
+  it("uses the highest major when a range allows several", () => {
+    expect(rangeMajor("^18 || ^19")).toBe(19);
+    expect(rangeMajor("^18.2.0 || ^19.0.0")).toBe(19);
+    expect(rangeMajor("1.2.3 - 4.0.0")).toBe(4);
+  });
 });
 
 describe("findMajorUpgrades", () => {
@@ -59,6 +65,12 @@ describe("findMajorUpgrades", () => {
         upgrades: [{ name: "@vitejs/plugin-react", range: "^5.1.0", latest: "6.1.1" }],
       },
     ]);
+  });
+
+  it("opens no issue when the range already allows the latest major", () => {
+    const wide = { dependencies: { react: "^18 || ^19" } };
+    expect(findMajorUpgrades(wide, { react: { latest: "19.3.0" } })).toEqual([]);
+    expect(findMajorUpgrades(wide, { react: { latest: "20.0.0" } })).toHaveLength(1);
   });
 
   it("returns nothing when nothing is outdated", () => {
