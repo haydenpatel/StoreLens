@@ -30,6 +30,34 @@ import { StoreError, describeStoreError, describeStoreErrorReason } from "@/lib/
 
 // Where Recent Stores lived before the key was renamed from shopify-specific.
 const LEGACY_HISTORY_KEY = "shopify-url-history";
+const HISTORY_KEY = "storelens-url-history";
+
+const NO_COLLECTIONS = {
+  status: "idle",
+  collections: [],
+  error: null,
+  allProductsHandle: null,
+};
+
+// Recent Stores as saved in localStorage; read once when the page mounts.
+function readSavedHistory() {
+  try {
+    let saved = localStorage.getItem(HISTORY_KEY);
+    // Carry Recent Stores over from the key used before it was renamed.
+    const legacy = localStorage.getItem(LEGACY_HISTORY_KEY);
+    if (saved === null && legacy !== null) {
+      saved = legacy;
+      localStorage.setItem(HISTORY_KEY, legacy);
+    }
+    localStorage.removeItem(LEGACY_HISTORY_KEY);
+    if (saved) {
+      return JSON.parse(saved);
+    }
+  } catch {
+    /* localStorage unavailable or history corrupted — ignore */
+  }
+  return [];
+}
 
 export default function StoreLensApp() {
   const [storeInput, setStoreInput] = useState("");
@@ -57,13 +85,8 @@ export default function StoreLensApp() {
     setError(null);
     setInfoNotice(null);
   };
-  const [urlHistory, setUrlHistory] = useState([]);
-  const [collectionsState, setCollectionsState] = useState({
-    status: "idle",
-    collections: [],
-    error: null,
-    allProductsHandle: null,
-  });
+  const [urlHistory, setUrlHistory] = useState(readSavedHistory);
+  const [collectionsState, setCollectionsState] = useState(NO_COLLECTIONS);
   const [selectedHandle, setSelectedHandle] = useState("");
   const [currentCollectionUrl, setCurrentCollectionUrl] = useState("");
   // Bumped once per successful load, even when it reloads the collection that
@@ -96,13 +119,12 @@ export default function StoreLensApp() {
   // waiting to be applied once a collection's own data has settled - see the
   // restore effect below for why it can't just be applied immediately.
   const pendingFilterParamsRef = useRef(null);
-  const historyKey = "storelens-url-history";
   const updateHistoryEntry = (entry) => {
     if (!entry) return;
     setUrlHistory((prev) => {
       const updated = [entry, ...prev.filter((u) => u !== entry)].slice(0, 5);
       try {
-        localStorage.setItem(historyKey, JSON.stringify(updated));
+        localStorage.setItem(HISTORY_KEY, JSON.stringify(updated));
       } catch {
         /* localStorage unavailable (quota exceeded, private browsing, blocked) */
       }
@@ -120,25 +142,6 @@ export default function StoreLensApp() {
   const [inStockOnly, setInStockOnly] = useState(false);
   const [saleOnly, setSaleOnly] = useState(false);
   const [sortBy, setSortBy] = useState("title-asc");
-
-  // Load URL history from localStorage
-  useEffect(() => {
-    try {
-      let saved = localStorage.getItem(historyKey);
-      // Carry Recent Stores over from the key used before it was renamed.
-      const legacy = localStorage.getItem(LEGACY_HISTORY_KEY);
-      if (saved === null && legacy !== null) {
-        saved = legacy;
-        localStorage.setItem(historyKey, legacy);
-      }
-      localStorage.removeItem(LEGACY_HISTORY_KEY);
-      if (saved) {
-        setUrlHistory(JSON.parse(saved));
-      }
-    } catch {
-      /* localStorage unavailable or history corrupted — ignore */
-    }
-  }, []);
 
 
   // Back/Forward can kick off a new load while a previous one is still
@@ -413,6 +416,9 @@ export default function StoreLensApp() {
   };
 
   useEffect(() => {
+    // The address bar is the external system here: opening the page on a store
+    // link loads it, just as Back/Forward does through the popstate listener.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadFromLocation();
     window.addEventListener("popstate", loadFromLocation);
     return () => {
@@ -470,15 +476,7 @@ export default function StoreLensApp() {
   // no keystroke burst to debounce against; this runs as soon as storeOrigin
   // or discoveryRetryNonce changes.
   useEffect(() => {
-    if (!storeOrigin) {
-      setCollectionsState({
-        status: "idle",
-        collections: [],
-        error: null,
-        allProductsHandle: null,
-      });
-      return;
-    }
+    if (!storeOrigin) return;
 
     const controller = new AbortController();
     (async () => {
@@ -592,17 +590,20 @@ export default function StoreLensApp() {
   // Keep the currently-loaded collection selectable in the dropdown even when
   // the platform's collection discovery didn't happen to include it —
   // otherwise the Select ends up holding a value with no matching item.
-  useEffect(() => {
-    if (collectionsState.status !== "ready" || !inputHandle) return;
-    setSelectedHandle(inputHandle);
-    setCollectionsState((prev) => {
-      if (prev.collections.some((c) => c.handle === inputHandle)) return prev;
-      return {
-        ...prev,
-        collections: [{ handle: inputHandle, title: titleFromHandle(inputHandle), products_count: null }, ...prev.collections],
-      };
-    });
-  }, [collectionsState, inputHandle]);
+  if (collectionsState.status === "ready" && inputHandle) {
+    if (selectedHandle !== inputHandle) setSelectedHandle(inputHandle);
+    if (!collectionsState.collections.some((c) => c.handle === inputHandle)) {
+      setCollectionsState({
+        ...collectionsState,
+        collections: [{ handle: inputHandle, title: titleFromHandle(inputHandle), products_count: null }, ...collectionsState.collections],
+      });
+    }
+  }
+
+  // No store, no collection list: drop whatever the last store left behind.
+  if (!storeOrigin && collectionsState !== NO_COLLECTIONS) {
+    setCollectionsState(NO_COLLECTIONS);
+  }
 
   const handleInputChange = (value) => {
     // Just track what's typed; parsing the URL and kicking off collection
@@ -646,11 +647,13 @@ export default function StoreLensApp() {
   );
 
   // Update price range when products change
-  useEffect(() => {
+  const [priceRangeFor, setPriceRangeFor] = useState(filterData);
+  if (priceRangeFor !== filterData) {
+    setPriceRangeFor(filterData);
     if (filterData.minPrice !== Infinity && filterData.maxPrice !== 0) {
       setPriceRange([filterData.minPrice, filterData.maxPrice]);
     }
-  }, [filterData]);
+  }
 
   // Restore filter/sort state from the URL once a collection's own data has
   // settled - both resetFilters() (called on every successful load) and the
