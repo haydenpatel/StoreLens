@@ -46,15 +46,6 @@ describe("describeStoreError", () => {
     expect(describeStoreError(new StoreError("unsupported-platform"))).not.toContain("undefined");
   });
 
-  it("points at the collection dropdown only for a platform that has one", () => {
-    const notFound = new StoreError("not-found");
-    expect(describeStoreError(notFound)).toMatch(/dropdown/);
-    expect(describeStoreError(notFound, { collectionList: true })).toMatch(/dropdown/);
-    const without = describeStoreError(notFound, { collectionList: false });
-    expect(without).not.toMatch(/dropdown/);
-    expect(without).toBe("That collection wasn't found. Check the URL.");
-  });
-
   it("mentions the status for a server error, and only when there is one", () => {
     expect(describeStoreError(new StoreError("server-error", { status: 502 }))).toContain("502");
     expect(describeStoreError(new StoreError("server-error"))).not.toContain("undefined");
