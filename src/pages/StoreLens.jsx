@@ -165,6 +165,12 @@ export default function StoreLensApp() {
   // whether a failure replaces or pushes the history entry, and whether
   // filters waiting from the link still apply. `autoDefault`: it is a bare
   // domain's auto-resolved default collection.
+  // What describeStoreError needs to word a failure for this platform.
+  const errorContext = (platform) => ({
+    supported: supportedPlatformNames(),
+    collectionList: platform.capabilities.collectionDiscovery !== false,
+  });
+
   const fetchCollection = async (url, { fromAddressBar = false, autoDefault = false } = {}) => {
     fetchCollectionAbortRef.current?.abort();
     const controller = new AbortController();
@@ -202,7 +208,7 @@ export default function StoreLensApp() {
       // Superseded (aborted) - the newer call owns state from here. Anything
       // else, e.g. an invalid collection URL, is reported to the user.
       if (isCurrent()) {
-        setError(describeStoreError(err, { supported: supportedPlatformNames() }));
+        setError(describeStoreError(err, errorContext(loadAdapter)));
         setLoading(false);
         forgetAdapter(new URL(url));
         showFailedStore(appPathFor(url), fromAddressBar);
@@ -217,7 +223,7 @@ export default function StoreLensApp() {
     if (allProducts.length === 0) {
       // What was remembered about this store's platform may be out of date.
       forgetAdapter(new URL(url));
-      setError(describeStoreError(pageError ?? new StoreError("empty"), { supported: supportedPlatformNames() }));
+      setError(describeStoreError(pageError ?? new StoreError("empty"), errorContext(loadAdapter)));
       setLoading(false);
       showFailedStore(appPathFor(url), fromAddressBar);
       return;

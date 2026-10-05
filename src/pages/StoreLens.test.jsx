@@ -550,6 +550,8 @@ describe("a Fourthwall shop", () => {
 
     const message = await screen.findByText(/That collection wasn't found/);
     expect(message.textContent).not.toMatch(/shopify/i);
+    // Fourthwall has no collection dropdown, so the message must not point at one.
+    expect(message.textContent).not.toMatch(/dropdown/);
     expect(pushedPaths()).toEqual([`/${F}/collections/nope`]);
   });
 

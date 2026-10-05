@@ -4,7 +4,9 @@
 
 export const FAILURE_KINDS = {
   "not-found": {
-    message: "That collection wasn't found. Check the URL, or choose a collection from the dropdown.",
+    // Only a platform with a collection listing has a dropdown to point at.
+    message: ({ collectionList }) =>
+      `That collection wasn't found. Check the URL${collectionList ? ", or choose a collection from the dropdown" : ""}.`,
     reason: "that collection wasn't found",
   },
   locked: {
@@ -14,12 +16,12 @@ export const FAILURE_KINDS = {
   "blocked-or-offline": {
     // Stores on an unsupported platform usually land here too (they send no CORS
     // headers), so say what does work.
-    message: (supported) =>
+    message: ({ supported }) =>
       `Couldn't reach this store from the browser. It may be offline, or it may not allow other sites to read its products.${supported ? ` StoreLens works with ${supported} stores.` : ""}`,
     reason: "the store couldn't be reached",
   },
   "unsupported-platform": {
-    message: (supported) =>
+    message: ({ supported }) =>
       `This doesn't look like a store StoreLens can read.${supported ? ` It works with ${supported} stores that have a public product listing.` : ""} Password-protected stores can't be read either.`,
     reason: "the store didn't return product data",
   },
@@ -32,7 +34,7 @@ export const FAILURE_KINDS = {
     reason: "the store is limiting requests",
   },
   "server-error": {
-    message: (_supported, status) =>
+    message: ({ status }) =>
       `The store returned an error${status ? ` (status ${status})` : ""}. Try again shortly.`,
     reason: (status) => `the store returned an error${status ? ` (status ${status})` : ""}`,
   },
@@ -48,12 +50,13 @@ export class StoreError extends Error {
 }
 
 // The user-facing sentence for a failure. `supported` is the supported
-// platforms as text ("Shopify, Fourthwall or Big Cartel"). Errors that aren't
-// StoreErrors (an invalid URL, say) keep their own message.
-export function describeStoreError(err, { supported } = {}) {
+// platforms as text ("Shopify or Fourthwall"); `collectionList` says whether the
+// store's platform has a collection dropdown to point the user at (default yes).
+// Errors that aren't StoreErrors (an invalid URL, say) keep their own message.
+export function describeStoreError(err, { supported, collectionList = true } = {}) {
   if (!(err instanceof StoreError)) return err?.message || "Something went wrong.";
   const copy = FAILURE_KINDS[err.kind] ?? FAILURE_KINDS["server-error"];
-  return typeof copy.message === "function" ? copy.message(supported, err.status) : copy.message;
+  return typeof copy.message === "function" ? copy.message({ supported, status: err.status, collectionList }) : copy.message;
 }
 
 // A short clause for the "couldn't fetch the rest (...)" warning.
