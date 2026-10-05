@@ -467,7 +467,11 @@ export default function StoreLensApp() {
         const { collections, allProductsHandle, origin: resolvedOrigin } =
           discoveryAdapter.capabilities.collectionDiscovery !== false && discoveryAdapter.listCollections
             ? await discoveryAdapter.listCollections(storeOrigin, controller.signal, { forceRefresh })
-            : { collections: [], allProductsHandle: discoveryAdapter.defaultCollection ?? null };
+            : {
+                // No listing to read: the dropdown offers just the default collection.
+                collections: [{ handle: discoveryAdapter.defaultCollection, title: "All Products", products_count: null }],
+                allProductsHandle: discoveryAdapter.defaultCollection ?? null,
+              };
         if (!controller.signal.aborted && resolvedOrigin && resolvedOrigin !== storeOrigin) {
           // The adapter found the store under a different origin (e.g. /uk was
           // a page, not a locale). Switch to it and let discovery run again
@@ -716,7 +720,7 @@ export default function StoreLensApp() {
         urlHistory={urlHistory}
         onSelectHistory={handleSelectHistory}
         collections={collectionsState.collections}
-        collectionDiscovery={adapter.capabilities.collectionDiscovery !== false}
+        collectionsNote={adapter.collectionsNote}
         collectionsStatus={collectionsState.status}
         collectionsError={collectionsState.error}
         selectedHandle={selectedHandle}

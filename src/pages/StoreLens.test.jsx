@@ -95,7 +95,16 @@ function deferred() {
   return { promise, release };
 }
 
+// Radix's Select needs these pointer/scroll methods to open in jsdom.
+const radixPolyfills = {
+  hasPointerCapture: () => false,
+  setPointerCapture: () => {},
+  releasePointerCapture: () => {},
+  scrollIntoView: () => {},
+};
+
 beforeEach(() => {
+  Object.assign(Element.prototype, radixPolyfills);
   vi.stubGlobal("IntersectionObserver", NoopObserver);
   vi.stubGlobal("ResizeObserver", NoopObserver);
   vi.stubGlobal("matchMedia", desktopMatchMedia);
@@ -488,12 +497,50 @@ describe("a Fourthwall shop", () => {
     await heading(3, 3);
     expect(titleShown("Echo Tee")).not.toBeNull();
     expect(pushedPaths()).toEqual([`/${F}/collections/all`]);
-    // No collection listing to choose from (only the sort control is left), and
-    // none of the filters Fourthwall has no data for.
-    expect(screen.getAllByRole("combobox")).toHaveLength(1);
+    // The collection dropdown stays (offering All Products), beside the sort control,
+    // and none of the filters Fourthwall has no data for are shown.
+    const [collectionSelect] = screen.getAllByRole("combobox");
+    expect(screen.getAllByRole("combobox")).toHaveLength(2);
+    expect(collectionSelect.textContent).toBe("All Products");
     expect(screen.queryByText("Vendor")).toBeNull();
     expect(screen.queryByText("Tags")).toBeNull();
     expect(screen.queryByText("Product Type")).toBeNull();
+  });
+
+  it("explains in the collection dropdown why only All Products is offered", async () => {
+    stub({ fourthwall: { [F]: shop() } });
+    openAt(`/${F}`);
+    await heading(3, 3);
+    const user = userEvent.setup();
+
+    await user.click(screen.getAllByRole("combobox")[0]);
+
+    const options = await screen.findAllByRole("option");
+    expect(options.map((o) => o.textContent)).toEqual([
+      "All Products",
+      "Fourthwall doesn't let StoreLens list a shop's collections. To view another, paste its link.",
+    ]);
+    expect(options[0].getAttribute("aria-disabled")).not.toBe("true");
+    expect(options[1].getAttribute("aria-disabled")).toBe("true");
+  });
+
+  it("offers the collection in the link and All Products, and switches between them", async () => {
+    stub({ fourthwall: { [F]: shop() } });
+    openAt(`/${F}/collections/tees`);
+    await heading(2, 2);
+    const user = userEvent.setup();
+
+    const trigger = screen.getAllByRole("combobox")[0];
+    expect(trigger.textContent).toBe("Tees");
+    await user.click(trigger);
+    const options = await screen.findAllByRole("option");
+    expect(options.map((o) => o.textContent).slice(0, 2).sort()).toEqual(["All Products", "Tees"]);
+
+    await user.click(options.find((o) => o.textContent === "All Products"));
+
+    await heading(3, 3);
+    expect(window.location.pathname).toBe(`/${F}/collections/all`);
+    expect(titleShown("Golf Cap")).not.toBeNull();
   });
 
   it("is recognised from a deep link on a custom domain, and keeps the address as it was", async () => {
@@ -615,8 +662,11 @@ describe("a Shopify store next to Fourthwall", () => {
     await heading(3, 3);
     expect(fetchMock.calls.filter((u) => u.host === A && u.pathname === "/collections/all.json")).toHaveLength(1);
     expect(JSON.parse(window.localStorage.getItem(`storelens:platform:v1:https://${A}`)).platformId).toBe("shopify");
-    // Its own controls are still there: the collection dropdown and the sort.
+    // Its own controls are still there: the collection dropdown and the sort,
+    // and no Fourthwall-style explanation in the collection list.
     expect(screen.getAllByRole("combobox")).toHaveLength(2);
+    await userEvent.setup().click(screen.getAllByRole("combobox")[0]);
+    expect((await screen.findAllByRole("option")).some((o) => /list a shop's collections/.test(o.textContent))).toBe(false);
 
     cleanup();
     openAt(`/${A}/collections/mugs`);

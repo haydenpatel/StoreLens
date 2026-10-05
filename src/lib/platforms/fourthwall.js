@@ -219,7 +219,9 @@ export const fourthwallAdapter = {
   parseUrl,
   collectionUrl: (origin, collection) => `${origin}/collections/${collection}`,
   // No collection listing is readable from the browser, so a bare store opens
-  // its "all" collection and there is no collection dropdown.
+  // its "all" collection, and the collection dropdown offers only that and the
+  // collection on screen, with this note explaining why.
   defaultCollection: DEFAULT_COLLECTION,
+  collectionsNote: "Fourthwall doesn't let StoreLens list a shop's collections. To view another, paste its link.",
   fetchCollection,
 };

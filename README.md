@@ -40,7 +40,7 @@ Each platform is a small adapter (`src/lib/platforms/`) that turns the platform'
 - Search across product titles and descriptions  
 - URL history to quickly re-visit recent stores
 - Clean UI built with Tailwind + shadcn/ui  
-- Per-platform differences: a Fourthwall shop has no collection dropdown (its collections can't be listed from the browser, so a bare shop opens "All Products", or the collection named in the URL) and no vendor, type, tag or description filtering, because Fourthwall doesn't provide that data
+- Per-platform differences: a Fourthwall shop's collection dropdown offers only "All Products" and the collection in the link, with a note saying why (its collections can't be listed from the browser, so paste a collection's link to open it); it has no vendor, type, tag or description filtering, because Fourthwall doesn't provide that data
 - 100% client-side — no API keys or server required
 - Deploy-ready for Cloudflare Pages, GitHub Pages, Netlify, Vercel, or any other static file host!
 

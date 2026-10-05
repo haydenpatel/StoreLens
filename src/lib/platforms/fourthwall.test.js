@@ -69,6 +69,10 @@ describe("metadata", () => {
     expect(fourthwallAdapter.matchesUrl(url(ORIGIN))).toBe(false);
   });
 
+  it("explains in the collection dropdown why only some collections are offered", () => {
+    expect(fourthwallAdapter.collectionsNote).toMatch(/doesn't let StoreLens list/);
+  });
+
   it("opens the 'all' collection for a bare store, with no collection listing", () => {
     expect(fourthwallAdapter.defaultCollection).toBe("all");
     expect(fourthwallAdapter.capabilities.collectionDiscovery).toBe(false);

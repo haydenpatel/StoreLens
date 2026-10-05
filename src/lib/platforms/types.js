@@ -80,6 +80,8 @@
  *   `origin` may carry a locale prefix (e.g. https://shop.example.com/en-nz) when the platform has one.
  * @property {(origin: string, collection: string) => string} collectionUrl
  * @property {string} [defaultCollection]   Collection to auto-load for a bare store when the platform has no collection listing.
+ * @property {string} [collectionsNote]   For a platform with no collection listing: shown, disabled, at the end of the collection dropdown
+ *   (which offers only "All Products" and the collection on screen) to say why other collections aren't listed.
  * @property {(origin: string, signal?: AbortSignal, opts?: {forceRefresh?: boolean}) =>
  *   Promise<{collections: {handle: string, title: string, products_count: number|null}[], allProductsHandle: string|null, origin?: string}>} [listCollections]
  *   Optional: platforms without a listing omit it and set defaultCollection.
