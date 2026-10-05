@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import StoreLensApp from "./StoreLens";
+import { detectAdapter } from "@/lib/platforms";
 import { product, variant } from "../lib/__fixtures__/shopify";
 import { fakeShopifyFetch } from "../lib/__fixtures__/fake-shopify-fetch";
 import { jsonResponse } from "../lib/__fixtures__/test-helpers";
@@ -343,7 +344,8 @@ describe("store resolution that takes a while", () => {
 
   it("lets a later paste win, and the earlier store changes nothing when it finally resolves", async () => {
     const slowA = deferred();
-    slowResolve.override = (url, options, real) => (url.host === A ? slowA.promise.then(() => real(url, options)) : undefined);
+    // A resolver that ignores its signal, so the page itself must drop the late answer.
+    slowResolve.override = (url) => (url.host === A ? slowA.promise.then(() => detectAdapter(url)) : undefined);
     const fetchMock = fakeShopifyFetch({ [A]: storeA(), [B]: storeB() });
     vi.stubGlobal("fetch", fetchMock);
     openAt("/");
