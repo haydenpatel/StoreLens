@@ -10,5 +10,5 @@ names). That content belongs to the merchants.
 ## Helpers
 
 - `adapter-contract.js`: `expectAdapterShape(adapter)` and `expectNeutralProduct(product, capabilities)`. Every platform adapter's tests call these against its own adapter and the products it returns, so adapters can't drift from the neutral model in `platforms/types.js` or from each other. Adding a capability means adding it to `CAPABILITY_KEYS` there.
-- `fake-shopify-fetch.js`: a `fetch` stand-in serving synthetic Shopify-shaped stores, for page-level tests.
+- `fake-shopify-fetch.js`: a `fetch` stand-in serving synthetic Shopify-shaped stores, for page-level tests. `override(url)` can hold back or fail a request; `{ honorAbort: true }` makes it reject with an `AbortError` when its signal aborts (by default the signal is ignored, so a held response still arrives late).
 - `test-helpers.js`: `memoryStorage` and `jsonResponse`.
