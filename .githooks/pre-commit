@@ -1,0 +1,9 @@
+#!/bin/sh
+# Local guard: work happens on issue branches in worktrees and reaches main
+# only through a squash-merged PR on GitHub, so never commit on main here.
+branch=$(git symbolic-ref --short -q HEAD)
+if [ "$branch" = "main" ]; then
+  echo "pre-commit: refusing to commit on main. Create a branch in a worktree:" >&2
+  echo "  git worktree add --no-track -b <branch> ../StoreLens-<n> origin/main" >&2
+  exit 1
+fi

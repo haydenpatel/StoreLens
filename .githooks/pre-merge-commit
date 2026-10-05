@@ -1,0 +1,4 @@
+#!/bin/sh
+# A merge (e.g. a pull on a diverged main) commits without running
+# pre-commit, so apply the same guard.
+exec "$(dirname "$0")/pre-commit"
