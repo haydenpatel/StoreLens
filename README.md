@@ -24,7 +24,7 @@ StoreLens only works with platforms that publish a keyless, browser-readable pro
 | Platform | Status |
 |---|---|
 | Shopify | Supported |
-| Fourthwall | Planned |
+| Fourthwall | Supported |
 | Big Cartel | Planned |
 
 Each platform is a small adapter (`src/lib/platforms/`) that turns the platform's own listing into one neutral product shape, so the filters, sorting and search are shared. Platforms that don't allow cross-origin reads (WooCommerce, Magento, Squarespace) or need per-merchant tokens (BigCommerce, Salesforce Commerce Cloud) can't work without a backend and are out of scope.
@@ -40,6 +40,7 @@ Each platform is a small adapter (`src/lib/platforms/`) that turns the platform'
 - Search across product titles and descriptions  
 - URL history to quickly re-visit recent stores
 - Clean UI built with Tailwind + shadcn/ui  
+- Per-platform differences: a Fourthwall shop has no collection dropdown (its collections can't be listed from the browser, so a bare shop opens "All Products", or the collection named in the URL) and no vendor, type, tag or description filtering, because Fourthwall doesn't provide that data
 - 100% client-side — no API keys or server required
 - Deploy-ready for Cloudflare Pages, GitHub Pages, Netlify, Vercel, or any other static file host!
 
@@ -91,6 +92,14 @@ StoreLens relies on each platform’s public JSON endpoints. Stores that restric
 
 - Shopify enforces a limit of 1,000 collection pages (and 250 products per page).
   Collections larger than 250,000 items cannot be fully loaded and will cause StoreLens to crash.
+
+
+### Fourthwall
+
+- Variant options have no names in Fourthwall's feed (a variant is just a title such as "Black, XS"), so StoreLens guesses them: a size is labelled "Size" and anything else "Option 1", "Option 2"… Filtering by these names can group unrelated options, and a notice says so when it applies.
+- Stock is reported per product, not per variant, so every size of a sold-out product reads as out of stock, and an in-stock product's sizes all read as available.
+- StoreLens recognises a Fourthwall shop by its "All Products" collection (every shop tested has one), so a shop without it wouldn't be recognised.
+- Loads stop after 2,000 products, with a warning.
 
 
 ## License
