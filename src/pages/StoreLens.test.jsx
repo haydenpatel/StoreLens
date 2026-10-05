@@ -246,7 +246,8 @@ describe("switching stores while one is still resolving", () => {
       url.host === A && url.pathname === "/collections/tees/products.json" ? slowCollection.promise : undefined;
     vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: storeA(), [B]: storeB() }, hold));
     openAt(`/${A}/collections/tees`);
-    await waitFor(() => expect(document.querySelector(".animate-spin")).not.toBeNull());
+    // The header disables the store box while a collection is loading.
+    await waitFor(() => expect(input().disabled).toBe(true));
 
     act(() => {
       window.history.pushState(null, "", `/${B}/collections/all`);
