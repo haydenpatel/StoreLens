@@ -543,6 +543,77 @@ describe("a Fourthwall shop", () => {
     expect(titleShown("Golf Cap")).not.toBeNull();
   });
 
+  describe("remembering the collections that were opened", () => {
+    const visited = () => JSON.parse(window.localStorage.getItem("storelens:visited-collections:v1") ?? "{}");
+    const optionTexts = async (user) => {
+      await user.click(screen.getAllByRole("combobox")[0]);
+      return (await screen.findAllByRole("option")).map((o) => o.textContent);
+    };
+
+    it("offers a collection opened earlier the next time the shop is opened", async () => {
+      stub({ fourthwall: { [F]: shop() } });
+      openAt(`/${F}/collections/tees`);
+      await heading(2, 2);
+      expect(visited()).toEqual({ [`https://${F}`]: ["tees"] });
+
+      cleanup();
+      openAt(`/${F}`);
+      await heading(3, 3);
+      const options = await optionTexts(userEvent.setup());
+      expect(options.slice(0, 2)).toEqual(["All Products", "Tees"]);
+      expect(options.at(-1)).toMatch(/list a shop's collections/);
+    });
+
+    it("lets the user go straight to a remembered collection", async () => {
+      stub({ fourthwall: { [F]: shop() } });
+      openAt(`/${F}/collections/tees`);
+      await heading(2, 2);
+      cleanup();
+      openAt(`/${F}`);
+      await heading(3, 3);
+      const user = userEvent.setup();
+
+      await user.click(screen.getAllByRole("combobox")[0]);
+      await user.click((await screen.findAllByRole("option")).find((o) => o.textContent === "Tees"));
+
+      await heading(2, 2);
+      expect(window.location.pathname).toBe(`/${F}/collections/tees`);
+    });
+
+    it("does not remember All Products, which is always offered", async () => {
+      stub({ fourthwall: { [F]: shop() } });
+      openAt(`/${F}/collections/all`);
+      await heading(3, 3);
+      expect(visited()).toEqual({});
+    });
+
+    it("shares collections between a shop's locales", async () => {
+      stub({ fourthwall: { [F]: shop() } });
+      openAt(`/${F}/en-nzd/collections/tees`);
+      await heading(2, 2);
+      cleanup();
+      openAt(`/${F}/en-usd`);
+      await heading(3, 3);
+      expect((await optionTexts(userEvent.setup())).slice(0, 2)).toEqual(["All Products", "Tees"]);
+    });
+
+    it("stops offering a collection once it no longer loads", async () => {
+      window.localStorage.setItem("storelens:visited-collections:v1", JSON.stringify({ [`https://${F}`]: ["gone", "tees"] }));
+      stub({ fourthwall: { [F]: shop() } });
+      openAt(`/${F}/collections/gone`);
+
+      expect(await screen.findByText(/That collection wasn't found/)).not.toBeNull();
+      expect(visited()).toEqual({ [`https://${F}`]: ["tees"] });
+    });
+
+    it("is not used for a Shopify store, which lists its own collections", async () => {
+      vi.stubGlobal("fetch", fakeStoresFetch({ shopify: { [A]: storeA() } }));
+      openAt(`/${A}/collections/tees`);
+      await heading(3, 3);
+      expect(visited()).toEqual({});
+    });
+  });
+
   it("is recognised from a deep link on a custom domain, and keeps the address as it was", async () => {
     stub({ fourthwall: { [F]: shop() } });
     openAt(`/${F}/collections/tees?q=hotel`);

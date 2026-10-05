@@ -15,7 +15,16 @@ import {
   parseFilterParams,
   restoreOptionSelections,
 } from "@/lib/filters";
-import { addressMatches, appPathFor, getDisplayOrigin, parseUserInputToURL } from "@/lib/store";
+import {
+  addressMatches,
+  appPathFor,
+  forgetVisitedCollection,
+  getDisplayOrigin,
+  loadVisitedCollections,
+  parseUserInputToURL,
+  saveVisitedCollection,
+  titleFromHandle,
+} from "@/lib/store";
 import { defaultAdapter, forgetAdapter, rememberAdapter, resolveAdapter, supportedPlatformNames } from "@/lib/platforms";
 import { StoreError, describeStoreError, describeStoreErrorReason } from "@/lib/errors";
 
@@ -165,6 +174,22 @@ export default function StoreLensApp() {
   // whether a failure replaces or pushes the history entry, and whether
   // filters waiting from the link still apply. `autoDefault`: it is a bare
   // domain's auto-resolved default collection.
+  // For a platform that can't list its collections: which collection a URL is,
+  // if it isn't the default one that is always offered.
+  const unlistedCollection = (platform, url) => {
+    if (platform.capabilities.collectionDiscovery !== false) return null;
+    const { collection } = platform.parseUrl(new URL(url));
+    return collection && collection !== platform.defaultCollection ? collection : null;
+  };
+  const rememberVisitedCollection = (platform, url) => {
+    const collection = unlistedCollection(platform, url);
+    if (collection) saveVisitedCollection(new URL(url).origin, collection);
+  };
+  const forgetVisitedCollectionFor = (platform, url) => {
+    const collection = unlistedCollection(platform, url);
+    if (collection) forgetVisitedCollection(new URL(url).origin, collection);
+  };
+
   const fetchCollection = async (url, { fromAddressBar = false, autoDefault = false } = {}) => {
     fetchCollectionAbortRef.current?.abort();
     const controller = new AbortController();
@@ -205,6 +230,7 @@ export default function StoreLensApp() {
         setError(describeStoreError(err, { supported: supportedPlatformNames() }));
         setLoading(false);
         forgetAdapter(new URL(url));
+        forgetVisitedCollectionFor(loadAdapter, url);
         showFailedStore(appPathFor(url), fromAddressBar);
       }
       return;
@@ -217,6 +243,7 @@ export default function StoreLensApp() {
     if (allProducts.length === 0) {
       // What was remembered about this store's platform may be out of date.
       forgetAdapter(new URL(url));
+      forgetVisitedCollectionFor(loadAdapter, url);
       setError(describeStoreError(pageError ?? new StoreError("empty"), { supported: supportedPlatformNames() }));
       setLoading(false);
       showFailedStore(appPathFor(url), fromAddressBar);
@@ -232,6 +259,7 @@ export default function StoreLensApp() {
       setPlatformNotices(notices ?? []);
       // The load worked, so the store really is on this platform.
       rememberAdapter(new URL(url), loadAdapter);
+      rememberVisitedCollection(loadAdapter, url);
       setCurrentCollectionUrl(url);
       setLoadVersion((version) => version + 1);
       lastLoadWasAutoDefaultRef.current = autoDefault;
@@ -468,8 +496,14 @@ export default function StoreLensApp() {
           discoveryAdapter.capabilities.collectionDiscovery !== false && discoveryAdapter.listCollections
             ? await discoveryAdapter.listCollections(storeOrigin, controller.signal, { forceRefresh })
             : {
-                // No listing to read: the dropdown offers just the default collection.
-                collections: [{ handle: discoveryAdapter.defaultCollection, title: "All Products", products_count: null }],
+                // No listing to read: the dropdown offers the default collection and
+                // the ones this shop has been opened on before.
+                collections: [
+                  { handle: discoveryAdapter.defaultCollection, title: "All Products", products_count: null },
+                  ...loadVisitedCollections(new URL(storeOrigin).origin)
+                    .filter((handle) => handle !== discoveryAdapter.defaultCollection)
+                    .map((handle) => ({ handle, title: titleFromHandle(handle), products_count: null })),
+                ],
                 allProductsHandle: discoveryAdapter.defaultCollection ?? null,
               };
         if (!controller.signal.aborted && resolvedOrigin && resolvedOrigin !== storeOrigin) {
@@ -562,12 +596,9 @@ export default function StoreLensApp() {
     setSelectedHandle(inputHandle);
     setCollectionsState((prev) => {
       if (prev.collections.some((c) => c.handle === inputHandle)) return prev;
-      const title = inputHandle
-        .replace(/-/g, " ")
-        .replace(/\b\w/g, (c) => c.toUpperCase());
       return {
         ...prev,
-        collections: [{ handle: inputHandle, title, products_count: null }, ...prev.collections],
+        collections: [{ handle: inputHandle, title: titleFromHandle(inputHandle), products_count: null }, ...prev.collections],
       };
     });
   }, [collectionsState, inputHandle]);
