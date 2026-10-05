@@ -169,11 +169,6 @@ export default function StoreLensApp() {
     else window.history.pushState(null, "", path);
   };
 
-  // `fromAddressBar`: the load was asked for by the address bar (a deep link or
-  // Back/Forward), not by the user pasting or choosing something; it decides
-  // whether a failure replaces or pushes the history entry, and whether
-  // filters waiting from the link still apply. `autoDefault`: it is a bare
-  // domain's auto-resolved default collection.
   // For a platform that can't list its collections: which collection a URL is,
   // if it isn't the default one that is always offered.
   const unlistedCollection = (platform, url) => {
@@ -190,6 +185,11 @@ export default function StoreLensApp() {
     if (collection) forgetVisitedCollection(new URL(url).origin, collection);
   };
 
+  // `fromAddressBar`: the load was asked for by the address bar (a deep link or
+  // Back/Forward), not by the user pasting or choosing something; it decides
+  // whether a failure replaces or pushes the history entry, and whether
+  // filters waiting from the link still apply. `autoDefault`: it is a bare
+  // domain's auto-resolved default collection.
   const fetchCollection = async (url, { fromAddressBar = false, autoDefault = false } = {}) => {
     fetchCollectionAbortRef.current?.abort();
     const controller = new AbortController();
