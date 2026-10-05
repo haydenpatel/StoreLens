@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   createRegistry,
   defaultAdapter,
@@ -8,6 +8,7 @@ import {
   supportedPlatformNames,
 } from "./index";
 import { shopifyAdapter } from "./shopify";
+import { fourthwallAdapter } from "./fourthwall";
 
 const fake = (id, name, matches) => ({ id, name, matchesUrl: (url) => matches(url) });
 const url = (u) => new URL(u);
@@ -19,13 +20,20 @@ describe("default registry", () => {
     expect(detectAdapter(url("https://anything.example.org"))).toBe(shopifyAdapter);
   });
 
+  it("claims only a Fourthwall page URL on its own; other URLs wait for a network check", () => {
+    expect(detectAdapter(url("https://shop.example.com/collections/all/2.json"))).toBe(fourthwallAdapter);
+    expect(detectAdapter(url("https://shop.example.com/collections/all"))).toBe(shopifyAdapter);
+    expect(detectAdapter(url("https://shop.example.com"))).toBe(shopifyAdapter);
+  });
+
   it("finds a registered adapter by id and returns null for an unknown one", () => {
+    expect(getAdapterById("fourthwall")).toBe(fourthwallAdapter);
     expect(getAdapterById("shopify")).toBe(shopifyAdapter);
     expect(getAdapterById("nope")).toBeNull();
   });
 
   it("lists the registered platforms for user-facing copy", () => {
-    expect(supportedPlatformNames()).toBe("Shopify");
+    expect(supportedPlatformNames()).toBe("Shopify or Fourthwall");
   });
 });
 
@@ -60,6 +68,105 @@ describe("resolveAdapter", () => {
   });
 });
 
+describe("resolveAdapter's network detection and platform cache", () => {
+  const memoryCache = (initial = {}) => {
+    const store = new Map(Object.entries(initial));
+    return {
+      store,
+      load: (origin) => store.get(origin) ?? null,
+      save: (origin, id) => store.set(origin, id),
+      clear: (origin) => store.delete(origin),
+    };
+  };
+  // An adapter whose detect() answers from `answers`, counting its calls.
+  const detecting = (id, answer) => {
+    const adapter = { ...fake(id, id, () => false), detect: vi.fn(async () => answer) };
+    return adapter;
+  };
+  const shop = url("https://shop.example.com/collections/all");
+
+  it("asks adapters that can detect, in order, and uses the first that claims the store", async () => {
+    const a = detecting("a", false);
+    const b = detecting("b", true);
+    const c = detecting("c", true);
+    const fallback = fake("fb", "Fallback", () => true);
+    const registry = createRegistry([a, b, c, fallback], { cache: memoryCache() });
+    expect(await registry.resolveAdapter(shop)).toBe(b);
+    expect(a.detect).toHaveBeenCalledTimes(1);
+    expect(b.detect).toHaveBeenCalledTimes(1);
+    expect(c.detect).not.toHaveBeenCalled();
+  });
+
+  it("passes the URL and the signal to detect", async () => {
+    const a = detecting("a", false);
+    const controller = new AbortController();
+    await createRegistry([a, fake("fb", "Fallback", () => true)], { cache: memoryCache() }).resolveAdapter(shop, {
+      signal: controller.signal,
+    });
+    expect(a.detect).toHaveBeenCalledWith(shop, { signal: controller.signal });
+  });
+
+  it("falls back when nothing claims the store, without remembering the fallback", async () => {
+    const cache = memoryCache();
+    const fb = fake("fb", "Fallback", () => true);
+    expect(await createRegistry([detecting("a", false), fb], { cache }).resolveAdapter(shop)).toBe(fb);
+    expect(cache.store.size).toBe(0);
+  });
+
+  it("remembers a positive detection per origin, and uses it without asking again", async () => {
+    const cache = memoryCache();
+    const a = detecting("a", true);
+    const registry = createRegistry([a, fake("fb", "Fallback", () => true)], { cache });
+
+    expect(await registry.resolveAdapter(url("https://shop.example.com/en-nz/collections/all"))).toBe(a);
+    expect(cache.store.get("https://shop.example.com")).toBe("a");
+
+    expect(await registry.resolveAdapter(url("https://shop.example.com/collections/other"))).toBe(a);
+    expect(a.detect).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses the remembered platform before any network check, including the fallback", async () => {
+    const a = detecting("a", true);
+    const fb = fake("fb", "Fallback", () => true);
+    const registry = createRegistry([a, fb], { cache: memoryCache({ "https://shop.example.com": "fb" }) });
+    expect(await registry.resolveAdapter(shop)).toBe(fb);
+    expect(a.detect).not.toHaveBeenCalled();
+  });
+
+  it("ignores a remembered platform it no longer has", async () => {
+    const a = detecting("a", true);
+    const registry = createRegistry([a, fake("fb", "Fallback", () => true)], {
+      cache: memoryCache({ "https://shop.example.com": "gone" }),
+    });
+    expect(await registry.resolveAdapter(shop)).toBe(a);
+  });
+
+  it("does not detect or consult the cache when an adapter recognises the URL itself", async () => {
+    const a = { ...detecting("a", false), matchesUrl: () => true };
+    const fb = fake("fb", "Fallback", () => true);
+    const cache = memoryCache({ "https://shop.example.com": "fb" });
+    expect(await createRegistry([a, fb], { cache }).resolveAdapter(shop)).toBe(a);
+    expect(a.detect).not.toHaveBeenCalled();
+  });
+
+  it("rememberAdapter and forgetAdapter write and clear the origin's entry", () => {
+    const cache = memoryCache();
+    const fb = fake("fb", "Fallback", () => true);
+    const registry = createRegistry([fb], { cache });
+    registry.rememberAdapter(shop, fb);
+    expect(cache.store.get("https://shop.example.com")).toBe("fb");
+    registry.forgetAdapter(url("https://shop.example.com/anything"));
+    expect(cache.store.size).toBe(0);
+  });
+
+  it("propagates an abort from detect", async () => {
+    const abort = Object.assign(new Error("aborted"), { name: "AbortError" });
+    const a = { ...fake("a", "a", () => false), detect: vi.fn(async () => Promise.reject(abort)) };
+    const registry = createRegistry([a, fake("fb", "Fallback", () => true)], { cache: memoryCache() });
+    await expect(registry.resolveAdapter(shop)).rejects.toBe(abort);
+  });
+});
+
 describe("createRegistry", () => {
   const merch = fake("merch", "Merch", (u) => u.hostname.endsWith(".merch.test"));
   const cart = fake("cart", "Cart", (u) => u.hostname.endsWith(".cart.test"));
@@ -85,7 +192,9 @@ describe("createRegistry", () => {
   });
 
   it("joins several platform names for copy", () => {
-    expect(registry.supportedPlatformNames()).toBe("Merch, Cart or Greedy");
-    expect(createRegistry([merch, cart]).supportedPlatformNames()).toBe("Merch or Cart");
+    // The fallback (the last adapter, the original platform) is named first.
+    expect(registry.supportedPlatformNames()).toBe("Greedy, Merch or Cart");
+    expect(createRegistry([merch, cart]).supportedPlatformNames()).toBe("Cart or Merch");
+    expect(createRegistry([cart]).supportedPlatformNames()).toBe("Cart");
   });
 });

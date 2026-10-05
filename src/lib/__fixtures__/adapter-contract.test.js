@@ -74,6 +74,12 @@ describe("expectAdapterShape", () => {
     expect(() => expectAdapterShape(withCapability("description", true))).toThrow(/capability keys/);
   });
 
+  it("accepts a non-empty collectionsNote and rejects an empty or non-string one", () => {
+    expect(() => expectAdapterShape(adapter({ collectionsNote: "Why only these collections are listed." }))).not.toThrow();
+    expect(() => expectAdapterShape(adapter({ collectionsNote: "" }))).toThrow(/collectionsNote is empty/);
+    expect(() => expectAdapterShape(adapter({ collectionsNote: 5 }))).toThrow(/collectionsNote/);
+  });
+
   it("rejects collection discovery without a listCollections", () => {
     expect(() => expectAdapterShape(adapter({ listCollections: undefined }))).toThrow(/needs listCollections/);
   });

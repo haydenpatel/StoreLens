@@ -55,7 +55,11 @@
  * @typedef {Object} FetchCollectionResult
  * @property {NeutralProduct[]} products
  * @property {Error|null} pageError   A page failed; products holds what loaded before it (nothing if the first page failed).
- * @property {boolean} truncated      The platform's paging limit was hit; more products exist.
+ * @property {boolean} truncated      A paging limit was hit; more products exist.
+ * @property {{level: "info"|"warning", message: string}[]} [notices]
+ *   Things the user should know about this particular load that aren't failures
+ *   (e.g. that variant option names were guessed). Shown alongside the products
+ *   and cleared on the next load.
  */
 
 /**
@@ -67,10 +71,17 @@
  * @property {(url: URL) => boolean} matchesUrl               Cheap, URL-only check used by detection. Detection that needs a network
  *   request (a custom domain that can't be told from its URL) doesn't go here: it plugs into the registry's
  *   `resolveAdapter` (see platforms/index.js), after this check.
+ * @property {(url: URL, opts: {signal?: AbortSignal}) => Promise<boolean>} [detect]
+ *   Optional network check, for a platform whose stores can't be recognised from the URL alone (a custom
+ *   domain). Called by the registry's `resolveAdapter` when no adapter claimed the URL: it must make at
+ *   most one cheap request, never retry, give up quickly, resolve false (not throw) when the store isn't
+ *   this platform, and rethrow an abort.
  * @property {(url: URL) => {origin: string, collection: string|null}} parseUrl
  *   `origin` may carry a locale prefix (e.g. https://shop.example.com/en-nz) when the platform has one.
  * @property {(origin: string, collection: string) => string} collectionUrl
  * @property {string} [defaultCollection]   Collection to auto-load for a bare store when the platform has no collection listing.
+ * @property {string} [collectionsNote]   For a platform with no collection listing: shown, disabled, at the end of the collection dropdown
+ *   (which offers only "All Products" and the collection on screen) to say why other collections aren't listed.
  * @property {(origin: string, signal?: AbortSignal, opts?: {forceRefresh?: boolean}) =>
  *   Promise<{collections: {handle: string, title: string, products_count: number|null}[], allProductsHandle: string|null, origin?: string}>} [listCollections]
  *   Optional: platforms without a listing omit it and set defaultCollection.
