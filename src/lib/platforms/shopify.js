@@ -339,7 +339,6 @@ export const shopifyAdapter = {
     tags: true,
     variantOptions: true,
     variantStock: true,
-    description: true,
     collectionDiscovery: true,
   },
   // Shopify is the fallback: until another platform claims a URL it is
@@ -363,5 +362,4 @@ export const shopifyAdapter = {
   collectionUrl: (origin, collection) => `${origin}/collections/${collection}`,
   listCollections,
   fetchCollection,
-  normalize: normalizeShopifyProduct,
 };
