@@ -76,12 +76,12 @@ export function issueBody(upgrades, links) {
       `- \`${name}\`: \`${range}\` → \`${latest}\` ([release notes](${links[name]}))`,
   );
   const together =
-    upgrades.length > 1 ? "\n\nThese packages need to move together, so they share this issue." : "";
+    upgrades.length > 1 ? ["", "These packages need to move together, so they share this issue."] : [];
   return [
     "A new major version is available for a direct dependency. Dependabot does not open PRs for major versions, so this issue tracks the upgrade.",
     "",
     ...lines,
-    together,
+    ...together,
     "",
     "Check the release notes for breaking changes, then upgrade, and run lint, tests and a build.",
     "",
