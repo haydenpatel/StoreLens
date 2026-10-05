@@ -31,7 +31,13 @@ export function expectAdapterShape(adapter) {
     expect(typeof adapter[method], `${where}: ${method} is not a function`).toBe("function");
   }
 
-  // Without a collection listing there is nothing to choose from, so the
+  // A note for the collection dropdown, if given, is a non-empty string.
+  if (adapter.collectionsNote !== undefined) {
+    expect(typeof adapter.collectionsNote, `${where}: collectionsNote`).toBe("string");
+    expect(adapter.collectionsNote.length, `${where}: collectionsNote is empty`).toBeGreaterThan(0);
+  }
+
+  // Without a collection listing there is nothing to list, so the
   // adapter must say which collection to open instead.
   if (capabilities.collectionDiscovery) {
     expect(typeof adapter.listCollections, `${where}: collectionDiscovery needs listCollections`).toBe("function");
