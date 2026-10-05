@@ -16,7 +16,7 @@ import {
   restoreOptionSelections,
 } from "@/lib/filters";
 import { addressMatches, appPathFor, getDisplayOrigin, parseUserInputToURL } from "@/lib/store";
-import { defaultAdapter, detectAdapter, supportedPlatformNames } from "@/lib/platforms";
+import { defaultAdapter, resolveAdapter, supportedPlatformNames } from "@/lib/platforms";
 import { StoreError, describeStoreError, describeStoreErrorReason } from "@/lib/errors";
 
 // Where Recent Stores lived before the key was renamed from shopify-specific.
@@ -68,19 +68,15 @@ export default function StoreLensApp() {
   // until the new load completes.
   const [loadedAdapter, setLoadedAdapter] = useState(defaultAdapter);
   const forceRefreshDiscoveryRef = useRef(false);
-  const autoLoadPendingRef = useRef(false);
-  // Whether the CURRENTLY EXECUTING applyUserInput() call was triggered by
-  // loadFromLocation (initial mount or Back/Forward) rather than a manual
-  // action (paste, dropdown, history select). Set/cleared synchronously
-  // bracketing that one call site, so it's only ever true during that call's
-  // own synchronous portion - nothing else ever sets it, so there's no
-  // staleness risk from an unrelated later call seeing it left on.
-  const isUrlOriginatedRef = useRef(false);
-  // Snapshot of the above, taken when a bare domain defers to an async
-  // auto-load (autoLoadPendingRef) - the auto-load itself resolves later,
-  // well after isUrlOriginatedRef has been cleared, so its origin has to be
-  // captured here instead of re-read at that later point.
-  const pendingAutoLoadIsUrlOriginatedRef = useRef(false);
+  // Set while a bare domain waits for discovery to pick the collection to open,
+  // null otherwise. `fromAddressBar` says whether that input came from the
+  // address bar (a deep link, Back/Forward) rather than from the user pasting or
+  // choosing it; it travels with the pending auto-load because the load starts
+  // later, after discovery.
+  const autoLoadPendingRef = useRef(null);
+  // Aborts the store resolution (which adapter handles a pasted URL) still
+  // running for an earlier input, so a slow one can't land after a newer paste.
+  const resolveAbortRef = useRef(null);
   // Filter/sort state parsed from the URL's query string (by loadFromLocation),
   // waiting to be applied once a collection's own data has settled - see the
   // restore effect below for why it can't just be applied immediately.
@@ -137,14 +133,10 @@ export default function StoreLensApp() {
   // the rest of the app's state) points at another.
   const fetchCollectionAbortRef = useRef(null);
 
-  // Set immediately before the one call site that resolves a bare domain to
-  // its default collection (never for an explicit choice - dropdown, paste,
-  // or a deep link that already names a handle) and consumed synchronously
-  // at the very start of the matching fetchCollection call, so it's tied to
-  // that one attempt and can't be left stale for an unrelated later load to
-  // pick up. Read by the URL-sync effect to replaceState instead of
-  // pushState for that one case - see lastLoadWasAutoDefaultRef below.
-  const nextLoadIsAutoDefaultRef = useRef(false);
+  // Whether the load that put the current collection on screen was a bare
+  // domain's auto-resolved default (never an explicit choice: dropdown, paste,
+  // or a deep link that already names a handle). The URL-sync effect reads it to
+  // replaceState instead of pushState for that one case.
   const lastLoadWasAutoDefaultRef = useRef(false);
 
   // Nothing is going to show for the store or collection just asked for (its
@@ -162,25 +154,22 @@ export default function StoreLensApp() {
     else window.history.pushState(null, "", path);
   };
 
-  const fetchCollection = async (url) => {
+  // `fromAddressBar`: the load was asked for by the address bar (a deep link or
+  // Back/Forward), not by the user pasting or choosing something; it decides
+  // whether a failure replaces or pushes the history entry, and whether
+  // filters waiting from the link still apply. `autoDefault`: it is a bare
+  // domain's auto-resolved default collection.
+  const fetchCollection = async (url, { fromAddressBar = false, autoDefault = false } = {}) => {
     fetchCollectionAbortRef.current?.abort();
     const controller = new AbortController();
     fetchCollectionAbortRef.current = controller;
     const isCurrent = () => !controller.signal.aborted;
-    const isAutoDefaultLoad = nextLoadIsAutoDefaultRef.current;
-    nextLoadIsAutoDefaultRef.current = false;
-    // Read now: isUrlOriginatedRef is only set during applyUserInput's own
-    // synchronous run, which is when a load driven by the address bar starts.
-    const fromAddressBar = isUrlOriginatedRef.current || isAutoDefaultLoad;
-    // Any load that isn't part of a URL-originated chain (isUrlOriginatedRef
-    // covers an explicit handle in the URL; isAutoDefaultLoad covers a bare
-    // domain's auto-resolved default, which resolves asynchronously after
-    // isUrlOriginatedRef has already been cleared) supersedes whatever
+    // Any load that doesn't come from the address bar supersedes whatever
     // pending URL-driven filters might still be waiting for a load that
     // failed or was itself superseded before it could consume them - a
     // manually chosen collection should never inherit someone else's
     // leftover filter state.
-    if (!isUrlOriginatedRef.current && !isAutoDefaultLoad) {
+    if (!fromAddressBar) {
       pendingFilterParamsRef.current = null;
     }
 
@@ -232,7 +221,7 @@ export default function StoreLensApp() {
       setLoadedAdapter(loadAdapter);
       setCurrentCollectionUrl(url);
       setLoadVersion((version) => version + 1);
-      lastLoadWasAutoDefaultRef.current = isAutoDefaultLoad;
+      lastLoadWasAutoDefaultRef.current = autoDefault;
       resetFilters();
 
       if (pageError) {
@@ -261,7 +250,7 @@ export default function StoreLensApp() {
     }
   };
 
-  const loadCollectionByHandle = async (handle, origin = storeOrigin) => {
+  const loadCollectionByHandle = async (handle, origin = storeOrigin, loadOptions) => {
     if (!handle || !origin) {
       setError("Please select a collection to load.");
       return;
@@ -269,14 +258,20 @@ export default function StoreLensApp() {
     const url = adapterRef.current.collectionUrl(origin, handle);
     setSelectedHandle(handle);
     setInputHandle(handle);
-    await fetchCollection(url);
+    await fetchCollection(url, loadOptions);
   };
 
   // Called only from explicit, discrete actions (submit, paste, history
-  // selection) — never on every keystroke — so it always resolves the input
-  // immediately: normalizing the display to a clean host, kicking off
-  // collection discovery, and loading a collection URL's handle right away.
-  const applyUserInput = (value) => {
+  // selection, the address bar) — never on every keystroke — so it always
+  // resolves the input: working out which platform it is, normalizing the
+  // display to a clean host, kicking off collection discovery, and loading a
+  // collection URL's handle. Resolving the platform is async, so everything
+  // after it only happens if no newer input has superseded this one.
+  // `fromAddressBar` is true when it came from the address bar (see fetchCollection).
+  const applyUserInput = async (value, { fromAddressBar = false } = {}) => {
+    resolveAbortRef.current?.abort();
+    const resolution = new AbortController();
+    resolveAbortRef.current = resolution;
     // Every way of switching store comes through here (paste, submit, Recent
     // Stores, Back/Forward), so a message about the previous one must not linger.
     clearMessage();
@@ -293,7 +288,17 @@ export default function StoreLensApp() {
       }
       return;
     }
-    const detected = detectAdapter(parsed);
+    let detected;
+    try {
+      detected = await resolveAdapter(parsed, { signal: resolution.signal });
+    } catch (err) {
+      // Superseded: the newer input owns state from here.
+      if (!resolution.signal.aborted) {
+        setError(describeStoreError(err, { supported: supportedPlatformNames() }));
+      }
+      return;
+    }
+    if (resolution.signal.aborted) return;
     adapterRef.current = detected;
     setAdapter(detected);
     const { origin, collection: handle } = detected.parseUrl(parsed);
@@ -301,16 +306,15 @@ export default function StoreLensApp() {
     setStoreOrigin(origin);
     setInputHandle(handle || "");
     if (handle) {
-      autoLoadPendingRef.current = false;
-      loadCollectionByHandle(handle, origin);
+      autoLoadPendingRef.current = null;
+      loadCollectionByHandle(handle, origin, { fromAddressBar });
     } else {
       // Bare domain: no collection path to load directly. Once discovery
       // resolves, auto-load its best guess (e.g. the store's all-products
       // collection) instead of leaving the user stuck on an empty page.
       setSelectedHandle("");
       setCurrentCollectionUrl("");
-      autoLoadPendingRef.current = true;
-      pendingAutoLoadIsUrlOriginatedRef.current = isUrlOriginatedRef.current;
+      autoLoadPendingRef.current = { fromAddressBar };
     }
     setDiscoveryRetryNonce((n) => n + 1);
   };
@@ -338,35 +342,33 @@ export default function StoreLensApp() {
       /* malformed percent-encoding - use the raw, undecoded path as-is */
     }
     const path = rawPath.replace(/\/$/, "");
-    isUrlOriginatedRef.current = true;
-    try {
-      if (path) {
-        pendingFilterParamsRef.current = parseFilterParams(window.location.search);
-        applyUserInput(path);
-      } else {
-        // Cancel whatever collection request might still be in flight -
-        // otherwise a slow one can resolve after landing here, repopulating
-        // products/currentCollectionUrl and pushing a stale URL right back
-        // onto history even though the user navigated back to empty.
-        fetchCollectionAbortRef.current?.abort();
-        pendingFilterParamsRef.current = null;
-        setLoading(false);
-        setProducts([]);
-        setCurrentCollectionUrl("");
-        clearMessage();
-        setLoadWarning(null);
-        setLinkWarning(null);
-        applyUserInput("");
-      }
-    } finally {
-      isUrlOriginatedRef.current = false;
+    if (path) {
+      pendingFilterParamsRef.current = parseFilterParams(window.location.search);
+      applyUserInput(path, { fromAddressBar: true });
+    } else {
+      // Cancel whatever collection request might still be in flight -
+      // otherwise a slow one can resolve after landing here, repopulating
+      // products/currentCollectionUrl and pushing a stale URL right back
+      // onto history even though the user navigated back to empty.
+      fetchCollectionAbortRef.current?.abort();
+      pendingFilterParamsRef.current = null;
+      setLoading(false);
+      setProducts([]);
+      setCurrentCollectionUrl("");
+      clearMessage();
+      setLoadWarning(null);
+      setLinkWarning(null);
+      applyUserInput("", { fromAddressBar: true });
     }
   };
 
   useEffect(() => {
     loadFromLocation();
     window.addEventListener("popstate", loadFromLocation);
-    return () => window.removeEventListener("popstate", loadFromLocation);
+    return () => {
+      window.removeEventListener("popstate", loadFromLocation);
+      resolveAbortRef.current?.abort();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -388,16 +390,12 @@ export default function StoreLensApp() {
   // exists ambiguously in history to begin with.
   useEffect(() => {
     if (!currentCollectionUrl) return;
-    const loaded = new URL(currentCollectionUrl);
-    const path = `/${loaded.host}${loaded.pathname}`;
-    // loaded.host is always lowercased by the URL API, but the domain
-    // segment of window.location.pathname (just a path segment here, not a
-    // real host) keeps whatever case the link used - lowercase only that
-    // first segment before comparing, so a mixed-case deep link doesn't look
-    // like a "change" and push a spurious duplicate entry for what's already
-    // the same page.
-    const normalizedCurrentPath = window.location.pathname.replace(/^\/[^/]+/, (domain) => domain.toLowerCase());
-    if (path !== normalizedCurrentPath) {
+    const path = appPathFor(currentCollectionUrl);
+    // addressMatches ignores the case of the domain segment (which keeps
+    // whatever case the link used) and a trailing slash, so a mixed-case or
+    // slash-terminated deep link doesn't look like a "change" and push a
+    // spurious duplicate entry for what's already the same page.
+    if (!addressMatches(path, window.location.pathname)) {
       if (lastLoadWasAutoDefaultRef.current) {
         window.history.replaceState(null, "", path);
       } else {
@@ -470,20 +468,24 @@ export default function StoreLensApp() {
           // that raced against a stale "ready" state left over from whichever
           // store was discovered previously, firing before this discovery
           // resolved and consuming the flag before it had real data to use.
-          if (autoLoadPendingRef.current) {
-            autoLoadPendingRef.current = false;
+          const pendingAutoLoad = autoLoadPendingRef.current;
+          if (pendingAutoLoad) {
+            autoLoadPendingRef.current = null;
             if (allProductsHandle) {
-              // Only replaceState (below, via lastLoadWasAutoDefaultRef) when
-              // this bare domain itself came from the URL/Back-Forward - a
-              // manually submitted bare domain (paste, history select) should
-              // still push, so Back can return to whatever was loaded before.
-              nextLoadIsAutoDefaultRef.current = pendingAutoLoadIsUrlOriginatedRef.current;
-              loadCollectionByHandle(allProductsHandle, storeOrigin);
+              // Only replaceState (via lastLoadWasAutoDefaultRef) when this bare
+              // domain itself came from the address bar (a deep link or
+              // Back/Forward) - a manually submitted bare domain (paste, history
+              // select) should still push, so Back can return to whatever was
+              // loaded before.
+              loadCollectionByHandle(allProductsHandle, storeOrigin, {
+                fromAddressBar: pendingAutoLoad.fromAddressBar,
+                autoDefault: pendingAutoLoad.fromAddressBar,
+              });
             } else {
               setInfoNotice(
                 "I couldn't automatically find an all-products collection for this store. Please choose a collection from the dropdown above."
               );
-              showFailedStore(appPathFor(storeOrigin), pendingAutoLoadIsUrlOriginatedRef.current);
+              showFailedStore(appPathFor(storeOrigin), pendingAutoLoad.fromAddressBar);
             }
           }
         }
@@ -500,14 +502,15 @@ export default function StoreLensApp() {
                 : err.message || "Couldn't load collections for this store",
             allProductsHandle: null,
           });
-          if (autoLoadPendingRef.current) {
-            autoLoadPendingRef.current = false;
+          const pendingAutoLoad = autoLoadPendingRef.current;
+          if (pendingAutoLoad) {
+            autoLoadPendingRef.current = null;
             setError(
               err instanceof StoreError
                 ? describeStoreError(err, { supported: supportedPlatformNames() })
                 : "I couldn't find a collection of products to load. Please paste the full collection URL and try again."
             );
-            showFailedStore(appPathFor(storeOrigin), pendingAutoLoadIsUrlOriginatedRef.current);
+            showFailedStore(appPathFor(storeOrigin), pendingAutoLoad.fromAddressBar);
           }
         }
       }
