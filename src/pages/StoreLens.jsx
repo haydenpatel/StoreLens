@@ -230,7 +230,6 @@ export default function StoreLensApp() {
         setError(describeStoreError(err, { supported: supportedPlatformNames() }));
         setLoading(false);
         forgetAdapter(new URL(url));
-        forgetVisitedCollectionFor(loadAdapter, url);
         showFailedStore(appPathFor(url), fromAddressBar);
       }
       return;
@@ -243,7 +242,9 @@ export default function StoreLensApp() {
     if (allProducts.length === 0) {
       // What was remembered about this store's platform may be out of date.
       forgetAdapter(new URL(url));
-      forgetVisitedCollectionFor(loadAdapter, url);
+      // Only the shop saying it has no such collection means it is gone; being
+      // offline, blocked or throttled says nothing about the collection.
+      if (pageError?.kind === "not-found") forgetVisitedCollectionFor(loadAdapter, url);
       setError(describeStoreError(pageError ?? new StoreError("empty"), { supported: supportedPlatformNames() }));
       setLoading(false);
       showFailedStore(appPathFor(url), fromAddressBar);

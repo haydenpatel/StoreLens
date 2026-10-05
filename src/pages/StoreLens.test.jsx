@@ -606,6 +606,18 @@ describe("a Fourthwall shop", () => {
       expect(visited()).toEqual({ [`https://${F}`]: ["tees"] });
     });
 
+    it("keeps a collection when it fails to load for a reason other than not existing", async () => {
+      const key = "storelens:visited-collections:v1";
+      window.localStorage.setItem(key, JSON.stringify({ [`https://${F}`]: ["tees"] }));
+      stub({ fourthwall: { [F]: shop() } }, (url) =>
+        url.host === F && url.pathname === "/collections/tees/1.json" ? jsonResponse({}, { ok: false, status: 403 }) : undefined
+      );
+      openAt(`/${F}/collections/tees`);
+
+      expect(await screen.findByText(/password protected or blocking access/)).not.toBeNull();
+      expect(visited()).toEqual({ [`https://${F}`]: ["tees"] });
+    });
+
     it("is not used for a Shopify store, which lists its own collections", async () => {
       vi.stubGlobal("fetch", fakeStoresFetch({ shopify: { [A]: storeA() } }));
       openAt(`/${A}/collections/tees`);
