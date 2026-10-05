@@ -1,6 +1,12 @@
 # Dependabot: one grouped upgrade PR per ecosystem each month, and grouped
 # security fixes as they come. PRs are labelled like the rest of the repo and
 # merge like any other PR once `test` passes.
+#
+# npm major versions are left out of the PRs: they can need code changes, and
+# Dependabot can't open issues, so .github/workflows/major-upgrades.yml opens
+# one issue per major instead. Security updates ignore `ignore`, so a security
+# fix that needs a major bump still arrives as a PR. GitHub Actions majors stay
+# in the grouped PR: they rarely need changes and CI exercises them.
 version: 2
 updates:
   - package-ecosystem: npm
@@ -11,9 +17,13 @@ updates:
       npm-version-updates:
         applies-to: version-updates
         patterns: ["*"]
+        update-types: ["minor", "patch"]
       npm-security-updates:
         applies-to: security-updates
         patterns: ["*"]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     labels: ["chore", "priority: low"]
     commit-message:
       prefix: chore

@@ -1,0 +1,30 @@
+name: Major upgrades
+
+# Dependabot ignores major versions (see dependabot.yml); this opens an issue
+# for each one instead, so they get planned rather than arriving as a PR.
+on:
+  schedule:
+    - cron: "0 20 1 * *" # 1st of each month, 20:00 UTC
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Print the issues that would be opened instead of opening them
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  major-upgrades:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Open an issue for each major upgrade
+        run: node scripts/major-upgrades.mjs ${{ inputs.dry_run && '--dry-run' || '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
