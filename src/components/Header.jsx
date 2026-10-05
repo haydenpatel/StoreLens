@@ -25,10 +25,11 @@ export default function Header({
   onStorePaste,
   onLoad, 
   loading,
+  resolving = false,
   urlHistory,
   onSelectHistory,
   collections,
-  collectionDiscovery = true,
+  collectionsNote,
   collectionsStatus,
   collectionsError,
   selectedHandle,
@@ -109,7 +110,7 @@ export default function Header({
               title="Load this store"
               className="shrink-0"
             >
-              {loading ? (
+              {loading || resolving ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
               ) : (
                 <ArrowRight className="w-4 h-4" />
@@ -121,49 +122,52 @@ export default function Header({
               mobile's own row, instead of wrapping below it; dissolves at
               sm+ so tablet/desktop keep their independent flex behavior. */}
           <div className="max-sm:flex max-sm:w-full max-sm:gap-2 sm:contents">
-            {/* Platforms without a collection listing have nothing to choose from */}
-            {collectionDiscovery && (
-              <Select
-                value={selectedHandle || undefined}
-                onValueChange={onSelectHandle}
-                disabled={loading || !storeInput}
-              >
-                <SelectTrigger className="max-sm:flex-1 sm:w-auto sm:max-xl:min-w-[12rem] xl:min-w-[16rem] xl:order-2" aria-invalid={collectionsStatus === "error"}>
-                  <SelectValue
-                    placeholder={
-                      collectionsStatus === "loading"
-                        ? "Discovering collections..."
-                        : collectionsStatus === "error"
-                        ? "Couldn't load collections"
-                        : collections?.length === 0
-                        ? "No collections found"
-                        : "Select a collection"
-                    }
-                  />
-                </SelectTrigger>
-                <SelectContent align="start">
-                  {collectionsStatus === "loading" && (
-                    <SelectItem value="__loading" disabled>
-                      Discovering collections...
+            <Select
+              value={selectedHandle || undefined}
+              onValueChange={onSelectHandle}
+              disabled={loading || !storeInput}
+            >
+              <SelectTrigger className="max-sm:flex-1 sm:w-auto sm:max-xl:min-w-[12rem] xl:min-w-[16rem] xl:order-2" aria-invalid={collectionsStatus === "error"}>
+                <SelectValue
+                  placeholder={
+                    collectionsStatus === "loading"
+                      ? "Discovering collections..."
+                      : collectionsStatus === "error"
+                      ? "Couldn't load collections"
+                      : collections?.length === 0
+                      ? "No collections found"
+                      : "Select a collection"
+                  }
+                />
+              </SelectTrigger>
+              <SelectContent align="start">
+                {collectionsStatus === "loading" && (
+                  <SelectItem value="__loading" disabled>
+                    Discovering collections...
+                  </SelectItem>
+                )}
+                {collectionsStatus === "error" && (
+                  <SelectItem value="__error" disabled>
+                    {collectionsError || "Couldn't load collections for this store"}
+                  </SelectItem>
+                )}
+                {collectionsStatus === "ready" &&
+                  collections.map((collection) => (
+                    <SelectItem key={collection.handle} value={collection.handle}>
+                      {collection.title}
+                      {typeof collection.products_count === "number"
+                        ? ` (${collection.products_count})`
+                        : ""}
                     </SelectItem>
-                  )}
-                  {collectionsStatus === "error" && (
-                    <SelectItem value="__error" disabled>
-                      {collectionsError || "Couldn't load collections for this store"}
-                    </SelectItem>
-                  )}
-                  {collectionsStatus === "ready" &&
-                    collections.map((collection) => (
-                      <SelectItem key={collection.handle} value={collection.handle}>
-                        {collection.title}
-                        {typeof collection.products_count === "number"
-                          ? ` (${collection.products_count})`
-                          : ""}
-                      </SelectItem>
-                    ))}
-                </SelectContent>
-              </Select>
-            )}
+                  ))}
+                {/* A platform that can't list its collections says why, so a short list isn't mistaken for the whole store. */}
+                {collectionsStatus === "ready" && collectionsNote && (
+                  <SelectItem value="__note" disabled>
+                    {collectionsNote}
+                  </SelectItem>
+                )}
+              </SelectContent>
+            </Select>
 
             <div className="flex gap-2 xl:order-2">
               {collectionsStatus === "error" && (
