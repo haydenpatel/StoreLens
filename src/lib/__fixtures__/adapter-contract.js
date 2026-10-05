@@ -47,6 +47,10 @@ export function expectNeutralProduct(product, capabilities) {
   const where = `product ${JSON.stringify(product?.handle ?? product?.id)}`;
   const check = (value, what) => expect(value, `${where}: ${what}`);
 
+  // Required, not defaulted: without them the consistency checks below would
+  // quietly not run.
+  check(typeof capabilities === "object" && capabilities !== null, "pass the adapter's capabilities as the second argument").toBe(true);
+
   check(isIdLike(product.id), "id is a string or number").toBe(true);
   check(typeof product.handle, "handle").toBe("string");
   check(typeof product.title, "title").toBe("string");

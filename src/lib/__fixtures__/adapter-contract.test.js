@@ -97,6 +97,11 @@ describe("expectNeutralProduct", () => {
     ok(product({ variants: [variant({ compareAtPrice: 20.5 })] }));
   });
 
+  it("insists on the adapter's capabilities rather than skipping the consistency checks", () => {
+    expect(() => expectNeutralProduct(product())).toThrow(/capabilities/);
+    expect(() => expectNeutralProduct(product(), null)).toThrow(/capabilities/);
+  });
+
   it("rejects wrong field types", () => {
     bad(product({ id: null }), /id/);
     bad(product({ handle: 1 }), /handle/);
