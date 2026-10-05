@@ -120,6 +120,18 @@ describe("a deep link", () => {
   });
 });
 
+describe("a deep link with a trailing slash", () => {
+  it("loads without pushing a second entry for the same page", async () => {
+    vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: storeA() }));
+    const entries = window.history.length;
+    openAt(`/${A}/collections/tees/`);
+
+    await heading(3, 3);
+    expect(pushedPaths()).toEqual([]);
+    expect(window.history.length).toBe(entries);
+  });
+});
+
 describe("a pasted store", () => {
   it("auto-loads a bare domain and pushes a history entry", async () => {
     vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: storeA() }));
@@ -262,6 +274,49 @@ describe("switching stores while one is still resolving", () => {
 
     expect(titleShown("Echo Hat")).not.toBeNull();
     expect(titleShown("Bravo Tee")).toBeNull();
+    expect(window.location.pathname).toBe(`/${B}/collections/all`);
+  });
+});
+
+describe("switching stores when the abandoned request is aborted (rejects)", () => {
+  // The same situations as above, with a fetch that behaves like a real one: the
+  // request rejects with an AbortError the moment its signal aborts.
+  const never = () => new Promise(() => {});
+
+  it("shows the second store, with no error, when the first one's discovery is aborted", async () => {
+    const hold = (url) => (url.host === A && url.pathname === "/collections.json" ? never() : undefined);
+    vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: storeA(), [B]: storeB() }, hold, { honorAbort: true }));
+    openAt("/");
+    const user = userEvent.setup();
+
+    await user.click(input());
+    await user.paste(A);
+    await user.clear(input());
+    await user.paste(B);
+    await heading(2, 2);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(titleShown("Echo Hat")).not.toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(window.location.pathname).toBe(`/${B}/collections/all`);
+    expect(JSON.parse(window.localStorage.getItem("storelens-url-history"))).toEqual([`https://${B}`]);
+  });
+
+  it("shows the second store, with no error, when a collection is aborted by Back/Forward", async () => {
+    const hold = (url) => (url.host === A && url.pathname === "/collections/tees/products.json" ? never() : undefined);
+    vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: storeA(), [B]: storeB() }, hold, { honorAbort: true }));
+    openAt(`/${A}/collections/tees`);
+    await waitFor(() => expect(input().disabled).toBe(true));
+
+    act(() => {
+      window.history.pushState(null, "", `/${B}/collections/all`);
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+    await heading(2, 2);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(titleShown("Echo Hat")).not.toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
     expect(window.location.pathname).toBe(`/${B}/collections/all`);
   });
 });

@@ -13,9 +13,13 @@ const notFound = () => jsonResponse({}, { ok: false, status: 404 });
 // override(url: URL) may return a Response (or a promise of one) to replace the
 // default answer for a request, or undefined to fall through. Tests use it to
 // hold a response back, or to fail one page.
-export function fakeShopifyFetch(stores, override) {
+// By default the request's AbortSignal is ignored, so a response held back past
+// an abort still arrives late (the app must ignore it). With `honorAbort` it
+// behaves like a real fetch: the request rejects with an AbortError the moment
+// its signal aborts (the app must ignore that too).
+export function fakeShopifyFetch(stores, override, { honorAbort = false } = {}) {
   const calls = [];
-  const fetchMock = async (input) => {
+  const respond = async (input) => {
     const url = new URL(String(input));
     calls.push(url);
 
@@ -53,6 +57,19 @@ export function fakeShopifyFetch(stores, override) {
     }
 
     return notFound();
+  };
+
+  const fetchMock = (input, init) => {
+    const signal = init?.signal;
+    if (!honorAbort || !signal) return respond(input);
+    return new Promise((resolve, reject) => {
+      const abort = () => reject(new DOMException("The operation was aborted.", "AbortError"));
+      if (signal.aborted) return abort();
+      signal.addEventListener("abort", abort, { once: true });
+      respond(input)
+        .then(resolve, reject)
+        .finally(() => signal.removeEventListener("abort", abort));
+    });
   };
   fetchMock.calls = calls;
   return fetchMock;
