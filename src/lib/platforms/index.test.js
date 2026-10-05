@@ -4,6 +4,7 @@ import {
   defaultAdapter,
   detectAdapter,
   getAdapterById,
+  resolveAdapter,
   supportedPlatformNames,
 } from "./index";
 import { shopifyAdapter } from "./shopify";
@@ -25,6 +26,37 @@ describe("default registry", () => {
 
   it("lists the registered platforms for user-facing copy", () => {
     expect(supportedPlatformNames()).toBe("Shopify");
+  });
+});
+
+describe("resolveAdapter", () => {
+  it("settles on the same adapter detectAdapter finds, asynchronously", async () => {
+    const target = url("https://shop.example.com/collections/tees");
+    const pending = resolveAdapter(target);
+    expect(pending).toBeInstanceOf(Promise);
+    expect(await pending).toBe(detectAdapter(target));
+    expect(await pending).toBe(shopifyAdapter);
+  });
+
+  it("uses the registry's own order and fallback", async () => {
+    const merch = fake("merch", "Merch", (u) => u.hostname.endsWith(".merch.test"));
+    const cart = fake("cart", "Cart", () => true);
+    const registry = createRegistry([merch, cart]);
+    expect(await registry.resolveAdapter(url("https://a.merch.test"))).toBe(merch);
+    expect(await registry.resolveAdapter(url("https://elsewhere.test"))).toBe(cart);
+  });
+
+  it("works without options", async () => {
+    expect(await resolveAdapter(url("https://shop.example.com"), undefined)).toBe(shopifyAdapter);
+    expect(await resolveAdapter(url("https://shop.example.com"), {})).toBe(shopifyAdapter);
+  });
+
+  it("rejects with an AbortError if the signal has already aborted", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    await expect(resolveAdapter(url("https://shop.example.com"), { signal: controller.signal })).rejects.toMatchObject({
+      name: "AbortError",
+    });
   });
 });
 
