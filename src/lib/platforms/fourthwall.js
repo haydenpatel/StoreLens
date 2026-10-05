@@ -48,6 +48,7 @@ function toIsoDate(value) {
 // "Option 1", "Option 2"... Titles that don't split the same way for every
 // variant are kept whole as a single option.
 function guessOptions(variantTitles) {
+  if (variantTitles.length === 0) return { options: [], variantOptions: [] };
   if (variantTitles.length === 1 && PLACEHOLDER_TITLES.has(variantTitles[0].trim().toLowerCase())) {
     return { options: [], variantOptions: variantTitles.map(() => []) };
   }
@@ -71,8 +72,9 @@ export function normalizeFourthwallProduct(raw, origin) {
   const rawVariants = Array.isArray(raw.variants) ? raw.variants : [];
   const { options, variantOptions } = guessOptions(rawVariants.map((v) => String(v.title ?? "")));
   const currency = rawVariants.find((v) => /^[A-Z]{3}$/.test(v.price?.currency_iso))?.price.currency_iso;
-  // Stock is only reported for the product as a whole, so every variant shares it.
-  const available = Boolean(raw.available);
+  // Stock is only reported for the product as a whole, so every variant shares
+  // it. A product with no variants has nothing to buy, so isn't available.
+  const available = rawVariants.length > 0 && Boolean(raw.available);
 
   const variants = rawVariants.map((v, i) => {
     const price = Number.isFinite(v.price?.cents) ? v.price.cents / 100 : basePrice;

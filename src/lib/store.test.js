@@ -2,8 +2,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   addressMatches,
   appPathFor,
+  clearPlatformCache,
   getDisplayOrigin,
   loadCollectionsCache,
+  loadPlatformCache,
+  savePlatformCache,
   parseUserInputToURL,
   saveCollectionsCache,
 } from "./store";
@@ -154,5 +157,80 @@ describe("addressMatches", () => {
     expect(addressMatches("/other.example.com", "/shop.example.com")).toBe(false);
     expect(addressMatches("/shop.example.com/collections/a", "/shop.example.com/collections/b")).toBe(false);
     expect(addressMatches("/shop.example.com/en-nz", "/shop.example.com")).toBe(false);
+  });
+});
+
+describe("the platform cache", () => {
+  const DAY_MS = 24 * 60 * 60 * 1000;
+
+  it("remembers which platform an origin is on", () => {
+    expect(loadPlatformCache(ORIGIN)).toBeNull();
+    savePlatformCache(ORIGIN, "fourthwall");
+    expect(loadPlatformCache(ORIGIN)).toBe("fourthwall");
+  });
+
+  it("keeps a separate answer per origin", () => {
+    savePlatformCache(ORIGIN, "fourthwall");
+    savePlatformCache("https://other.example.com", "shopify");
+    expect(loadPlatformCache(ORIGIN)).toBe("fourthwall");
+    expect(loadPlatformCache("https://other.example.com")).toBe("shopify");
+    expect(loadPlatformCache("https://third.example.com")).toBeNull();
+  });
+
+  it("overwrites an earlier answer", () => {
+    savePlatformCache(ORIGIN, "shopify");
+    savePlatformCache(ORIGIN, "fourthwall");
+    expect(loadPlatformCache(ORIGIN)).toBe("fourthwall");
+  });
+
+  it("forgets an answer after a week, and not before", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-05T00:00:00Z"));
+    savePlatformCache(ORIGIN, "fourthwall");
+
+    vi.setSystemTime(Date.now() + 7 * DAY_MS - 1000);
+    expect(loadPlatformCache(ORIGIN)).toBe("fourthwall");
+    vi.setSystemTime(Date.now() + 2000);
+    expect(loadPlatformCache(ORIGIN)).toBeNull();
+  });
+
+  it("clears one origin's answer only", () => {
+    savePlatformCache(ORIGIN, "fourthwall");
+    savePlatformCache("https://other.example.com", "shopify");
+    clearPlatformCache(ORIGIN);
+    expect(loadPlatformCache(ORIGIN)).toBeNull();
+    expect(loadPlatformCache("https://other.example.com")).toBe("shopify");
+  });
+
+  it("treats a damaged entry as no answer", () => {
+    const key = `storelens:platform:v1:${ORIGIN}`;
+    for (const bad of ["not json", "null", "{}", '{"cachedAt":1}', '{"platformId":5,"cachedAt":1}', '{"platformId":"x"}']) {
+      localStorage.setItem(key, bad);
+      expect(loadPlatformCache(ORIGIN)).toBeNull();
+    }
+  });
+
+  it("does not collide with the collections cache", () => {
+    saveCollectionsCache("shopify", ORIGIN, [{ handle: "a", title: "A", products_count: 1 }], "a");
+    savePlatformCache(ORIGIN, "shopify");
+    expect(loadCollectionsCache("shopify", ORIGIN).allProductsHandle).toBe("a");
+    expect(loadPlatformCache(ORIGIN)).toBe("shopify");
+  });
+
+  it("survives storage being unavailable", () => {
+    vi.stubGlobal("localStorage", {
+      getItem: () => {
+        throw new Error("blocked");
+      },
+      setItem: () => {
+        throw new Error("blocked");
+      },
+      removeItem: () => {
+        throw new Error("blocked");
+      },
+    });
+    expect(() => savePlatformCache(ORIGIN, "shopify")).not.toThrow();
+    expect(() => clearPlatformCache(ORIGIN)).not.toThrow();
+    expect(loadPlatformCache(ORIGIN)).toBeNull();
   });
 });
