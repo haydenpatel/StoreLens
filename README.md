@@ -61,7 +61,7 @@ npm install
 npm run dev
 ```
 
-`npm install` also points git at the hooks in `.githooks/`. The `pre-commit` hook refuses commits on `main`: work on a branch (one per issue) and merge through a pull request.
+`npm install` also installs the git hooks in `.githooks/` (run it again after changing one). They refuse commits and merges on `main`: work on a branch (one per issue) and merge through a pull request.
 
 Run the tests with `npm test` (they run offline against synthetic fixtures, never real store data) and lint with `npm run lint`.
 
