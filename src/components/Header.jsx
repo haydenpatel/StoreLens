@@ -25,6 +25,7 @@ export default function Header({
   onStorePaste,
   onLoad, 
   loading,
+  resolving = false,
   urlHistory,
   onSelectHistory,
   collections,
@@ -109,7 +110,7 @@ export default function Header({
               title="Load this store"
               className="shrink-0"
             >
-              {loading ? (
+              {loading || resolving ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
               ) : (
                 <ArrowRight className="w-4 h-4" />

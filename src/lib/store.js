@@ -71,3 +71,40 @@ export function saveCollectionsCache(platformId, origin, collections, allProduct
     /* noop */
   }
 }
+
+// Which platform an origin is on, remembered so a repeat visit skips the network
+// check that tells platforms apart. Only ever written on positive evidence (a
+// platform positively detected, or a load that succeeded), so a flaky request can
+// never pin a store to the wrong platform. One entry per origin (not per locale).
+// Bump the version if the detection logic changes in a way that could make a
+// cached answer wrong.
+const PLATFORM_CACHE_PREFIX = "storelens:platform:v1:";
+const PLATFORM_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+export function loadPlatformCache(origin) {
+  try {
+    const raw = localStorage.getItem(`${PLATFORM_CACHE_PREFIX}${origin}`);
+    if (!raw) return null;
+    const { cachedAt, platformId } = JSON.parse(raw) ?? {};
+    if (typeof platformId !== "string" || !cachedAt || Date.now() - cachedAt >= PLATFORM_TTL_MS) return null;
+    return platformId;
+  } catch {
+    return null;
+  }
+}
+
+export function savePlatformCache(origin, platformId) {
+  try {
+    localStorage.setItem(`${PLATFORM_CACHE_PREFIX}${origin}`, JSON.stringify({ cachedAt: Date.now(), platformId }));
+  } catch {
+    /* noop */
+  }
+}
+
+export function clearPlatformCache(origin) {
+  try {
+    localStorage.removeItem(`${PLATFORM_CACHE_PREFIX}${origin}`);
+  } catch {
+    /* noop */
+  }
+}

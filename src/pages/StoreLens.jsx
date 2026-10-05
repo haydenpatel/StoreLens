@@ -16,7 +16,7 @@ import {
   restoreOptionSelections,
 } from "@/lib/filters";
 import { addressMatches, appPathFor, getDisplayOrigin, parseUserInputToURL } from "@/lib/store";
-import { defaultAdapter, resolveAdapter, supportedPlatformNames } from "@/lib/platforms";
+import { defaultAdapter, forgetAdapter, rememberAdapter, resolveAdapter, supportedPlatformNames } from "@/lib/platforms";
 import { StoreError, describeStoreError, describeStoreErrorReason } from "@/lib/errors";
 
 // Where Recent Stores lived before the key was renamed from shopify-specific.
@@ -27,6 +27,9 @@ export default function StoreLensApp() {
   const [storeOrigin, setStoreOrigin] = useState("");
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(false);
+  // True while a pasted URL is being resolved to a platform, which can take a
+  // network request for a store that can't be recognised from its URL.
+  const [resolving, setResolving] = useState(false);
   // Products fetched so far by the load in progress, for large collections.
   const [loadProgress, setLoadProgress] = useState(0);
   const [error, setError] = useState(null);
@@ -37,6 +40,9 @@ export default function StoreLensApp() {
   const [loadWarning, setLoadWarning] = useState(null);
   // Shown as a warning: parts of a shared link (filters) that couldn't be applied.
   const [linkWarning, setLinkWarning] = useState(null);
+  // Shown beside the products: things about this load the platform says to
+  // mention (e.g. guessed option names). Replaced by each load.
+  const [platformNotices, setPlatformNotices] = useState([]);
   // Clears the message shown in place of the product list (error or info).
   const clearMessage = () => {
     setError(null);
@@ -178,6 +184,7 @@ export default function StoreLensApp() {
     clearMessage();
     setLoadWarning(null);
     setLinkWarning(null);
+    setPlatformNotices([]);
     setProducts([]);
 
     // Captured once: the user can paste a different store while this load is
@@ -197,6 +204,7 @@ export default function StoreLensApp() {
       if (isCurrent()) {
         setError(describeStoreError(err, { supported: supportedPlatformNames() }));
         setLoading(false);
+        forgetAdapter(new URL(url));
         showFailedStore(appPathFor(url), fromAddressBar);
       }
       return;
@@ -204,9 +212,11 @@ export default function StoreLensApp() {
 
     if (!isCurrent()) return;
 
-    const { products: allProducts, pageError, truncated } = result;
+    const { products: allProducts, pageError, truncated, notices } = result;
 
     if (allProducts.length === 0) {
+      // What was remembered about this store's platform may be out of date.
+      forgetAdapter(new URL(url));
       setError(describeStoreError(pageError ?? new StoreError("empty"), { supported: supportedPlatformNames() }));
       setLoading(false);
       showFailedStore(appPathFor(url), fromAddressBar);
@@ -219,6 +229,9 @@ export default function StoreLensApp() {
     try {
       setProducts(allProducts);
       setLoadedAdapter(loadAdapter);
+      setPlatformNotices(notices ?? []);
+      // The load worked, so the store really is on this platform.
+      rememberAdapter(new URL(url), loadAdapter);
       setCurrentCollectionUrl(url);
       setLoadVersion((version) => version + 1);
       lastLoadWasAutoDefaultRef.current = autoDefault;
@@ -230,7 +243,7 @@ export default function StoreLensApp() {
         );
       } else if (truncated) {
         setLoadWarning(
-          `This collection is larger than ${loadAdapter.name}'s public catalog can page through — showing the first ${allProducts.length.toLocaleString()} products.`
+          `This collection is larger than StoreLens can load from ${loadAdapter.name} — showing the first ${allProducts.length.toLocaleString()} products.`
         );
       }
 
@@ -277,6 +290,7 @@ export default function StoreLensApp() {
     clearMessage();
     const parsed = parseUserInputToURL(value);
     if (!parsed) {
+      setResolving(false);
       setStoreInput(value);
       setStoreOrigin("");
       setInputHandle("");
@@ -288,17 +302,25 @@ export default function StoreLensApp() {
       }
       return;
     }
+    // A valid new input replaces whatever store was still waiting on discovery.
+    autoLoadPendingRef.current = null;
+    // Show what was entered at once (a paste is intercepted, so the box would
+    // stay empty while a slow platform check runs); it is tidied up below.
+    setStoreInput(value);
+    setResolving(true);
     let detected;
     try {
       detected = await resolveAdapter(parsed, { signal: resolution.signal });
     } catch (err) {
       // Superseded: the newer input owns state from here.
       if (!resolution.signal.aborted) {
+        setResolving(false);
         setError(describeStoreError(err, { supported: supportedPlatformNames() }));
       }
       return;
     }
     if (resolution.signal.aborted) return;
+    setResolving(false);
     adapterRef.current = detected;
     setAdapter(detected);
     const { origin, collection: handle } = detected.parseUrl(parsed);
@@ -306,7 +328,6 @@ export default function StoreLensApp() {
     setStoreOrigin(origin);
     setInputHandle(handle || "");
     if (handle) {
-      autoLoadPendingRef.current = null;
       loadCollectionByHandle(handle, origin, { fromAddressBar });
     } else {
       // Bare domain: no collection path to load directly. Once discovery
@@ -691,6 +712,7 @@ export default function StoreLensApp() {
         onStorePaste={handlePaste}
         onLoad={handleSubmitStoreInput}
         loading={loading}
+        resolving={resolving}
         urlHistory={urlHistory}
         onSelectHistory={handleSelectHistory}
         collections={collectionsState.collections}
@@ -767,6 +789,18 @@ export default function StoreLensApp() {
           {!loading && loadWarning && products.length > 0 && (
             <Notice level="warning" onDismiss={() => setLoadWarning(null)}>{loadWarning}</Notice>
           )}
+
+          {!loading &&
+            products.length > 0 &&
+            platformNotices.map((notice) => (
+              <Notice
+                key={notice.message}
+                level={notice.level}
+                onDismiss={() => setPlatformNotices((prev) => prev.filter((n) => n !== notice))}
+              >
+                {notice.message}
+              </Notice>
+            ))}
 
           {!loading && !error && !infoNotice && products.length === 0 && (
             <div className="text-center py-20">

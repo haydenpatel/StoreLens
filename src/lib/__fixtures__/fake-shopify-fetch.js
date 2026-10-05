@@ -47,6 +47,14 @@ export function fakeShopifyFetch(stores, override, { honorAbort = false } = {}) 
       return jsonResponse({ collections: listed });
     }
 
+    // What a store answers to the platform check: the collection's own details.
+    const info = url.pathname.match(/^\/collections\/([^/]+)\.json$/);
+    if (info) {
+      const products = store.collections[info[1]];
+      if (!products) return notFound();
+      return jsonResponse({ collection: { handle: info[1], title: info[1], products_count: products.length } });
+    }
+
     const match = url.pathname.match(/^\/collections\/([^/]+)\/products\.json$/);
     if (match) {
       const products = store.collections[match[1]];
