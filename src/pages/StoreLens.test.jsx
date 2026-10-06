@@ -122,7 +122,7 @@ afterEach(() => {
 });
 
 describe("the collection dropdown (#65)", () => {
-  it("stays controlled when a collection is selected and cleared, and shows the placeholder", async () => {
+  it("stays controlled while loading a collection and switching stores, and shows the placeholder only with no selection", async () => {
     const logged = [vi.spyOn(console, "error"), vi.spyOn(console, "warn")];
     for (const spy of logged) spy.mockImplementation(() => {});
     vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: storeA(), [B]: storeB() }));
