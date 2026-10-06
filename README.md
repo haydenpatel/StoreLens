@@ -110,8 +110,9 @@ StoreLens relies on each platform’s public JSON endpoints. Stores that restric
 
 - Only shops at `*.bigcartel.com` work. A shop on its own domain can't be read: its feed carries no CORS headers, and the CORS-enabled feed is looked up by the shop's Big Cartel name, which can't be worked out from the domain. StoreLens says so when it can't reach such a shop.
 - StoreLens uses Big Cartel's legacy, undocumented product feed, which Big Cartel could change without notice. The documented API needs a login, so it can't be used.
-- The feed is one request with no paging, so there is nothing to tell StoreLens whether a very large shop was cut short. The largest shops tested had 35 products, all returned.
-- The feed reports no currency, so prices show with "$" whatever the shop sells in.
+- The largest shops tested had 35 products, all returned, so whether Big Cartel caps a very large shop's feed is untested.
+- The products feed has no currency, so StoreLens reads the shop's from its `store.json`; if that can't be read, prices show with "$".
+- The feed can't be paged, so StoreLens compares the number of products loaded with the shop's own count in `store.json` and warns when fewer loaded (a shop whose count is missing or 0 is never warned about).
 - A product's sale price is only shown when the feed flags it on sale and an option costs less than the base price.
 - Categories show both in the collection dropdown and as the "Category" filter.
 

@@ -10,8 +10,8 @@ beforeEach(clearFeedCache);
 afterEach(() => vi.unstubAllGlobals());
 
 // Runs raw products through the adapter's public API, as the app does.
-async function load(raw, url = SHOP_URL) {
-  vi.stubGlobal("fetch", fakeBigCartelFetch({ "example-shop": raw }));
+async function load(raw, url = SHOP_URL, stores) {
+  vi.stubGlobal("fetch", fakeBigCartelFetch({ "example-shop": raw }, undefined, { stores: { "example-shop": stores } }));
   const { products, pageError } = await bigcartelAdapter.fetchCollection(url);
   expect(pageError).toBeNull();
   return products;
@@ -45,6 +45,15 @@ describe("the Big Cartel adapter follows the adapter contract", () => {
     ]);
     expect(products).toHaveLength(6);
     for (const p of products) expectNeutralProduct(p, bigcartelAdapter.capabilities);
+  });
+
+  it("returns neutral products with the shop's currency set, or without it when store.json is unavailable", async () => {
+    for (const p of await load(catalog(), SHOP_URL, { currency: "EUR" })) {
+      expectNeutralProduct(p, bigcartelAdapter.capabilities);
+      expect(p.currency).toBe("EUR");
+    }
+    clearFeedCache();
+    for (const p of await load(catalog(), SHOP_URL, null)) expectNeutralProduct(p, bigcartelAdapter.capabilities);
   });
 
   it("returns neutral products for a category", async () => {
