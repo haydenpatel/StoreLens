@@ -308,6 +308,14 @@ describe("listCollections", () => {
     expect(collections[1]).toMatchObject({ handle: "tees", products_count: 1 });
   });
 
+  it("leaves out a category whose permalink would clash with All Products", async () => {
+    const all = category("All", "all");
+    stubShop([product({ categories: [all, category("Tees")] }), product({ categories: [category("ALL", "ALL")] })]);
+    const { collections } = await bigcartelAdapter.listCollections(ORIGIN);
+    expect(collections.map((c) => c.handle)).toEqual(["all", "tees"]);
+    expect(collections[0]).toMatchObject({ title: "All Products", products_count: 2 });
+  });
+
   it("throws the failure, so the page can explain it", async () => {
     vi.stubGlobal("fetch", fakeBigCartelFetch({}));
     await expect(bigcartelAdapter.listCollections("https://gone-shop.bigcartel.com")).rejects.toMatchObject({ kind: "store-not-found" });

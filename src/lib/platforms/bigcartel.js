@@ -200,7 +200,9 @@ async function listCollections(origin, signal, { forceRefresh = false } = {}) {
     const seen = new Set();
     for (const category of asArray(raw.categories)) {
       const handle = text(category?.permalink);
-      if (!handle || seen.has(handle.toLowerCase())) continue;
+      // A category whose permalink is "all" would share a handle with the
+      // pseudo-collection, and loading it means loading everything anyway.
+      if (!handle || handle.toLowerCase() === ALL_PRODUCTS_HANDLE || seen.has(handle.toLowerCase())) continue;
       seen.add(handle.toLowerCase());
       const entry = categories.get(handle.toLowerCase()) ?? { handle, title: text(category.name) || handle, products_count: 0 };
       entry.products_count += 1;
