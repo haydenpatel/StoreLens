@@ -58,7 +58,7 @@ function ProductCard({ product }) {
     : `${formatMoney(minPrice, product.currency)} - ${formatMoney(maxPrice, product.currency)}`;
 
   return (
-    <Card className="group hover:shadow-lg transition-all duration-200 border-border pt-0">
+    <Card className="group hover:shadow-lg transition-all duration-200 border-border py-0">
       <CardContent className="p-0">
         {/* Image */}
         <div className="aspect-square overflow-hidden rounded-t-xl relative">
