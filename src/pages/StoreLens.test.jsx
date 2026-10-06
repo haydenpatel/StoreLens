@@ -127,7 +127,7 @@ describe("the collection dropdown (#65)", () => {
     vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: storeA(), [B]: storeB() }));
     openAt("/");
     const user = userEvent.setup();
-    expect(screen.getByRole("combobox")).toHaveTextContent("Select a collection");
+    expect(screen.getByRole("combobox").textContent).toContain("Select a collection");
 
     await user.click(input());
     await user.paste(`${A}/collections/tees`);
