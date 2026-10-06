@@ -8,6 +8,8 @@ import { product, variant } from "../lib/__fixtures__/shopify";
 import { fakeShopifyFetch } from "../lib/__fixtures__/fake-shopify-fetch";
 import { fakeStoresFetch } from "../lib/__fixtures__/fake-stores-fetch";
 import * as fw from "../lib/__fixtures__/fourthwall";
+import * as bc from "../lib/__fixtures__/bigcartel";
+import { clearFeedCache } from "@/lib/platforms/bigcartel";
 import { jsonResponse } from "../lib/__fixtures__/test-helpers";
 
 // Wraps the real resolveAdapter so a test can make store resolution slow, or fail
@@ -761,5 +763,94 @@ describe("a Shopify store next to Fourthwall", () => {
     vi.stubGlobal("fetch", fakeStoresFetch({ shopify: { [A]: { collections: { tees: storeA().collections.tees } } } }));
     openAt(`/${A}/collections/tees`);
     await heading(3, 3);
+  });
+});
+
+describe("a Big Cartel shop", () => {
+  const BC = "example-shop.bigcartel.com";
+  const tees = bc.category("Tees");
+  const mugs = bc.category("Mugs");
+  const bcItem = (name, price, extra = {}) =>
+    bc.product({ name, permalink: name.toLowerCase().replace(/ /g, "-"), price, default_price: price, options: [bc.option("Default", { price })], ...extra });
+  const feed = () => [
+    bcItem("Echo Tee", 20, { categories: [tees], artists: [{ id: 1, name: "Ann Artist" }] }),
+    bcItem("Foxtrot Tee", 25, { categories: [tees] }),
+    bcItem("Golf Mug", 15, { categories: [mugs] }),
+    bcItem("Hotel Mug", 12, { categories: [mugs] }),
+  ];
+  const stub = (bigcartel, override, options) => {
+    const fetchMock = fakeStoresFetch({ bigcartel }, override, options);
+    vi.stubGlobal("fetch", fetchMock);
+    return fetchMock;
+  };
+
+  beforeEach(clearFeedCache);
+
+  it("is recognised from its address with no network check, and a bare domain loads all products", async () => {
+    const fetchMock = stub({ "example-shop": feed() });
+    openAt("/");
+    const user = userEvent.setup();
+
+    await user.click(input());
+    await user.paste(BC);
+
+    await heading(4, 4);
+    expect(pushedPaths()).toEqual([`/${BC}/products`]);
+    expect(fetchMock.calls.map((u) => u.host)).toEqual(["api.bigcartel.com"]);
+    expect(fetchMock.calls).toHaveLength(1);
+    expect(screen.getAllByRole("combobox")[0].textContent).toBe("All Products (4)");
+  });
+
+  it("lists the shop's categories in the dropdown and switches between them", async () => {
+    stub({ "example-shop": feed() });
+    openAt(`/${BC}`);
+    await heading(4, 4);
+    const user = userEvent.setup();
+
+    await user.click(screen.getAllByRole("combobox")[0]);
+    const options = await screen.findAllByRole("option");
+    expect(options.map((o) => o.textContent)).toEqual(["All Products (4)", "Mugs (2)", "Tees (2)"]);
+
+    await user.click(options.find((o) => o.textContent.startsWith("Tees")));
+
+    await heading(2, 2);
+    expect(window.location.pathname).toBe(`/${BC}/category/tees`);
+    expect(titleShown("Golf Mug")).toBeNull();
+  });
+
+  it("opens a category deep link", async () => {
+    stub({ "example-shop": feed() });
+    openAt(`/${BC}/category/mugs`);
+    await heading(2, 2);
+    expect(titleShown("Golf Mug")).not.toBeNull();
+    expect(pushedPaths()).toEqual([]);
+  });
+
+  it("shows Artists for the vendor filter, hides tags, and shows the category filter", async () => {
+    stub({ "example-shop": feed() });
+    openAt(`/${BC}`);
+    await heading(4, 4);
+    expect(screen.getByText("Artists")).not.toBeNull();
+    expect(screen.getByText("Category")).not.toBeNull();
+    expect(screen.queryByText("Vendor")).toBeNull();
+    expect(screen.queryByText("Tags")).toBeNull();
+  });
+
+  it("explains a category the shop doesn't have", async () => {
+    stub({ "example-shop": feed() });
+    openAt(`/${BC}/category/nope`);
+    expect(await screen.findByText(/That collection wasn't found/, {}, { timeout: 3000 })).not.toBeNull();
+  });
+
+  it("explains a locked shop", async () => {
+    stub({ "example-shop": feed() }, undefined, { locked: ["example-shop"] });
+    openAt(`/${BC}`);
+    expect(await screen.findByText(/This store is locked/, {}, { timeout: 3000 })).not.toBeNull();
+  });
+
+  it("explains a closed shop", async () => {
+    stub({});
+    openAt(`/${BC}`);
+    expect(await screen.findByText(/wasn't found/, {}, { timeout: 3000 })).not.toBeNull();
   });
 });

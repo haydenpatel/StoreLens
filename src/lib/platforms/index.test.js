@@ -9,6 +9,7 @@ import {
 } from "./index";
 import { shopifyAdapter } from "./shopify";
 import { fourthwallAdapter } from "./fourthwall";
+import { bigcartelAdapter } from "./bigcartel";
 
 const fake = (id, name, matches) => ({ id, name, matchesUrl: (url) => matches(url) });
 const url = (u) => new URL(u);
@@ -26,14 +27,27 @@ describe("default registry", () => {
     expect(detectAdapter(url("https://shop.example.com"))).toBe(shopifyAdapter);
   });
 
+  it("claims a *.bigcartel.com address on its own, without a network check", async () => {
+    expect(detectAdapter(url("https://shop-name.bigcartel.com"))).toBe(bigcartelAdapter);
+    expect(detectAdapter(url("https://shop-name.bigcartel.com/category/tees"))).toBe(bigcartelAdapter);
+    expect(detectAdapter(url("https://www.bigcartel.com"))).toBe(shopifyAdapter);
+    expect(detectAdapter(url("https://shop.example.com"))).toBe(shopifyAdapter);
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    expect(await resolveAdapter(url("https://shop-name.bigcartel.com"))).toBe(bigcartelAdapter);
+    expect(fetchMock).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+
   it("finds a registered adapter by id and returns null for an unknown one", () => {
     expect(getAdapterById("fourthwall")).toBe(fourthwallAdapter);
     expect(getAdapterById("shopify")).toBe(shopifyAdapter);
+    expect(getAdapterById("bigcartel")).toBe(bigcartelAdapter);
     expect(getAdapterById("nope")).toBeNull();
   });
 
   it("lists the registered platforms for user-facing copy", () => {
-    expect(supportedPlatformNames()).toBe("Shopify or Fourthwall");
+    expect(supportedPlatformNames()).toBe("Shopify, Fourthwall or Big Cartel");
   });
 });
 

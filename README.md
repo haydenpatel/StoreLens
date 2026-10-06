@@ -25,7 +25,7 @@ StoreLens only works with platforms that publish a keyless, browser-readable pro
 |---|---|
 | Shopify | Supported |
 | Fourthwall | Supported |
-| Big Cartel | Planned |
+| Big Cartel | Supported (`*.bigcartel.com` shops) |
 
 Each platform is a small adapter (`src/lib/platforms/`) that turns the platform's own listing into one neutral product shape, so the filters, sorting and search are shared. Platforms that don't allow cross-origin reads (WooCommerce, Magento, Squarespace) or need per-merchant tokens (BigCommerce, Salesforce Commerce Cloud) can't work without a backend and are out of scope.
 
@@ -41,6 +41,7 @@ Each platform is a small adapter (`src/lib/platforms/`) that turns the platform'
 - URL history to quickly re-visit recent stores
 - Clean UI built with Tailwind + shadcn/ui  
 - Per-platform differences: a Fourthwall shop's collection dropdown offers "All Products", the collection in the link and the collections you have opened on that shop before (remembered in this browser, a few handles per shop), with a note saying why it can't list the rest (Fourthwall's collections can't be read from the browser, so paste a collection's link to open one); it has no vendor, type, tag or description filtering, because Fourthwall doesn't provide that data
+- Per-platform differences: a Big Cartel shop's collections are its categories (a product in several categories appears in each), "Artists" replaces the vendor filter and only shows for shops that fill it in, and there is no tag filtering because Big Cartel has no tags
 - 100% client-side — no API keys or server required
 - Deploy-ready for Cloudflare Pages, GitHub Pages, Netlify, Vercel, or any other static file host!
 
@@ -104,6 +105,15 @@ StoreLens relies on each platform’s public JSON endpoints. Stores that restric
 - Stock is reported per product, not per variant, so every size of a sold-out product reads as out of stock, and an in-stock product's sizes all read as available.
 - StoreLens recognises a Fourthwall shop by its "All Products" collection (every shop tested has one), so a shop without it wouldn't be recognised.
 - Loads stop after 2,000 products, with a warning.
+
+### Big Cartel
+
+- Only shops at `*.bigcartel.com` work. A shop on a custom domain can't be matched to its Big Cartel name from the URL alone, so StoreLens can't read it; paste its `*.bigcartel.com` address instead.
+- StoreLens uses Big Cartel's legacy, undocumented product feed, which Big Cartel could change without notice. The documented API needs a login, so it can't be used.
+- The feed is one request with no paging, so there is nothing to tell StoreLens whether a very large shop was cut short. The largest shops tested had 35 products, all returned.
+- The feed reports no currency, so prices show with "$" whatever the shop sells in.
+- A product's sale price is only shown when the feed flags it on sale and an option costs less than the base price.
+- Categories show both in the collection dropdown and as the "Category" filter.
 
 
 ## License

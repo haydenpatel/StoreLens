@@ -1,5 +1,6 @@
 import { shopifyAdapter } from "./shopify";
 import { fourthwallAdapter } from "./fourthwall";
+import { bigcartelAdapter } from "./bigcartel";
 import { clearPlatformCache, loadPlatformCache, savePlatformCache } from "@/lib/store";
 
 const platformCache = { load: loadPlatformCache, save: savePlatformCache, clear: clearPlatformCache };
@@ -69,4 +70,4 @@ export const {
   forgetAdapter,
   getAdapterById,
   supportedPlatformNames,
-} = createRegistry([fourthwallAdapter, shopifyAdapter]);
+} = createRegistry([fourthwallAdapter, bigcartelAdapter, shopifyAdapter]);
