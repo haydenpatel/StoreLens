@@ -25,8 +25,11 @@ import {
   saveVisitedCollection,
   titleFromHandle,
 } from "@/lib/store";
-import { defaultAdapter, forgetAdapter, rememberAdapter, resolveAdapter, supportedPlatformNames } from "@/lib/platforms";
+import { defaultAdapter, forgetAdapter, rememberAdapter, resolveAdapter, supportNotes, supportedPlatformNames } from "@/lib/platforms";
 import { StoreError, describeStoreError, describeStoreErrorReason } from "@/lib/errors";
+
+// What describeStoreError needs to name the platforms that work.
+const errorContext = () => ({ supported: supportedPlatformNames(), notes: supportNotes() });
 
 // Where Recent Stores lived before the key was renamed from shopify-specific.
 const LEGACY_HISTORY_KEY = "shopify-url-history";
@@ -230,7 +233,7 @@ export default function StoreLensApp() {
       // Superseded (aborted) - the newer call owns state from here. Anything
       // else, e.g. an invalid collection URL, is reported to the user.
       if (isCurrent()) {
-        setError(describeStoreError(err, { supported: supportedPlatformNames() }));
+        setError(describeStoreError(err, errorContext()));
         setLoading(false);
         forgetAdapter(new URL(url));
         showFailedStore(appPathFor(url), fromAddressBar);
@@ -248,7 +251,7 @@ export default function StoreLensApp() {
       // Only the shop saying it has no such collection means it is gone; being
       // offline, blocked or throttled says nothing about the collection.
       if (pageError?.kind === "not-found") forgetVisitedCollectionFor(loadAdapter, url);
-      setError(describeStoreError(pageError ?? new StoreError("empty"), { supported: supportedPlatformNames() }));
+      setError(describeStoreError(pageError ?? new StoreError("empty"), errorContext()));
       setLoading(false);
       showFailedStore(appPathFor(url), fromAddressBar);
       return;
@@ -347,7 +350,7 @@ export default function StoreLensApp() {
       // Superseded: the newer input owns state from here.
       if (!resolution.signal.aborted) {
         setResolving(false);
-        setError(describeStoreError(err, { supported: supportedPlatformNames() }));
+        setError(describeStoreError(err, errorContext()));
       }
       return;
     }
@@ -565,7 +568,7 @@ export default function StoreLensApp() {
             autoLoadPendingRef.current = null;
             setError(
               err instanceof StoreError
-                ? describeStoreError(err, { supported: supportedPlatformNames() })
+                ? describeStoreError(err, errorContext())
                 : "I couldn't find a collection of products to load. Please paste the full collection URL and try again."
             );
             showFailedStore(appPathFor(storeOrigin), pendingAutoLoad.fromAddressBar);
