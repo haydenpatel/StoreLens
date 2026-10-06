@@ -127,12 +127,12 @@ describe("the collection dropdown (#65)", () => {
     vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: storeA(), [B]: storeB() }));
     openAt("/");
     const user = userEvent.setup();
-    expect(screen.getByRole("combobox").hasAttribute("data-placeholder")).toBe(true);
+    expect(screen.getAllByRole("combobox")[0].hasAttribute("data-placeholder")).toBe(true);
 
     await user.click(input());
     await user.paste(`${A}/collections/tees`);
     await heading(3, 3);
-    expect(screen.getByRole("combobox").hasAttribute("data-placeholder")).toBe(false);
+    expect(screen.getAllByRole("combobox")[0].hasAttribute("data-placeholder")).toBe(false);
 
     await user.click(input());
     await user.clear(input());
