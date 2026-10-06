@@ -37,12 +37,13 @@ const isObject = (value) => typeof value === "object" && value !== null && !Arra
 const asArray = (value) => (Array.isArray(value) ? value : []);
 const text = (value) => (typeof value === "string" ? value.trim() : "");
 
-async function readFeed(shop, signal) {
+// Reads a shop's feed. Never given a signal: the request is shared between
+// callers (see loadFeed), so it isn't theirs to abort.
+async function readFeed(shop) {
   let response;
   try {
-    response = await fetchWithRetry(`${FEED_HOST}/${shop}/products.json`, { signal });
+    response = await fetchWithRetry(`${FEED_HOST}/${shop}/products.json`);
   } catch (err) {
-    if (isAbort(err, signal)) throw err;
     throw await diagnoseFailure({ cause: err });
   }
   // Unlike other platforms' errors, these carry CORS headers, so the status is
@@ -55,7 +56,6 @@ async function readFeed(shop, signal) {
   try {
     data = await response.json();
   } catch (err) {
-    if (isAbort(err, signal)) throw err;
     throw err instanceof SyntaxError ? new StoreError("unsupported-platform", { cause: err }) : await diagnoseFailure({ cause: err });
   }
   if (!Array.isArray(data)) throw new StoreError("unsupported-platform");
@@ -70,6 +70,8 @@ function loadFeed(shop, { signal, forceRefresh = false } = {}) {
   const cached = feeds.get(shop);
   let entry = cached && !forceRefresh && Date.now() - cached.at < FEED_TTL_MS ? cached : null;
   if (!entry) {
+    // Drop shops last read long ago, so a long session doesn't hold every feed it has opened.
+    for (const [key, old] of feeds) if (Date.now() - old.at >= FEED_TTL_MS) feeds.delete(key);
     const promise = readFeed(shop);
     entry = { at: Date.now(), promise };
     feeds.set(shop, entry);
