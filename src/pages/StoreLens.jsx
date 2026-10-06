@@ -712,6 +712,10 @@ export default function StoreLensApp() {
   useEffect(() => {
     if (!currentCollectionUrl) return;
     const timeoutId = setTimeout(() => {
+      // Back/Forward landed on an entry whose collection is still loading: its
+      // filters are waiting to be applied, so the state here is the previous
+      // collection's and must not be written over the entry's own query.
+      if (pendingFilterParamsRef.current) return;
       const newSearch = buildFilterSearch(
         { searchQuery, selectedVendors, selectedTypes, selectedTags, selectedOptions, inStockOnly, saleOnly, priceRange, sortBy },
         filterData,

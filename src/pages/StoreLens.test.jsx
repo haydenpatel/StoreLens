@@ -201,6 +201,35 @@ describe("Back and Forward", () => {
     await heading(2, 2);
     expect(window.location.pathname).toBe(`/${A}/collections/mugs`);
   });
+
+  it("keep the filters in the address while the collection reloads (#48)", async () => {
+    // Back lands on an entry whose collection is still loading. The previous
+    // collection's debounced address write (300 ms) comes due in that window, and
+    // must not overwrite the entry's filters with the previous collection's.
+    const slowTees = deferred();
+    let teesLoads = 0;
+    const hold = (url) => {
+      if (url.host === A && url.pathname === "/collections/tees/products.json" && ++teesLoads > 1) return slowTees.promise;
+    };
+    vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: storeA() }, hold));
+    openAt(`/${A}/collections/tees?vendor=Acme`);
+    await heading(2, 3);
+
+    const user = userEvent.setup();
+    await user.click(input());
+    await user.clear(input());
+    await user.paste(`${A}/collections/mugs`);
+    await heading(2, 2);
+
+    act(() => window.history.back());
+    await waitFor(() => expect(teesLoads).toBe(2));
+    await new Promise((resolve) => setTimeout(resolve, 450));
+    expect(here()).toBe(`/${A}/collections/tees?vendor=Acme`);
+
+    await act(async () => slowTees.release(await fakeShopifyFetch({ [A]: storeA() })(`https://${A}/collections/tees/products.json`)));
+    await heading(2, 3);
+    expect(here()).toBe(`/${A}/collections/tees?vendor=Acme`);
+  });
 });
 
 describe("a store that can't be opened (#35)", () => {
