@@ -100,7 +100,7 @@ export default function Header({
               }}
               onKeyPress={handleKeyPress}
               disabled={loading}
-              className="flex-1 max-sm:min-w-0 sm:min-w-[16rem]"
+              className="flex-1 max-sm:min-w-0 sm:min-w-[16rem] bg-background"
             />
             <Button
               variant="outline"
@@ -127,14 +127,14 @@ export default function Header({
               onValueChange={onSelectHandle}
               disabled={loading || !storeInput}
             >
-              <SelectTrigger className="max-sm:flex-1 sm:w-auto sm:max-xl:min-w-[12rem] xl:min-w-[16rem] xl:order-2" aria-invalid={collectionsStatus === "error"}>
+              <SelectTrigger className="bg-background max-sm:flex-1 sm:w-auto sm:max-xl:min-w-[12rem] xl:min-w-[16rem] xl:order-2" aria-invalid={collectionsStatus === "error"}>
                 <SelectValue
                   placeholder={
                     collectionsStatus === "loading"
                       ? "Discovering collections..."
                       : collectionsStatus === "error"
                       ? "Couldn't load collections"
-                      : collections?.length === 0
+                      : collectionsStatus === "ready" && collections?.length === 0
                       ? "No collections found"
                       : "Select a collection"
                   }
