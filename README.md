@@ -13,8 +13,7 @@ When a store doesn't offer decent filtering, sorting, or search, browsing become
 
 Just paste a store's domain or collection URL (see [Supported platforms](#supported-platforms)) and StoreLens loads the full product list, complete with filtering, sorting, and search — all client-side, with no backend or API keys required.
 
-*Live demo coming soon.*
-<!-- See it in action at [storelens.ctrlalt.nz](https://storelens.ctrlalt.nz) -->
+**Try it:** [storelens.pages.dev](https://storelens.pages.dev)
 
 
 ## Supported platforms
@@ -38,12 +37,14 @@ Each platform is a small adapter (`src/lib/platforms/`) that turns the platform'
 - Filter by vendor, category, tags, variant options, price, and stock or sale status — even if the shop doesn’t show them  
 - Sorting by title, price, newest first, or highest discount 
 - Search across product titles and descriptions  
-- URL history to quickly re-visit recent stores
+- Recent Stores to quickly re-visit stores you have opened
+- Shareable links: the address keeps the store, collection, filters and sort, so a link reopens the same view
+- Partial results with a warning if a page of products fails to load, instead of discarding what already loaded
 - Clean UI built with Tailwind + shadcn/ui  
 - Per-platform differences: a Fourthwall shop's collection dropdown offers "All Products", the collection in the link and the collections you have opened on that shop before (remembered in this browser, a few handles per shop), with a note saying why it can't list the rest (Fourthwall's collections can't be read from the browser, so paste a collection's link to open one); it has no vendor, type, tag or description filtering, because Fourthwall doesn't provide that data
 - Per-platform differences: a Big Cartel shop's collections are its categories (a product in several categories appears in each), "Artists" replaces the vendor filter and only shows for shops that fill it in, and there is no tag filtering because Big Cartel has no tags
 - 100% client-side — no API keys or server required
-- Deploy-ready for Cloudflare Pages, GitHub Pages, Netlify, Vercel, or any other static file host!
+- Static build that needs no server. Store and collection links rely on `public/_redirects` sending every path to `index.html`, which Cloudflare Pages and Netlify read. On GitHub Pages and Vercel (which ignore that file) those links would 404 unless you add an equivalent rewrite rule
 
 
 ## Tech Stack
@@ -63,6 +64,8 @@ npm install
 npm run dev
 ```
 
+Development needs Node 22.22.2+ (22.x), 24.15+ (24.x) or 26+: that is the range the test tooling (jsdom 30) supports, so Node 23 and 25 are out. CI uses Node 22. There is no `engines` field, since it would only warn.
+
 `npm install` also installs the git hooks in `.githooks/` (run it again after changing one). They refuse commits and merges on `main`: work on a branch (one per issue) and merge through a pull request.
 
 Dependabot (`.github/dependabot.yml`) opens one grouped upgrade PR per month for npm packages and one for GitHub Actions, plus grouped security fixes as they come. Review and merge them like any other PR once `test` passes.
@@ -81,11 +84,15 @@ For each sample store it requests the feed with `Origin: https://storelens.pages
 
 It hits real stores, so it isn't part of `npm test` or CI. **Run it by hand before each release.** It reads feeds in memory only and never saves responses.
 
+## Browser support
+
+StoreLens needs Chrome 111+, Edge 111+, Firefox 128+ or Safari 16.4+. That is the floor of Tailwind CSS v4, which the styling is built on ([Tailwind's browser support](https://tailwindcss.com/docs/compatibility) lists Chrome 111, Safari 16.4 and Firefox 128; Edge follows Chrome's version). The JavaScript is transpiled for slightly older browsers (`build.target` in `vite.config.js`: Chrome and Edge 107, Firefox 104, Safari 16) and relies on that without fallbacks (for example `AbortSignal.throwIfAborted`), but the CSS is the higher bar. Older browsers aren't supported.
+
 ## Status and Limitations
 
-StoreLens is currently in ***early alpha*** (0.1).
+StoreLens should be considered in ***beta*** (0.2).
 
-Core browsing, filtering, and sorting features are functional, with a small number of enhancements planned.
+Core browsing, filtering, and sorting features are functional.
 
 StoreLens relies on each platform’s public JSON endpoints. Stores that restrict or heavily customise their storefront data may return incomplete or inconsistent information.
 
@@ -96,7 +103,7 @@ StoreLens relies on each platform’s public JSON endpoints. Stores that restric
 ### Shopify
 
 - Shopify enforces a limit of 1,000 collection pages (and 250 products per page).
-  Collections larger than 250,000 items cannot be fully loaded and will cause StoreLens to crash.
+  For a collection larger than 250,000 items StoreLens shows the first 250,000 products, with a warning.
 
 
 ### Fourthwall

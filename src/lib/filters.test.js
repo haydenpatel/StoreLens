@@ -345,6 +345,18 @@ describe("filterAndSortProducts", () => {
       ]);
     });
 
+    it("newest puts products with a missing or unreadable date last, keeping their input order", () => {
+      const dated = (title, createdAt) => ({ ...catalog()[0], title, createdAt });
+      const products = [
+        dated("No date", undefined),
+        dated("Old", "2025-01-01T00:00:00Z"),
+        dated("Garbled", "sometime last week"),
+        dated("New", "2026-06-01T00:00:00Z"),
+        dated("Null date", null),
+      ];
+      expect(run({ sortBy: "newest" }, products)).toEqual(["New", "Old", "No date", "Garbled", "Null date"]);
+    });
+
     it("discount-percent puts the deepest percentage discount first, ties keep input order", () => {
       expect(run({ sortBy: "discount-percent" })).toEqual([
         "Beta Red Hoodie", // 37.5%

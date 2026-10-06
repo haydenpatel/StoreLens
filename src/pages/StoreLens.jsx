@@ -96,6 +96,25 @@ export default function StoreLensApp() {
   // is already on screen (so currentCollectionUrl doesn't change).
   const [loadVersion, setLoadVersion] = useState(0);
   const [inputHandle, setInputHandle] = useState("");
+
+  // Keep the currently-loaded collection selectable in the dropdown even when
+  // the platform's collection discovery didn't happen to include it —
+  // otherwise the Select ends up holding a value with no matching item.
+  if (collectionsState.status === "ready" && inputHandle) {
+    if (selectedHandle !== inputHandle) setSelectedHandle(inputHandle);
+    if (!collectionsState.collections.some((c) => c.handle === inputHandle)) {
+      setCollectionsState({
+        ...collectionsState,
+        collections: [{ handle: inputHandle, title: titleFromHandle(inputHandle), products_count: null }, ...collectionsState.collections],
+      });
+    }
+  }
+
+  // No store, no collection list: drop whatever the last store left behind.
+  if (!storeOrigin && collectionsState !== NO_COLLECTIONS) {
+    setCollectionsState(NO_COLLECTIONS);
+  }
+
   const [discoveryRetryNonce, setDiscoveryRetryNonce] = useState(0);
   const [isFilterDrawerOpen, setIsFilterDrawerOpen] = useState(false);
   // The platform adapter for the store being browsed. A ref mirrors the state
@@ -142,10 +161,22 @@ export default function StoreLensApp() {
   const [selectedTags, setSelectedTags] = useState([]);
   const [selectedOptions, setSelectedOptions] = useState({});
   const [priceRange, setPriceRange] = useState([0, 10000]);
+
+  // Extract unique filter values
+  const filterData = useMemo(() => computeFilterData(products), [products]);
+
+  // Update price range when products change
+  const [priceRangeFor, setPriceRangeFor] = useState(filterData);
+  if (priceRangeFor !== filterData) {
+    setPriceRangeFor(filterData);
+    if (filterData.minPrice !== Infinity && filterData.maxPrice !== 0) {
+      setPriceRange([filterData.minPrice, filterData.maxPrice]);
+    }
+  }
+
   const [inStockOnly, setInStockOnly] = useState(false);
   const [saleOnly, setSaleOnly] = useState(false);
   const [sortBy, setSortBy] = useState("title-asc");
-
 
   // Back/Forward can kick off a new load while a previous one is still
   // in-flight (rapid navigation) - without tracking which call is current,
@@ -590,24 +621,6 @@ export default function StoreLensApp() {
     setDiscoveryRetryNonce((n) => n + 1);
   };
 
-  // Keep the currently-loaded collection selectable in the dropdown even when
-  // the platform's collection discovery didn't happen to include it —
-  // otherwise the Select ends up holding a value with no matching item.
-  if (collectionsState.status === "ready" && inputHandle) {
-    if (selectedHandle !== inputHandle) setSelectedHandle(inputHandle);
-    if (!collectionsState.collections.some((c) => c.handle === inputHandle)) {
-      setCollectionsState({
-        ...collectionsState,
-        collections: [{ handle: inputHandle, title: titleFromHandle(inputHandle), products_count: null }, ...collectionsState.collections],
-      });
-    }
-  }
-
-  // No store, no collection list: drop whatever the last store left behind.
-  if (!storeOrigin && collectionsState !== NO_COLLECTIONS) {
-    setCollectionsState(NO_COLLECTIONS);
-  }
-
   const handleInputChange = (value) => {
     // Just track what's typed; parsing the URL and kicking off collection
     // discovery on every keystroke re-rendered the whole app (including a
@@ -633,9 +646,6 @@ export default function StoreLensApp() {
     loadCollectionByHandle(handle, storeOrigin);
   };
 
-  // Extract unique filter values
-  const filterData = useMemo(() => computeFilterData(products), [products]);
-
   // Count of active filter groups (not total selected values within a group) -
   // shared between the mobile "Filters" toggle button's badge and Sidebar's
   // own Reset button, so the two stay in sync rather than each computing
@@ -648,15 +658,6 @@ export default function StoreLensApp() {
     ),
     [searchQuery, selectedVendors, selectedTypes, selectedTags, selectedOptions, inStockOnly, saleOnly, priceRange, filterData, loadedAdapter]
   );
-
-  // Update price range when products change
-  const [priceRangeFor, setPriceRangeFor] = useState(filterData);
-  if (priceRangeFor !== filterData) {
-    setPriceRangeFor(filterData);
-    if (filterData.minPrice !== Infinity && filterData.maxPrice !== 0) {
-      setPriceRange([filterData.minPrice, filterData.maxPrice]);
-    }
-  }
 
   // Restore filter/sort state from the URL once a collection's own data has
   // settled - both resetFilters() (called on every successful load) and the

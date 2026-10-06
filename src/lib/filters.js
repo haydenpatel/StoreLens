@@ -227,6 +227,14 @@ export function countActiveFilters(state, filterData, capabilities = {}) {
   return count;
 }
 
+// A product's creation time in ms, or 0 when it has no date or one that doesn't
+// parse, so those sort last under "Newest First" (NaN would leave their order
+// undefined).
+const createdTime = (product) => {
+  const time = Date.parse(product.createdAt);
+  return Number.isFinite(time) ? time : 0;
+};
+
 export function filterAndSortProducts(products, state, capabilities = {}) {
   const {
     searchQuery, selectedVendors, selectedTypes, selectedTags, selectedOptions, priceRange, saleOnly, sortBy,
@@ -318,7 +326,7 @@ export function filterAndSortProducts(products, state, capabilities = {}) {
         return bMax - aMax;
       }
       case "newest":
-        return new Date(b.createdAt) - new Date(a.createdAt);
+        return createdTime(b) - createdTime(a);
       case "discount-percent":
         return (
           getDiscountData(b.variants || []).discountPercent -
