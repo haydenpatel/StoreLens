@@ -123,7 +123,8 @@ afterEach(() => {
 
 describe("the collection dropdown (#65)", () => {
   it("stays controlled when a collection is selected and cleared, and shows the placeholder", async () => {
-    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    const logged = [vi.spyOn(console, "error"), vi.spyOn(console, "warn")];
+    for (const spy of logged) spy.mockImplementation(() => {});
     vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: storeA(), [B]: storeB() }));
     openAt("/");
     const user = userEvent.setup();
@@ -139,7 +140,7 @@ describe("the collection dropdown (#65)", () => {
     await user.paste(B);
     await heading(2, 2);
 
-    const warnings = errors.mock.calls.filter((call) => /controlled/i.test(call.join(" ")));
+    const warnings = logged.flatMap((spy) => spy.mock.calls).filter((call) => /controlled/i.test(call.join(" ")));
     expect(warnings).toEqual([]);
   });
 });
