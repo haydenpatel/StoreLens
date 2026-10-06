@@ -2,7 +2,9 @@
 // https://api.bigcartel.com/{shop}/products.json, one unpaged array of every
 // product (`page`, `offset` and `per_page` are ignored). It is a legacy,
 // undocumented feed, so parsing is tolerant. Categories are only a field on each
-// product, so the collection list is derived from the fetched products. See
+// product, so the collection list is derived from the fetched products. The shop's
+// currency (the products carry none) and product count come from a second small
+// document, api.bigcartel.com/{shop}/store.json, read alongside. See
 // platforms/types.js for the shape this maps onto.
 import { StoreError, diagnoseFailure, isAbort } from "@/lib/errors";
 import { fetchWithRetry } from "./requests";
@@ -37,9 +39,39 @@ const isObject = (value) => typeof value === "object" && value !== null && !Arra
 const asArray = (value) => (Array.isArray(value) ? value : []);
 const text = (value) => (typeof value === "string" ? value.trim() : "");
 
-// Reads a shop's feed. Never given a signal: the request is shared between
+const CURRENCY_CODE = /^[A-Z]{3}$/;
+
+// How long to wait for store.json. It is an optional extra and the products
+// load alongside it, so a slow answer mustn't hold the shop up.
+const STORE_INFO_TIMEOUT_MS = 5000;
+
+// What the shop says about itself, from store.json: the currency its prices are
+// in (the products feed has none) and how many products it has. Both are
+// optional extras, so any failure (or a slow answer) just means they are unknown,
+// and products still load (prices then show with the default "$").
+async function readStoreInfo(shop) {
+  const timeout = new AbortController();
+  const timer = setTimeout(() => timeout.abort(), STORE_INFO_TIMEOUT_MS);
+  try {
+    const response = await fetch(`${FEED_HOST}/${shop}/store.json`, { signal: timeout.signal });
+    if (!response.ok) return {};
+    const data = await response.json();
+    const code = data?.currency?.code;
+    const count = data?.products_count;
+    return {
+      currency: typeof code === "string" && CURRENCY_CODE.test(code) ? code : undefined,
+      productsCount: Number.isInteger(count) && count > 0 ? count : undefined,
+    };
+  } catch {
+    return {};
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// Reads a shop's products. Never given a signal: the request is shared between
 // callers (see loadFeed), so it isn't theirs to abort.
-async function readFeed(shop) {
+async function readProducts(shop) {
   let response;
   try {
     response = await fetchWithRetry(`${FEED_HOST}/${shop}/products.json`);
@@ -62,9 +94,16 @@ async function readFeed(shop) {
   return data.filter(isObject);
 }
 
-// The shop's raw products, from the shared copy when it is fresh. The request
-// itself isn't tied to one caller's signal (another may be waiting on it), so a
-// caller that aborts just stops waiting.
+// The two requests run side by side. Only the products can fail the load.
+async function readFeed(shop) {
+  const [products, info] = await Promise.all([readProducts(shop), readStoreInfo(shop)]);
+  return { products, ...info };
+}
+
+// The shop's raw products and store info ({ products, currency?, productsCount? }),
+// from the shared copy when it is fresh. The request itself isn't tied to one
+// caller's signal (another may be waiting on it), so a caller that aborts just
+// stops waiting.
 function loadFeed(shop, { signal, forceRefresh = false } = {}) {
   signal?.throwIfAborted();
   const cached = feeds.get(shop);
@@ -89,8 +128,9 @@ function loadFeed(shop, { signal, forceRefresh = false } = {}) {
 
 const toIsoDate = (value) => (typeof value === "string" && ISO_8601.test(value) && !Number.isNaN(Date.parse(value)) ? value : undefined);
 
-// Maps one raw feed entry onto the neutral product shape.
-export function normalizeBigCartelProduct(raw, origin) {
+// Maps one raw feed entry onto the neutral product shape. `currency` is the
+// shop's ISO code, when known.
+export function normalizeBigCartelProduct(raw, origin, currency) {
   const groups = asArray(raw.option_groups)
     .filter(isObject)
     .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
@@ -134,6 +174,7 @@ export function normalizeBigCartelProduct(raw, origin) {
     vendors: asArray(raw.artists).map((artist) => text(artist?.name)).filter(Boolean),
     categories: asArray(raw.categories).map((category) => text(category?.name)).filter(Boolean),
     tags: [],
+    ...(currency ? { currency } : {}),
     available: variants.some((v) => v.available),
     ...(toIsoDate(raw.created_at) ? { createdAt: raw.created_at } : {}),
     variants,
@@ -171,21 +212,27 @@ async function fetchCollection(collectionUrl, { signal, onProgress } = {}) {
   const shop = shopOf(url);
   if (!shop || !collection) throw new Error("Please enter a valid Big Cartel shop or category URL");
 
-  let feed;
+  let loaded;
   try {
-    feed = await loadFeed(shop, { signal });
+    loaded = await loadFeed(shop, { signal });
   } catch (err) {
     if (isAbort(err, signal)) throw err;
     return { products: [], pageError: err, truncated: false };
   }
+  const { products: feed, currency, productsCount } = loaded;
 
   const matching = collection === ALL_PRODUCTS_HANDLE ? feed : feed.filter((raw) => inCategory(raw, collection));
   // The shop answered but has no such category: tell the user it's the
   // collection that's missing, not that the shop returned nothing.
   const pageError = matching.length === 0 && feed.length > 0 ? new StoreError("not-found") : null;
-  const products = matching.map((raw) => normalizeBigCartelProduct(raw, origin));
+  const products = matching.map((raw) => normalizeBigCartelProduct(raw, origin, currency));
   onProgress?.({ loaded: products.length });
-  return { products, pageError, truncated: false };
+  // The feed can't be paged, so the shop's own count is the only sign it was cut
+  // short. Only a shortfall counts: one shop reports a count of 0 while its feed
+  // holds products, so a count below what loaded must not warn. The count is for
+  // the whole shop, so it says nothing about a category.
+  const truncated = collection === ALL_PRODUCTS_HANDLE && productsCount !== undefined && feed.length < productsCount;
+  return { products, pageError, truncated };
 }
 
 // The categories in use, with how many products each holds, preceded by the
@@ -193,7 +240,7 @@ async function fetchCollection(collectionUrl, { signal, onProgress } = {}) {
 async function listCollections(origin, signal, { forceRefresh = false } = {}) {
   const shop = shopOf(new URL(origin));
   if (!shop) throw new StoreError("unsupported-platform");
-  const feed = await loadFeed(shop, { signal, forceRefresh });
+  const { products: feed } = await loadFeed(shop, { signal, forceRefresh });
 
   const categories = new Map();
   for (const raw of feed) {
