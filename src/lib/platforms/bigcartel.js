@@ -46,7 +46,9 @@ async function readFeed(shop, signal) {
     throw await diagnoseFailure({ cause: err });
   }
   // Unlike other platforms' errors, these carry CORS headers, so the status is
-  // readable and says what is wrong (403 locked, 404 no such shop) with no probe.
+  // readable and says what is wrong with no probe. The feed is the whole shop,
+  // so a 404 means the shop itself is missing or closed, not a collection.
+  if (response.status === 404 || response.status === 410) throw new StoreError("store-not-found", { status: response.status });
   if (!response.ok) throw await diagnoseFailure({ status: response.status });
 
   let data;

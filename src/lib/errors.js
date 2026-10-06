@@ -7,6 +7,10 @@ export const FAILURE_KINDS = {
     message: "That collection wasn't found. Check the URL, or choose a collection from the dropdown.",
     reason: "that collection wasn't found",
   },
+  "store-not-found": {
+    message: "That store wasn't found. Check the address: it may be misspelt, or the store may have closed.",
+    reason: "the store wasn't found",
+  },
   locked: {
     message: "This store is locked, password protected or blocking access, so its products can't be read.",
     reason: "the store is locked or blocking access",

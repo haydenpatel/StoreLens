@@ -240,9 +240,9 @@ describe("fetchCollection", () => {
       return pageError;
     };
 
-    it("reports a closed or missing shop (404) as not found, with no probe", async () => {
+    it("reports a closed or missing shop (404) as a missing store, not a missing collection, with no probe", async () => {
       const err = await kindOf({}, "gone-shop");
-      expect(err).toMatchObject({ kind: "not-found", status: 404 });
+      expect(err).toMatchObject({ kind: "store-not-found", status: 404 });
     });
 
     it("reports a locked shop (403)", async () => {
@@ -310,7 +310,7 @@ describe("listCollections", () => {
 
   it("throws the failure, so the page can explain it", async () => {
     vi.stubGlobal("fetch", fakeBigCartelFetch({}));
-    await expect(bigcartelAdapter.listCollections("https://gone-shop.bigcartel.com")).rejects.toMatchObject({ kind: "not-found" });
+    await expect(bigcartelAdapter.listCollections("https://gone-shop.bigcartel.com")).rejects.toMatchObject({ kind: "store-not-found" });
   });
 
   it("throws for an address that isn't a shop", async () => {

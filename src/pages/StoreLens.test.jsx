@@ -858,6 +858,7 @@ describe("a Big Cartel shop", () => {
   it("explains a closed shop", async () => {
     stub({});
     openAt(`/${BC}`);
-    expect(await screen.findByText(/wasn't found/, {}, { timeout: 3000 })).not.toBeNull();
+    expect(await screen.findByText(/That store wasn't found/, {}, { timeout: 3000 })).not.toBeNull();
+    expect(screen.queryByText(/dropdown/)).toBeNull();
   });
 });
