@@ -328,6 +328,24 @@ describe("the shop's currency", () => {
     expect(products.every((p) => p.currency === undefined)).toBe(true);
   });
 
+  it("does not hold the products up for a store.json that never answers", async () => {
+    vi.stubGlobal(
+      "fetch",
+      fakeBigCartelFetch({ "example-shop": catalog() }, (u) => (u.pathname.endsWith("/store.json") ? new Promise(() => {}) : undefined), {
+        honorAbort: true,
+      })
+    );
+    let result;
+    const pending = bigcartelAdapter.fetchCollection(`${ORIGIN}/products`).then((r) => (result = r));
+    await vi.advanceTimersByTimeAsync(4_999);
+    expect(result).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(1);
+    await pending;
+    expect(result.pageError).toBeNull();
+    expect(result.products).toHaveLength(4);
+    expect(result.products.every((p) => p.currency === undefined)).toBe(true);
+  });
+
   it("does not stop products loading when store.json throws, is locked or isn't JSON", async () => {
     const failures = [
       () => Promise.reject(new TypeError("Failed to fetch")),

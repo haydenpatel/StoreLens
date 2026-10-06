@@ -41,13 +41,19 @@ const text = (value) => (typeof value === "string" ? value.trim() : "");
 
 const CURRENCY_CODE = /^[A-Z]{3}$/;
 
+// How long to wait for store.json. It is an optional extra and the products
+// load alongside it, so a slow answer mustn't hold the shop up.
+const STORE_INFO_TIMEOUT_MS = 5000;
+
 // What the shop says about itself, from store.json: the currency its prices are
 // in (the products feed has none) and how many products it has. Both are
-// optional extras, so any failure just means they are unknown, and products still
-// load (prices then show with the default "$").
+// optional extras, so any failure (or a slow answer) just means they are unknown,
+// and products still load (prices then show with the default "$").
 async function readStoreInfo(shop) {
+  const timeout = new AbortController();
+  const timer = setTimeout(() => timeout.abort(), STORE_INFO_TIMEOUT_MS);
   try {
-    const response = await fetch(`${FEED_HOST}/${shop}/store.json`);
+    const response = await fetch(`${FEED_HOST}/${shop}/store.json`, { signal: timeout.signal });
     if (!response.ok) return {};
     const data = await response.json();
     const code = data?.currency?.code;
@@ -58,6 +64,8 @@ async function readStoreInfo(shop) {
     };
   } catch {
     return {};
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -93,9 +101,9 @@ async function readFeed(shop) {
 }
 
 // The shop's raw products and store info ({ products, currency?, productsCount? }),
-// from the shared copy when it is fresh. The request
-// itself isn't tied to one caller's signal (another may be waiting on it), so a
-// caller that aborts just stops waiting.
+// from the shared copy when it is fresh. The request itself isn't tied to one
+// caller's signal (another may be waiting on it), so a caller that aborts just
+// stops waiting.
 function loadFeed(shop, { signal, forceRefresh = false } = {}) {
   signal?.throwIfAborted();
   const cached = feeds.get(shop);
