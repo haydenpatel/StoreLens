@@ -12,6 +12,12 @@ export default defineConfig({
   resolve: {
     alias: {"@": path.resolve(__dirname, "./src")},
   },
+  build: {
+    // Pinned, not left to Vite's default ('baseline-widely-available'), so a Vite
+    // upgrade can't change the browsers StoreLens supports without this changing
+    // too. Keep the README's "Browser support" in step.
+    target: ['chrome107', 'edge107', 'firefox104', 'safari16'],
+  },
   test: {
     environment: 'node',
     include: ['src/**/*.test.{js,jsx}', 'scripts/**/*.test.mjs'],
