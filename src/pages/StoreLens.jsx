@@ -752,7 +752,7 @@ export default function StoreLensApp() {
   );
 
   return (
-    <div className="min-h-screen flex flex-col bg-background">
+    <div className="min-h-screen flex flex-col bg-secondary">
       <Header
         storeInput={storeInput}
         onStoreInputChange={handleInputChange}
