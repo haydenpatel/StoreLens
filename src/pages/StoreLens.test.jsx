@@ -121,6 +121,28 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+describe("the collection dropdown (#65)", () => {
+  it("stays controlled when a collection is selected and cleared, and shows the placeholder", async () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: storeA(), [B]: storeB() }));
+    openAt("/");
+    const user = userEvent.setup();
+    expect(screen.getByRole("combobox")).toHaveTextContent("Select a collection");
+
+    await user.click(input());
+    await user.paste(`${A}/collections/tees`);
+    await heading(3, 3);
+
+    await user.click(input());
+    await user.clear(input());
+    await user.paste(B);
+    await heading(2, 2);
+
+    const warnings = errors.mock.calls.filter((call) => /controlled/i.test(call.join(" ")));
+    expect(warnings).toEqual([]);
+  });
+});
+
 describe("a deep link", () => {
   it("loads the collection and applies its filters without touching the address bar", async () => {
     vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: storeA() }));

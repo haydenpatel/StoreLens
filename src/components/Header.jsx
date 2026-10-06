@@ -123,7 +123,7 @@ export default function Header({
               sm+ so tablet/desktop keep their independent flex behavior. */}
           <div className="max-sm:flex max-sm:w-full max-sm:gap-2 sm:contents">
             <Select
-              value={selectedHandle || undefined}
+              value={selectedHandle || ""}
               onValueChange={onSelectHandle}
               disabled={loading || !storeInput}
             >
