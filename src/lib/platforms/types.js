@@ -69,7 +69,7 @@
  * @property {AdapterCapabilities} capabilities
  * @property {{vendors: string, categories: string}} labels   Filter section titles, e.g. "Vendor"/"Artists".
  * @property {string} [supportNote]   A sentence about stores of this platform that can't be read (e.g. only some addresses work), added to
- *   the "couldn't reach this store" message, since such a store looks like any unreachable one. Phrased as a limit ("Sorry, ..."), not as a task.
+ *   the "couldn't reach this store" message, since such a store looks like any unreachable one. Phrased as a limit, not a task, and conditionally ("If this is a ... shop"), since the store may not be on this platform at all.
  * @property {(url: URL) => boolean} matchesUrl               Cheap, URL-only check used by detection. Detection that needs a network
  *   request (a custom domain that can't be told from its URL) doesn't go here: it plugs into the registry's
  *   `resolveAdapter` (see platforms/index.js), after this check.
