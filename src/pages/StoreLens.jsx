@@ -752,7 +752,7 @@ export default function StoreLensApp() {
   );
 
   return (
-    <div className="min-h-screen bg-secondary">
+    <div className="min-h-screen flex flex-col bg-secondary">
       <Header
         storeInput={storeInput}
         onStoreInputChange={handleInputChange}
@@ -771,7 +771,7 @@ export default function StoreLensApp() {
         onRetryCollections={handleRetryDiscovery}
       />
 
-      <div className="flex">
+      <div className="flex flex-1">
         {products.length > 0 && (
           <Sidebar
             filterData={filterData}
