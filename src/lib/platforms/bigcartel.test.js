@@ -7,6 +7,8 @@ import { jsonResponse } from "../__fixtures__/test-helpers";
 const ORIGIN = "https://example-shop.bigcartel.com";
 const url = (u) => new URL(u);
 const parse = (u) => bigcartelAdapter.parseUrl(url(u));
+// The requests a fake fetch saw for one of the shop's two documents.
+const requested = (fetchMock, document) => fetchMock.calls.filter((u) => u.pathname.endsWith(`/${document}.json`));
 const stubShop = (raw = catalog(), override, options) => {
   const fetchMock = fakeBigCartelFetch({ "example-shop": raw }, override, options);
   vi.stubGlobal("fetch", fetchMock);
@@ -185,13 +187,16 @@ describe("normalizeBigCartelProduct", () => {
 });
 
 describe("fetchCollection", () => {
-  it("loads every product from the shop's feed in one request", async () => {
+  it("loads every product from the shop's feed in one request, with its store info beside it", async () => {
     const fetchMock = stubShop();
     const progress = vi.fn();
     const result = await bigcartelAdapter.fetchCollection(`${ORIGIN}/products`, { onProgress: progress });
     expect(result.products).toHaveLength(4);
     expect(result).toMatchObject({ pageError: null, truncated: false });
-    expect(fetchMock.calls.map(String)).toEqual(["https://api.bigcartel.com/example-shop/products.json"]);
+    expect(fetchMock.calls.map(String).sort()).toEqual([
+      "https://api.bigcartel.com/example-shop/products.json",
+      "https://api.bigcartel.com/example-shop/store.json",
+    ]);
     expect(progress).toHaveBeenCalledWith({ loaded: 4 });
   });
 
@@ -262,12 +267,12 @@ describe("fetchCollection", () => {
     });
 
     it("retries a 429, then reports it", async () => {
-      const respond = vi.fn(() => jsonResponse({}, { ok: false, status: 429 }));
+      const respond = vi.fn((u) => (u.pathname.endsWith("/products.json") ? jsonResponse({}, { ok: false, status: 429 }) : undefined));
       vi.stubGlobal("fetch", fakeBigCartelFetch({ "example-shop": catalog() }, respond));
       const pending = bigcartelAdapter.fetchCollection(`${ORIGIN}/products`);
       await vi.runAllTimersAsync();
       expect((await pending).pageError).toMatchObject({ kind: "rate-limited" });
-      expect(respond).toHaveBeenCalledTimes(3);
+      expect(respond.mock.calls.filter(([u]) => u.pathname.endsWith("/products.json"))).toHaveLength(3);
     });
 
     it("rethrows an abort", async () => {
@@ -277,6 +282,110 @@ describe("fetchCollection", () => {
       controller.abort();
       await expect(pending).rejects.toMatchObject({ name: "AbortError" });
     });
+  });
+});
+
+describe("the shop's currency", () => {
+  const load = async (stores, url = `${ORIGIN}/products`) => {
+    vi.stubGlobal("fetch", fakeBigCartelFetch({ "example-shop": catalog() }, undefined, { stores: { "example-shop": stores } }));
+    return bigcartelAdapter.fetchCollection(url);
+  };
+
+  it("is set on every product, from store.json", async () => {
+    for (const code of ["EUR", "GBP", "USD"]) {
+      clearFeedCache();
+      const { products } = await load({ currency: code });
+      expect(products.map((p) => p.currency)).toEqual(Array(4).fill(code));
+    }
+  });
+
+  it("is set for a category's products too", async () => {
+    const { products } = await load({ currency: "EUR" }, `${ORIGIN}/category/tees`);
+    expect(products).toHaveLength(3);
+    expect(products.every((p) => p.currency === "EUR")).toBe(true);
+  });
+
+  it("is left unset, so prices fall back to the default, when store.json is unavailable", async () => {
+    const { products, pageError } = await load(null);
+    expect(pageError).toBeNull();
+    expect(products).toHaveLength(4);
+    expect(products.every((p) => p.currency === undefined)).toBe(true);
+  });
+
+  it.each([
+    ["a lower-case code", "eur"],
+    ["a name instead of a code", "Euro"],
+    ["a number", 978],
+    ["nothing", undefined],
+  ])("is left unset for %s", async (_, code) => {
+    vi.stubGlobal(
+      "fetch",
+      fakeBigCartelFetch({ "example-shop": catalog() }, (u) =>
+        u.pathname.endsWith("/store.json") ? jsonResponse({ products_count: 4, currency: { code } }) : undefined
+      )
+    );
+    const { products } = await bigcartelAdapter.fetchCollection(`${ORIGIN}/products`);
+    expect(products.every((p) => p.currency === undefined)).toBe(true);
+  });
+
+  it("does not stop products loading when store.json throws, is locked or isn't JSON", async () => {
+    const failures = [
+      () => Promise.reject(new TypeError("Failed to fetch")),
+      () => jsonResponse({}, { ok: false, status: 403 }),
+      () => ({ ok: true, status: 200, json: async () => JSON.parse("<html>") }),
+      () => jsonResponse("not an object"),
+      () => jsonResponse(null),
+    ];
+    for (const fail of failures) {
+      clearFeedCache();
+      vi.stubGlobal("fetch", fakeBigCartelFetch({ "example-shop": catalog() }, (u) => (u.pathname.endsWith("/store.json") ? fail() : undefined)));
+      const { products, pageError } = await bigcartelAdapter.fetchCollection(`${ORIGIN}/products`);
+      expect(pageError).toBeNull();
+      expect(products).toHaveLength(4);
+    }
+  });
+});
+
+describe("a feed cut short", () => {
+  const load = async (stores, url = `${ORIGIN}/products`) => {
+    vi.stubGlobal("fetch", fakeBigCartelFetch({ "example-shop": catalog() }, undefined, { stores: { "example-shop": stores } }));
+    return bigcartelAdapter.fetchCollection(url);
+  };
+
+  it("is reported as truncated when fewer products load than the shop has", async () => {
+    const result = await load({ products_count: 250 });
+    expect(result.products).toHaveLength(4);
+    expect(result.truncated).toBe(true);
+  });
+
+  it("is not reported when the count matches", async () => {
+    expect((await load({ products_count: 4 })).truncated).toBe(false);
+  });
+
+  it("is not reported when the count is lower than what loaded, or 0, as one shop's is", async () => {
+    expect((await load({ products_count: 3 })).truncated).toBe(false);
+    clearFeedCache();
+    expect((await load({ products_count: 0 })).truncated).toBe(false);
+  });
+
+  it("is not reported without a usable count", async () => {
+    expect((await load(null)).truncated).toBe(false);
+    clearFeedCache();
+    expect((await load({ products_count: "250" })).truncated).toBe(false);
+    clearFeedCache();
+    expect((await load({ products_count: 12.5 })).truncated).toBe(false);
+  });
+
+  it("is not reported for a category, since the count is for the whole shop", async () => {
+    const result = await load({ products_count: 250 }, `${ORIGIN}/category/tees`);
+    expect(result.products).toHaveLength(3);
+    expect(result.truncated).toBe(false);
+  });
+
+  it("is not reported when the load failed", async () => {
+    vi.stubGlobal("fetch", fakeBigCartelFetch({}));
+    const result = await bigcartelAdapter.fetchCollection("https://gone-shop.bigcartel.com/products");
+    expect(result.truncated).toBe(false);
   });
 });
 
@@ -333,7 +442,8 @@ describe("the shared feed", () => {
     await bigcartelAdapter.listCollections(ORIGIN);
     await bigcartelAdapter.fetchCollection(`${ORIGIN}/category/tees`);
     await Promise.all([bigcartelAdapter.fetchCollection(`${ORIGIN}/products`), bigcartelAdapter.listCollections(ORIGIN)]);
-    expect(fetchMock.calls).toHaveLength(1);
+    expect(requested(fetchMock, "products")).toHaveLength(1);
+    expect(requested(fetchMock, "store")).toHaveLength(1);
   });
 
   it("is requested again after it goes stale", async () => {
@@ -341,14 +451,15 @@ describe("the shared feed", () => {
     await bigcartelAdapter.fetchCollection(`${ORIGIN}/products`);
     vi.advanceTimersByTime(31_000);
     await bigcartelAdapter.fetchCollection(`${ORIGIN}/products`);
-    expect(fetchMock.calls).toHaveLength(2);
+    expect(requested(fetchMock, "products")).toHaveLength(2);
+    expect(requested(fetchMock, "store")).toHaveLength(2);
   });
 
   it("is requested again on a forced refresh", async () => {
     const fetchMock = stubShop();
     await bigcartelAdapter.listCollections(ORIGIN);
     await bigcartelAdapter.listCollections(ORIGIN, undefined, { forceRefresh: true });
-    expect(fetchMock.calls).toHaveLength(2);
+    expect(requested(fetchMock, "products")).toHaveLength(2);
   });
 
   it("is kept per shop", async () => {
@@ -357,7 +468,7 @@ describe("the shared feed", () => {
     await bigcartelAdapter.fetchCollection(`${ORIGIN}/products`);
     const other = await bigcartelAdapter.fetchCollection("https://other-shop.bigcartel.com/products");
     expect(other.products).toHaveLength(1);
-    expect(fetchMock.calls).toHaveLength(2);
+    expect(requested(fetchMock, "products")).toHaveLength(2);
   });
 
   it("does not keep a failure", async () => {
@@ -366,7 +477,7 @@ describe("the shared feed", () => {
     expect((await bigcartelAdapter.fetchCollection(`${ORIGIN}/products`)).pageError).toMatchObject({ kind: "locked" });
     fail = false;
     expect((await bigcartelAdapter.fetchCollection(`${ORIGIN}/products`)).products).toHaveLength(4);
-    expect(fetchMock.calls).toHaveLength(2);
+    expect(requested(fetchMock, "products")).toHaveLength(2);
   });
 
   it("lets one caller abort without failing the other waiting on the same request", async () => {

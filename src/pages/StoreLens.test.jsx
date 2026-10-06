@@ -796,9 +796,46 @@ describe("a Big Cartel shop", () => {
 
     await heading(4, 4);
     expect(pushedPaths()).toEqual([`/${BC}/products`]);
-    expect(fetchMock.calls.map((u) => u.host)).toEqual(["api.bigcartel.com"]);
-    expect(fetchMock.calls).toHaveLength(1);
+    // The products and the shop's store info, both from the feed host, once each.
+    expect(fetchMock.calls.map((u) => u.href).sort()).toEqual([
+      "https://api.bigcartel.com/example-shop/products.json",
+      "https://api.bigcartel.com/example-shop/store.json",
+    ]);
     expect(screen.getAllByRole("combobox")[0].textContent).toBe("All Products (4)");
+  });
+
+  describe("prices", () => {
+    const shownPrices = () => screen.getAllByText(/^[^\d\s]*\d+\.\d{2}$/).map((el) => el.textContent);
+
+    it("are shown in the shop's own currency", async () => {
+      stub({ "example-shop": feed() }, undefined, { stores: { "example-shop": { currency: "EUR" } } });
+      openAt(`/${BC}`);
+      await heading(4, 4);
+      expect(shownPrices().sort()).toEqual(["€12.00", "€15.00", "€20.00", "€25.00"]);
+    });
+
+    it("fall back to $ when store.json can't be read, and the products still load", async () => {
+      stub({ "example-shop": feed() }, undefined, { stores: { "example-shop": null } });
+      openAt(`/${BC}`);
+      await heading(4, 4);
+      expect(shownPrices().sort()).toEqual(["$12.00", "$15.00", "$20.00", "$25.00"]);
+    });
+  });
+
+  it("warns that the shop is larger than what loaded when its store.json says it has more", async () => {
+    stub({ "example-shop": feed() }, undefined, { stores: { "example-shop": { products_count: 250 } } });
+    openAt(`/${BC}`);
+    await heading(4, 4);
+    expect(
+      await screen.findByText("This collection is larger than StoreLens can load from Big Cartel — showing the first 4 products.")
+    ).not.toBeNull();
+  });
+
+  it("does not warn when store.json agrees with what loaded", async () => {
+    stub({ "example-shop": feed() });
+    openAt(`/${BC}`);
+    await heading(4, 4);
+    expect(screen.queryByText(/larger than StoreLens can load/)).toBeNull();
   });
 
   it("lists the shop's categories in the dropdown and switches between them", async () => {
