@@ -59,6 +59,8 @@ export function createRegistry(adapters, { cache = platformCache } = {}) {
       if (names.length <= 1) return names.join("");
       return `${names.slice(0, -1).join(", ")} or ${names[names.length - 1]}`;
     },
+    // The adapters' own notes on what they can't read, for error copy.
+    supportNotes: () => adapters.map((adapter) => adapter.supportNote).filter(Boolean),
   };
 }
 
@@ -70,4 +72,5 @@ export const {
   forgetAdapter,
   getAdapterById,
   supportedPlatformNames,
+  supportNotes,
 } = createRegistry([fourthwallAdapter, bigcartelAdapter, shopifyAdapter]);

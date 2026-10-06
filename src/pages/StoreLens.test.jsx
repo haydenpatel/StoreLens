@@ -848,6 +848,13 @@ describe("a Big Cartel shop", () => {
     expect(await screen.findByText(/This store is locked/, {}, { timeout: 3000 })).not.toBeNull();
   });
 
+  it("says sorry for a shop on its own domain, rather than asking for another address", async () => {
+    stub({});
+    openAt("/shop.example.com");
+    expect(await screen.findByText(/Couldn't reach this store/, {}, { timeout: 3000 })).not.toBeNull();
+    expect(screen.getByText(/Sorry, StoreLens can only read Big Cartel shops at a shopname\.bigcartel\.com address/)).not.toBeNull();
+  });
+
   it("explains a closed shop", async () => {
     stub({});
     openAt(`/${BC}`);

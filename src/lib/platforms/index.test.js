@@ -5,6 +5,7 @@ import {
   detectAdapter,
   getAdapterById,
   resolveAdapter,
+  supportNotes,
   supportedPlatformNames,
 } from "./index";
 import { shopifyAdapter } from "./shopify";
@@ -44,6 +45,11 @@ describe("default registry", () => {
     expect(getAdapterById("shopify")).toBe(shopifyAdapter);
     expect(getAdapterById("bigcartel")).toBe(bigcartelAdapter);
     expect(getAdapterById("nope")).toBeNull();
+  });
+
+  it("collects the adapters' support notes for error copy", () => {
+    expect(supportNotes()).toEqual([bigcartelAdapter.supportNote]);
+    expect(createRegistry([{ ...fake("a", "A", () => false), supportNote: "Note A." }, fake("b", "B", () => true)]).supportNotes()).toEqual(["Note A."]);
   });
 
   it("lists the registered platforms for user-facing copy", () => {

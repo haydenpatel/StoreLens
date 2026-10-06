@@ -223,6 +223,7 @@ export const bigcartelAdapter = {
     variantStock: true,
     collectionDiscovery: true,
   },
+  supportNote: "Sorry, StoreLens can only read Big Cartel shops at a shopname.bigcartel.com address, not shops on their own domain.",
   // A shop is recognised from its *.bigcartel.com address alone. A custom domain
   // can't be mapped to a shop name from the URL, so it isn't supported.
   matchesUrl: (url) => shopOf(url) !== null,

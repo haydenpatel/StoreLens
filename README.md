@@ -108,7 +108,7 @@ StoreLens relies on each platform’s public JSON endpoints. Stores that restric
 
 ### Big Cartel
 
-- Only shops at `*.bigcartel.com` work. A shop on a custom domain can't be matched to its Big Cartel name from the URL alone, so StoreLens can't read it; paste its `*.bigcartel.com` address instead.
+- Only shops at `*.bigcartel.com` work. A shop on its own domain can't be read: its feed carries no CORS headers, and the CORS-enabled feed is looked up by the shop's Big Cartel name, which can't be worked out from the domain. StoreLens says so when it can't reach such a shop.
 - StoreLens uses Big Cartel's legacy, undocumented product feed, which Big Cartel could change without notice. The documented API needs a login, so it can't be used.
 - The feed is one request with no paging, so there is nothing to tell StoreLens whether a very large shop was cut short. The largest shops tested had 35 products, all returned.
 - The feed reports no currency, so prices show with "$" whatever the shop sells in.

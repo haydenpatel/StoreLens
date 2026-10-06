@@ -31,6 +31,14 @@ describe("describeStoreError", () => {
     }
   });
 
+  it("adds platforms' notes when a store can't be reached, and nowhere else", () => {
+    const notes = ["Sorry, Gamma only works at gamma.example.com."];
+    const unreachable = describeStoreError(new StoreError("blocked-or-offline"), { supported: SUPPORTED, notes });
+    expect(unreachable).toContain("Sorry, Gamma only works at gamma.example.com.");
+    expect(describeStoreError(new StoreError("blocked-or-offline"), { supported: SUPPORTED, notes: [] })).not.toContain("Sorry");
+    expect(describeStoreError(new StoreError("not-found"), { supported: SUPPORTED, notes })).not.toContain("Sorry");
+  });
+
   it("lists the supported platforms for an unsupported store", () => {
     const message = describeStoreError(new StoreError("unsupported-platform"), { supported: SUPPORTED });
     expect(message).toContain("Alpha, Beta or Gamma");
