@@ -173,6 +173,7 @@ export default function StoreLensApp() {
       setPriceRange([filterData.minPrice, filterData.maxPrice]);
     }
   }
+
   const [inStockOnly, setInStockOnly] = useState(false);
   const [saleOnly, setSaleOnly] = useState(false);
   const [sortBy, setSortBy] = useState("title-asc");
