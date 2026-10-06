@@ -39,6 +39,7 @@ Each platform is a small adapter (`src/lib/platforms/`) that turns the platform'
 - Search across product titles and descriptions  
 - Recent Stores to quickly re-visit stores you have opened
 - Shareable links: the address keeps the store, collection, filters and sort, so a link reopens the same view
+- A bookmarklet that opens the store you're browsing in StoreLens (see [Open a store in StoreLens](#open-a-store-in-storelens))
 - Partial results with a warning if a page of products fails to load, instead of discarding what already loaded
 - Clean UI built with Tailwind + shadcn/ui  
 - Per-platform differences: a Fourthwall shop's collection dropdown offers "All Products", the collection in the link and the collections you have opened on that shop before (remembered in this browser, a few handles per shop), with a note saying why it can't list the rest (Fourthwall's collections can't be read from the browser, so paste a collection's link to open one); it has no vendor, type, tag or description filtering, because Fourthwall doesn't provide that data
@@ -46,6 +47,22 @@ Each platform is a small adapter (`src/lib/platforms/`) that turns the platform'
 - 100% client-side — no API keys or server required
 - Static build that needs no server. Store and collection links rely on `public/_redirects` sending every path to `index.html`, which Cloudflare Pages and Netlify read. On GitHub Pages and Vercel (which ignore that file) those links would 404 unless you add an equivalent rewrite rule
 
+
+## Open a store in StoreLens
+
+A bookmarklet opens the store or collection you're looking at in StoreLens, in a new tab. To add it, create a new bookmark in your browser and paste this as its address (URL):
+
+```
+javascript:(()=>{const p=location.pathname.replace(/\/products\/.*$/,'').replace(/\/+$/,'');window.open('https://storelens.pages.dev/'+location.host+p,'_blank')})()
+```
+
+Then click the bookmark while on a store's page. It builds the same `/{host}{path}` link StoreLens uses, so:
+
+- On a collection page (`/collections/…`, or `/category/…` on Big Cartel) it opens that collection.
+- On a product page or the store's home page it opens the store, and StoreLens loads its default collection. A locale prefix such as `/en-nzd` is kept.
+- It only helps on stores StoreLens supports (see [Supported platforms](#supported-platforms)). A Big Cartel shop on its own domain can't be read, as described in [Known Issues](#big-cartel).
+
+Some sites' security settings may block bookmarklets. If yours does, paste the store's address into StoreLens instead.
 
 ## Tech Stack
 
