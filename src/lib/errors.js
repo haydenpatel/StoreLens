@@ -7,6 +7,10 @@ export const FAILURE_KINDS = {
     message: "That collection wasn't found. Check the URL, or choose a collection from the dropdown.",
     reason: "that collection wasn't found",
   },
+  "store-not-found": {
+    message: "That store wasn't found. Check the address: it may be misspelt, or the store may have closed.",
+    reason: "the store wasn't found",
+  },
   locked: {
     message: "This store is locked, password protected or blocking access, so its products can't be read.",
     reason: "the store is locked or blocking access",
@@ -14,8 +18,8 @@ export const FAILURE_KINDS = {
   "blocked-or-offline": {
     // Stores on an unsupported platform usually land here too (they send no CORS
     // headers), so say what does work.
-    message: (supported) =>
-      `Couldn't reach this store from the browser. It may be offline, or it may not allow other sites to read its products.${supported ? ` StoreLens works with ${supported} stores.` : ""}`,
+    message: (supported, _status, notes) =>
+      `Couldn't reach this store from the browser. It may be offline, or it may not allow other sites to read its products.${supported ? ` StoreLens works with ${supported} stores.` : ""}${notes?.length ? ` ${notes.join(" ")}` : ""}`,
     reason: "the store couldn't be reached",
   },
   "unsupported-platform": {
@@ -48,12 +52,14 @@ export class StoreError extends Error {
 }
 
 // The user-facing sentence for a failure. `supported` is the supported
-// platforms as text ("Shopify, Fourthwall or Big Cartel"). Errors that aren't
-// StoreErrors (an invalid URL, say) keep their own message.
-export function describeStoreError(err, { supported } = {}) {
+// platforms as text ("Shopify, Fourthwall or Big Cartel"); `notes` are the
+// platforms' own sentences about what they can't read (see supportNote in
+// platforms/types.js), added where a store that can't be reached may be one of
+// them. Errors that aren't StoreErrors (an invalid URL, say) keep their own message.
+export function describeStoreError(err, { supported, notes } = {}) {
   if (!(err instanceof StoreError)) return err?.message || "Something went wrong.";
   const copy = FAILURE_KINDS[err.kind] ?? FAILURE_KINDS["server-error"];
-  return typeof copy.message === "function" ? copy.message(supported, err.status) : copy.message;
+  return typeof copy.message === "function" ? copy.message(supported, err.status, notes) : copy.message;
 }
 
 // A short clause for the "couldn't fetch the rest (...)" warning.
