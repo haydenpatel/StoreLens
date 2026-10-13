@@ -47,20 +47,29 @@ function isPlaceholderOptions(options) {
   );
 }
 
+const asObjects = (value) =>
+  Array.isArray(value) ? value.filter((item) => typeof item === "object" && item !== null && !Array.isArray(item)) : [];
+
 // Maps one raw /products.json entry onto the neutral product shape.
 export function normalizeShopifyProduct(raw, origin) {
-  const rawOptions = raw.options || [];
+  // One malformed entry (a null option, variant or image) is skipped, not allowed
+  // to fail the whole page.
+  const rawOptions = asObjects(raw.options);
   const placeholder = isPlaceholderOptions(rawOptions);
-  const variants = (raw.variants || []).map((v) => ({
+  const variants = asObjects(raw.variants).map((v) => ({
     id: v.id,
     // The placeholder's lone variant is called "Default Title"; with no real
     // options it has nothing worth showing as a variant name.
     title: placeholder ? "" : v.title,
     price: parseFloat(v.price),
     compareAtPrice: normalizeComparePrice(v.compare_at_price),
-    available: Boolean(v.available),
+    // A feed that stops sending the field must not read as everything sold out,
+    // which would empty the default in-stock view: only an explicit false is.
+    available: v.available !== false,
     options: placeholder ? [] : trimTrailingEmpty([v.option1, v.option2, v.option3]),
-  }));
+  }))
+    // An unparseable price is "unavailable", not NaN: the variant is dropped.
+    .filter((variant) => Number.isFinite(variant.price));
 
   let url = null;
   if (raw.handle && origin) {
@@ -78,7 +87,7 @@ export function normalizeShopifyProduct(raw, origin) {
     handle: raw.handle,
     title: raw.title,
     url,
-    images: (raw.images || []).map((image) => ({ url: image.src })),
+    images: asObjects(raw.images).map((image) => ({ url: image.src })),
     description: raw.body_html,
     vendors: raw.vendor ? [raw.vendor] : [],
     categories: raw.product_type ? [raw.product_type] : [],
@@ -143,7 +152,7 @@ async function fetchCollection(collectionUrl, { signal, maxPages = MAX_PRODUCT_P
     }
     if (!Array.isArray(data?.products)) throw new StoreError("unsupported-platform");
     return {
-      items: data.products.map((raw) => normalizeShopifyProduct(raw, origin)),
+      items: asObjects(data.products).map((raw) => normalizeShopifyProduct(raw, origin)),
       done: data.products.length < PAGE_SIZE,
     };
   };
@@ -288,10 +297,10 @@ async function discoverCollections(origin, signal, { forceRefresh = false } = {}
   }
 
   const mapped = allCollections
-    .filter((c) => c.products_count > 0)
+    .filter((c) => typeof c === "object" && c !== null && c.products_count > 0)
     .map((c) => ({
       handle: c.handle,
-      title: c.title,
+      title: typeof c.title === "string" && c.title.trim() ? c.title : c.handle,
       products_count: c.products_count,
     }));
 
@@ -317,7 +326,7 @@ async function discoverCollections(origin, signal, { forceRefresh = false } = {}
     if (aIndex !== -1) return -1;
     if (bIndex !== -1) return 1;
 
-    return a.title.localeCompare(b.title, undefined, { sensitivity: "base" });
+    return String(a.title ?? "").localeCompare(String(b.title ?? ""), undefined, { sensitivity: "base" });
   });
 
   // Only treat a collection as "the" all-products collection when it's a

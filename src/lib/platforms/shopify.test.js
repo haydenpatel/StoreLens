@@ -277,6 +277,35 @@ async function settled(promise) {
   return promise;
 }
 
+describe("normalizeShopifyProduct with malformed entries", () => {
+  const normalize = (raw) => normalizeShopifyProduct(raw, "https://shop.example.com");
+
+  it("skips a null variant, option or image instead of throwing", () => {
+    const n = normalize(
+      product({
+        options: [null, { name: "Size", values: ["S"] }],
+        variants: [null, variant({ option1: "S" })],
+        images: [null, { src: "https://example.com/a.jpg" }],
+      })
+    );
+    expect(n.variants).toHaveLength(1);
+    expect(n.options).toEqual([{ name: "Size", values: ["S"] }]);
+    expect(n.images).toEqual([{ url: "https://example.com/a.jpg" }]);
+  });
+
+  it("drops a variant whose price can't be read instead of passing NaN on", () => {
+    const n = normalize(product({ variants: [variant({ price: null }), variant({ price: "abc" }), variant({ price: "12.00" })] }));
+    expect(n.variants.map((v) => v.price)).toEqual([12]);
+  });
+
+  it("treats a missing available field as available, and only false as sold out", () => {
+    const v = variant();
+    delete v.available;
+    expect(normalize(product({ variants: [v] })).available).toBe(true);
+    expect(normalize(product({ variants: [variant({ available: false })] })).available).toBe(false);
+  });
+});
+
 describe("fetchCollection", () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
@@ -303,6 +332,13 @@ describe("fetchCollection", () => {
     expect(fetchMock.mock.calls[0][0]).toBe(`${COLLECTION}/products.json?page=1&limit=250`);
     expect(result.products).toHaveLength(3);
     expect(result).toMatchObject({ pageError: null, truncated: false });
+  });
+
+  it("shows the rest of a page that has a null product in it", async () => {
+    vi.stubGlobal("fetch", pagedFetch([[product({ handle: "a" }), null, product({ handle: "b" })]]));
+    const result = await shopifyAdapter.fetchCollection(COLLECTION);
+    expect(result.pageError).toBeNull();
+    expect(result.products.map((p) => p.handle)).toEqual(["a", "b"]);
   });
 
   it("keeps a locale prefix in the request URL", async () => {
@@ -892,6 +928,27 @@ describe("listCollections", () => {
     const result = await shopifyAdapter.listCollections(ORIGIN);
     expect(result.collections.map((c) => c.handle)).toEqual(["alpha", "Beta", "zeta"]);
     expect(result.allProductsHandle).toBeNull();
+  });
+
+  it("lists collections even when one has no title or is null", async () => {
+    vi.stubGlobal(
+      "fetch",
+      routedFetch({
+        listing: () =>
+          jsonResponse({
+            collections: [
+              { handle: "b", title: "B", products_count: 1 },
+              { handle: "untitled", products_count: 2 },
+              null,
+              { handle: "a", title: "A", products_count: 3 },
+            ],
+          }),
+        probes: { all: false },
+      })
+    );
+    const result = await shopifyAdapter.listCollections(ORIGIN);
+    expect(result.collections.map((c) => c.handle).sort()).toEqual(["a", "b", "untitled"]);
+    expect(result.collections.find((c) => c.handle === "untitled").title).toBe("untitled");
   });
 
   it("prepends a probed all-products collection that the listing omits", async () => {
