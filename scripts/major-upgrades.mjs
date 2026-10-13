@@ -26,6 +26,14 @@ export const EXCLUDED = new Set(["@types/node"]);
 
 export const LABELS = ["chore", "priority: low"];
 
+export const MILESTONE = "Toolchain upgrades";
+
+// The milestone to put new issues in: the open one titled `title`, or null.
+// milestones: parsed `gh api repos/{owner}/{repo}/milestones` (open only by default).
+export function findMilestone(milestones, title = MILESTONE) {
+  return milestones.find((m) => m.title === title && m.state === "open")?.title ?? null;
+}
+
 // Highest major a range allows, from the first number of each version in it:
 // "^0.554.0" -> 0, "~7.2.2" -> 7, "^18 || ^19" -> 19, ">=1.2 <3" -> 3.
 export function rangeMajor(range) {
@@ -126,18 +134,29 @@ function main() {
     ).map((issue) => issue.title),
   );
 
+  let milestone = null;
+  if (found.length) {
+    milestone = findMilestone(
+      JSON.parse(run("gh", ["api", "--paginate", "repos/{owner}/{repo}/milestones?state=open"])),
+    );
+    if (!milestone) {
+      console.warn(`warning: no open milestone titled "${MILESTONE}"; opening issues without one`);
+    }
+  }
+
   for (const { title, upgrades } of found) {
     if (existing.has(title)) {
       console.log(`exists   ${title}`);
       continue;
     }
     if (dryRun) {
-      console.log(`would open  ${title}`);
+      console.log(`would open  ${title}  (milestone: ${milestone ?? "none"})`);
       continue;
     }
     const links = Object.fromEntries(upgrades.map(({ name }) => [name, linkFor(name)]));
     const args = ["issue", "create", "--title", title, "--body", issueBody(upgrades, links)];
     for (const label of LABELS) args.push("--label", label);
+    if (milestone) args.push("--milestone", milestone);
     console.log(`opened   ${title}  ${run("gh", args).trim()}`);
   }
   if (!found.length) console.log("No major upgrades available.");
