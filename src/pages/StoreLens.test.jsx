@@ -964,7 +964,13 @@ describe("history writes and load cancellation (#82)", () => {
     vi.useRealTimers();
   });
 
-  const settle = (ms = 450) => act(async () => void (await vi.advanceTimersByTimeAsync(ms)));
+  // Moves the clock in small steps, letting React render between them as it
+  // would in a browser (inside one act() it would only render at the end).
+  const settle = async (ms = 450) => {
+    for (let elapsed = 0; elapsed < ms; elapsed += 25) {
+      await act(async () => void (await vi.advanceTimersByTimeAsync(25)));
+    }
+  };
   const userWithTimers = () => userEvent.setup({ advanceTimers: (ms) => vi.advanceTimersByTime(ms) });
   // Moves the address bar as Back/Forward would, and tells the app.
   const goTo = (path) =>
