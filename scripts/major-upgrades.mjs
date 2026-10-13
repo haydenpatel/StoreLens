@@ -34,6 +34,19 @@ export function findMilestone(milestones, title = MILESTONE) {
   return milestones.find((m) => m.title === title && m.state === "open")?.title ?? null;
 }
 
+// Looks the milestone up through `runFn(command, args)`. A failed fetch must not
+// stop issues being opened, so it warns with the error and returns null.
+export function loadMilestone(runFn, warn = console.warn) {
+  try {
+    return findMilestone(
+      JSON.parse(runFn("gh", ["api", "repos/{owner}/{repo}/milestones?state=open&per_page=100"])),
+    );
+  } catch (error) {
+    warn(`warning: could not look up milestones (${error.message}); opening issues without one`);
+    return null;
+  }
+}
+
 // Highest major a range allows, from the first number of each version in it:
 // "^0.554.0" -> 0, "~7.2.2" -> 7, "^18 || ^19" -> 19, ">=1.2 <3" -> 3.
 export function rangeMajor(range) {
@@ -134,16 +147,12 @@ function main() {
     ).map((issue) => issue.title),
   );
 
-  let milestone = null;
-  if (found.length) {
-    milestone = findMilestone(
-      JSON.parse(run("gh", ["api", "repos/{owner}/{repo}/milestones?state=open&per_page=100"])),
-    );
-    if (milestone) {
-      if (dryRun) console.log(`milestone  ${milestone}`);
-    } else {
-      console.warn(`warning: no open milestone titled "${MILESTONE}"; opening issues without one`);
-    }
+  const toOpen = found.filter(({ title }) => !existing.has(title));
+  const milestone = toOpen.length ? loadMilestone(run) : null;
+  if (toOpen.length && !milestone) {
+    console.warn(`warning: no open milestone titled "${MILESTONE}"; opening issues without one`);
+  } else if (milestone && dryRun) {
+    console.log(`milestone  ${milestone}`);
   }
 
   for (const { title, upgrades } of found) {
