@@ -113,7 +113,7 @@ export function normalizeFourthwallProduct(raw, origin) {
   // it. A product with no variants has nothing to buy, so isn't available. A
   // missing field isn't "sold out" (that would empty the in-stock view if the
   // feed dropped it): only an explicit false is.
-  const available = rawVariants.length > 0 && raw.available !== false;
+  const available = raw.available !== false;
 
   const variants = rawVariants.map((v, i) => {
     const cents = toCents(v.price?.cents);
@@ -128,7 +128,7 @@ export function normalizeFourthwallProduct(raw, origin) {
       available,
       options: variantOptions[i],
     };
-  });
+  }).filter((variant) => Number.isFinite(variant.price)); // no price anywhere: nothing to show
 
   return {
     id: raw.id,
@@ -140,7 +140,7 @@ export function normalizeFourthwallProduct(raw, origin) {
     categories: [],
     tags: [],
     ...(currency ? { currency } : {}),
-    available,
+    available: variants.some((v) => v.available),
     ...(toIsoDate(raw.created_at) ? { createdAt: toIsoDate(raw.created_at) } : {}),
     variants,
     options,

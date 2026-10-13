@@ -299,6 +299,11 @@ describe("normalizeFourthwallProduct edge cases", () => {
     expect(normalize(product({ available: false })).available).toBe(false);
   });
 
+  it("drops a variant that has no price anywhere, rather than passing NaN on", () => {
+    const p = normalize(product({ price: undefined, variants: [{ id: "1", title: "S", price: {} }, variant("M")] }));
+    expect(p.variants.map((v) => v.title)).toEqual(["M"]);
+  });
+
   it("skips a null variant instead of failing", () => {
     const p = normalize(product({ variants: [null, variant("S"), "x", variant("M")] }));
     expect(p.variants.map((v) => v.title)).toEqual(["S", "M"]);
