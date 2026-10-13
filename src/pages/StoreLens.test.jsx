@@ -1030,14 +1030,12 @@ describe("history writes and load cancellation (#82)", () => {
     });
   });
 
-  describe("Back and Forward onto an entry while its collection loads (A1, B1)", () => {
-    // tees (no filters) -> mugs with a vendor filter, then Back to tees.
-    async function backToTeesWith(teesSecondLoad) {
+  describe("Back and Forward onto an entry while its store is still resolving (A1)", () => {
+    // tees (no filters) -> mugs, a filter ticked, then Back before the 300 ms
+    // write has run: the entry Back lands on must not receive mugs' filters.
+    async function ticksFilterThenGoesBack(override) {
       const store = storeA();
-      vi.stubGlobal(
-        "fetch",
-        fakeShopifyFetch({ [A]: store }, holdCollection(A, "tees", teesSecondLoad.promise, { after: 1 }), { honorAbort: true })
-      );
+      vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: store }, override, { honorAbort: true }));
       openAt(`/${A}/collections/tees`);
       await heading(3, 3);
       const user = userWithTimers();
@@ -1045,39 +1043,37 @@ describe("history writes and load cancellation (#82)", () => {
       await user.clear(input());
       await user.paste(`${A}/collections/mugs`);
       await heading(2, 2);
-      await user.click(screen.getByRole("checkbox", { name: "Acme" }));
       await settle();
-      expect(here()).toBe(`/${A}/collections/mugs?vendor=Acme`);
 
+      const resolution = deferred();
+      slowResolve.override = (url) => (url.host === A ? resolution.promise.then(() => detectAdapter(url)) : undefined);
+      await user.click(screen.getByRole("checkbox", { name: "Acme" }));
       act(() => window.history.back());
       await settle();
-      return store;
+      return { store, resolution };
     }
 
     it("does not write the previous collection's filters onto an entry that had none", async () => {
-      const slowTees = deferred();
-      const store = await backToTeesWith(slowTees);
+      const { resolution } = await ticksFilterThenGoesBack();
       expect(here()).toBe(`/${A}/collections/tees`);
 
-      await act(async () => slowTees.release(jsonResponse(productsOf(store.collections.tees))));
+      await act(async () => resolution.release());
       await heading(3, 3);
       await settle();
       expect(here()).toBe(`/${A}/collections/tees`);
     });
 
-    it("leaves the entry as it was when that load fails", async () => {
-      const slowTees = deferred();
-      await backToTeesWith(slowTees);
+    it("leaves the entry as it was when that collection then fails to load", async () => {
+      const refuse = holdCollection(A, "tees", Promise.resolve(jsonResponse({}, { ok: false, status: 403 })), { after: 1 });
+      const { resolution } = await ticksFilterThenGoesBack(refuse);
 
-      await act(async () => slowTees.release(jsonResponse({}, { ok: false, status: 403 })));
+      await act(async () => resolution.release());
       expect(await screen.findByText(/password protected or blocking access/)).not.toBeNull();
       await settle();
       expect(here()).toBe(`/${A}/collections/tees`);
     });
-  });
 
-  describe("an entry whose store can't be resolved on Back (A1)", () => {
-    it("is not given the page's filters", async () => {
+    it("leaves the entry as it was when its store can't be resolved", async () => {
       vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: storeA() }));
       openAt(`/${A}/collections/tees`);
       await heading(3, 3);
@@ -1086,11 +1082,18 @@ describe("history writes and load cancellation (#82)", () => {
       await user.clear(input());
       await user.paste(`${A}/collections/mugs`);
       await heading(2, 2);
-      await user.click(screen.getByRole("checkbox", { name: "Acme" }));
       await settle();
 
-      slowResolve.override = (url) => (url.host === A ? Promise.reject(new TypeError("Failed to fetch")) : undefined);
+      const resolution = deferred();
+      slowResolve.override = (url) =>
+        url.host === A
+          ? resolution.promise.then(() => {
+              throw new TypeError("Failed to fetch");
+            })
+          : undefined;
+      await user.click(screen.getByRole("checkbox", { name: "Acme" }));
       act(() => window.history.back());
+      await act(async () => resolution.release());
       expect(await screen.findByText("Failed to fetch")).not.toBeNull();
       await settle();
       expect(here()).toBe(`/${A}/collections/tees`);
@@ -1276,7 +1279,7 @@ describe("history writes and load cancellation (#82)", () => {
         slowB.release();
         for (let i = 0; i < 5; i++) await Promise.resolve();
         slowListingA.release(jsonResponse({ collections: [{ handle: "all", title: "All", products_count: 3 }] }));
-        for (let i = 0; i < 5; i++) await Promise.resolve();
+        await new Promise((resolve) => setTimeout(resolve, 30));
       });
       await heading(2, 2);
       await settle(50);
