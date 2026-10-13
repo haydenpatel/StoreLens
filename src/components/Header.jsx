@@ -32,6 +32,7 @@ export default function Header({
   collectionsNote,
   collectionsStatus,
   collectionsError,
+  collectionsPartial = false,
   selectedHandle,
   onSelectHandle,
   onRetryCollections,
@@ -160,6 +161,11 @@ export default function Header({
                         : ""}
                     </SelectItem>
                   ))}
+                {collectionsStatus === "ready" && collectionsPartial && (
+                  <SelectItem value="__partial" disabled>
+                    The store didn't answer every request, so this list may be incomplete. Use the retry button.
+                  </SelectItem>
+                )}
                 {/* A platform that can't list its collections says why, so a short list isn't mistaken for the whole store. */}
                 {collectionsStatus === "ready" && collectionsNote && (
                   <SelectItem value="__note" disabled>
@@ -170,7 +176,7 @@ export default function Header({
             </Select>
 
             <div className="flex gap-2 xl:order-2">
-              {collectionsStatus === "error" && (
+              {(collectionsStatus === "error" || (collectionsStatus === "ready" && collectionsPartial)) && (
                 <Button
                   variant="outline"
                   size="icon"

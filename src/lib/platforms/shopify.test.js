@@ -606,6 +606,259 @@ describe("listCollections when the first path segment may not be a locale", () =
   });
 });
 
+describe("listCollections when discovery fails transiently", () => {
+  const LOCALE = `${ORIGIN}/en-nz`;
+  const tees = collectionsPage([["tees", "Tees", 5]]);
+  const status = (code) => jsonResponse({}, { ok: false, status: code });
+
+  // Runs a discovery that backs off between retries to the end.
+  async function settle(promise) {
+    const outcome = promise.then((value) => ({ value }), (error) => ({ error }));
+    await vi.runAllTimersAsync();
+    return outcome;
+  }
+
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it.each([429, 500, 503])("does not cache a listing that keeps failing with %i, and fetches again later", async (code) => {
+    const fetchMock = routedFetch({ listing: () => status(code), probes: { all: true } });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { value } = await settle(shopifyAdapter.listCollections(ORIGIN));
+    // The probed all-products collection is shown, but flagged as possibly incomplete.
+    expect(value.collections.map((c) => c.handle)).toEqual(["all"]);
+    expect(value.partial).toBe(true);
+    expect(loadCollectionsCache("shopify", ORIGIN)).toBeNull();
+
+    const before = fetchMock.mock.calls.length;
+    await settle(shopifyAdapter.listCollections(ORIGIN));
+    expect(fetchMock.mock.calls.length).toBeGreaterThan(before);
+  });
+
+  it("does not cache an empty result when the listing failed and nothing was probed, and throws", async () => {
+    vi.stubGlobal("fetch", routedFetch({ listing: () => status(429) }));
+    const { error } = await settle(shopifyAdapter.listCollections(ORIGIN));
+    expect(error).toMatchObject({ kind: "rate-limited" });
+    expect(loadCollectionsCache("shopify", ORIGIN)).toBeNull();
+  });
+
+  it("keeps the pages that loaded when a later listing page fails, flagged partial and not cached", async () => {
+    const full = Array.from({ length: 250 }, (_, i) => ({ handle: `c${i}`, title: `C${i}`, products_count: 1 }));
+    vi.stubGlobal("fetch", routedFetch({ listing: (page) => (page === 1 ? jsonResponse({ collections: full }) : status(500)) }));
+
+    const { value } = await settle(shopifyAdapter.listCollections(ORIGIN));
+    expect(value.collections).toHaveLength(250);
+    expect(value.partial).toBe(true);
+    expect(loadCollectionsCache("shopify", ORIGIN)).toBeNull();
+  });
+
+  it("does not cache when a complete listing is followed by a transient probe failure", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url) => (url.includes("/collections.json") ? jsonResponse(tees) : status(429)))
+    );
+    const { value } = await settle(shopifyAdapter.listCollections(ORIGIN));
+    expect(value.collections.map((c) => c.handle)).toEqual(["tees"]);
+    expect(value.partial).toBe(true);
+    expect(loadCollectionsCache("shopify", ORIGIN)).toBeNull();
+  });
+
+  it("does not cache when a probe request is dropped", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url) => {
+        if (url.includes("/collections.json")) return jsonResponse(tees);
+        throw new TypeError("Failed to fetch");
+      })
+    );
+    const { value } = await settle(shopifyAdapter.listCollections(ORIGIN));
+    expect(value.partial).toBe(true);
+    expect(loadCollectionsCache("shopify", ORIGIN)).toBeNull();
+  });
+
+  it("treats a probe answering 408 (request timeout) as transient, so not cached", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url) => (url.includes("/collections.json") ? jsonResponse(tees) : status(408))));
+    const { value } = await settle(shopifyAdapter.listCollections(ORIGIN));
+    expect(value.partial).toBe(true);
+    expect(loadCollectionsCache("shopify", ORIGIN)).toBeNull();
+  });
+
+  it("treats a listing answering 408 as transient", async () => {
+    vi.stubGlobal("fetch", routedFetch({ listing: () => status(408), probes: { all: true } }));
+    const { value } = await settle(shopifyAdapter.listCollections(ORIGIN));
+    expect(value.partial).toBe(true);
+    expect(loadCollectionsCache("shopify", ORIGIN)).toBeNull();
+  });
+
+  it.each([400, 405, 422, 451])("treats a probe answering %i as the store's own answer: definitive and cached", async (code) => {
+    vi.stubGlobal("fetch", vi.fn(async (url) => (url.includes("/collections.json") ? jsonResponse(tees) : status(code))));
+    const { value } = await settle(shopifyAdapter.listCollections(ORIGIN));
+    expect(value.partial).toBeUndefined();
+    expect(loadCollectionsCache("shopify", ORIGIN)).not.toBeNull();
+  });
+
+  it.each([400, 405, 422, 451])("treats a listing answering %i as definitive and caches what probing found", async (code) => {
+    vi.stubGlobal("fetch", routedFetch({ listing: () => status(code), probes: { all: true } }));
+    const { value } = await settle(shopifyAdapter.listCollections(ORIGIN));
+    expect(value.collections.map((c) => c.handle)).toEqual(["all"]);
+    expect(value.partial).toBeUndefined();
+    expect(loadCollectionsCache("shopify", ORIGIN)).not.toBeNull();
+  });
+
+  it("keeps the locale-fallback rule status-based: a 405 locale listing is definitive, so the plain origin is tried", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url) => {
+        const u = new URL(url);
+        if (u.pathname.startsWith("/en-nz/")) return status(405);
+        return u.pathname.endsWith("/collections.json") ? jsonResponse(tees) : status(404);
+      })
+    );
+    const { value } = await settle(shopifyAdapter.listCollections(LOCALE));
+    expect(value.origin).toBe(ORIGIN);
+  });
+
+  it("treats a probe answering 200 with a body that isn't JSON as definitive (like the listing), and caches", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url) =>
+        url.includes("/collections.json")
+          ? jsonResponse(tees)
+          : { ok: true, status: 200, json: async () => Promise.reject(new SyntaxError("<html>")) }
+      )
+    );
+    const { value } = await settle(shopifyAdapter.listCollections(ORIGIN));
+    expect(value.partial).toBeUndefined();
+    expect(loadCollectionsCache("shopify", ORIGIN)).not.toBeNull();
+  });
+
+  it("treats a probe body cut short as transient", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url) =>
+        url.includes("/collections.json")
+          ? jsonResponse(tees)
+          : { ok: true, status: 200, json: async () => Promise.reject(new TypeError("network error")) }
+      )
+    );
+    const { value } = await settle(shopifyAdapter.listCollections(ORIGIN));
+    expect(value.partial).toBe(true);
+    expect(loadCollectionsCache("shopify", ORIGIN)).toBeNull();
+  });
+
+  it("caches a 403 listing (a store that blocks it) as a definitive answer", async () => {
+    vi.stubGlobal("fetch", routedFetch({ listing: () => status(403), probes: { all: true } }));
+    const { value } = await settle(shopifyAdapter.listCollections(ORIGIN));
+    expect(value.collections.map((c) => c.handle)).toEqual(["all"]);
+    expect(value.partial).toBeUndefined();
+    expect(loadCollectionsCache("shopify", ORIGIN)).not.toBeNull();
+  });
+
+  it("treats a listing that is an HTML page as definitive: an unsupported store, not cached as partial", async () => {
+    vi.stubGlobal(
+      "fetch",
+      routedFetch({ listing: () => ({ ok: true, status: 200, json: async () => Promise.reject(new SyntaxError("<html>")) }) })
+    );
+    const { error } = await settle(shopifyAdapter.listCollections(ORIGIN));
+    expect(error).toMatchObject({ kind: "unsupported-platform" });
+  });
+
+  it("propagates an abort in the middle of the listing, keeping what loaded out of the cache", async () => {
+    const abort = Object.assign(new Error("aborted"), { name: "AbortError" });
+    const full = Array.from({ length: 250 }, (_, i) => ({ handle: `c${i}`, title: `C${i}`, products_count: 1 }));
+    const fetchMock = routedFetch({
+      listing: (page) => {
+        if (page === 1) return jsonResponse({ collections: full });
+        throw abort;
+      },
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const { error } = await settle(shopifyAdapter.listCollections(ORIGIN));
+    expect(error).toBe(abort);
+    expect(loadCollectionsCache("shopify", ORIGIN)).toBeNull();
+    expect(probeUrls(fetchMock)).toEqual([]);
+  });
+
+  it("propagates an abort in the middle of probing, without trying the other handles", async () => {
+    const abort = Object.assign(new Error("aborted"), { name: "AbortError" });
+    const fetchMock = vi.fn(async (url) => {
+      if (url.includes("/collections.json")) return status(429);
+      throw abort;
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const { error } = await settle(shopifyAdapter.listCollections(ORIGIN));
+    expect(error).toBe(abort);
+    expect(loadCollectionsCache("shopify", ORIGIN)).toBeNull();
+    expect(fetchMock.mock.calls.filter(([u]) => u.includes("/collections/"))).toHaveLength(1);
+  });
+
+  it("still caches a definitive answer (listing works, every probe is a 404)", async () => {
+    vi.stubGlobal("fetch", routedFetch({ listing: () => jsonResponse(tees) }));
+    const { value } = await settle(shopifyAdapter.listCollections(ORIGIN));
+    expect(value.partial).toBeUndefined();
+    expect(loadCollectionsCache("shopify", ORIGIN)).not.toBeNull();
+  });
+
+  it("keeps the locale origin and reports the error when the locale listing is rate limited", async () => {
+    const fetchMock = vi.fn(async () => status(429));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { error } = await settle(shopifyAdapter.listCollections(LOCALE));
+    expect(error).toMatchObject({ kind: "rate-limited" });
+    // The plain origin was never asked.
+    expect(fetchMock.mock.calls.every(([url]) => new URL(url).pathname.startsWith("/en-nz/"))).toBe(true);
+    expect(loadCollectionsCache("shopify", ORIGIN)).toBeNull();
+  });
+
+  it("keeps the locale origin when its listing fails with a dropped connection", async () => {
+    const fetchMock = vi.fn(async () => {
+      throw new TypeError("Failed to fetch");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const { error } = await settle(shopifyAdapter.listCollections(LOCALE));
+    expect(error).toMatchObject({ kind: "blocked-or-offline" });
+    expect(fetchMock.mock.calls.every(([url]) => new URL(url).pathname.startsWith("/en-nz/"))).toBe(true);
+  });
+
+  it("keeps the locale origin and flags a partial locale result instead of falling back", async () => {
+    const fetchMock = vi.fn(async (url) => {
+      const u = new URL(url);
+      if (!u.pathname.startsWith("/en-nz/")) return jsonResponse(tees);
+      return u.pathname.endsWith("/collections.json") ? status(500) : status(404);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    // Listing 500s and no probe finds anything: an error, not a switch to the plain origin.
+    const { error } = await settle(shopifyAdapter.listCollections(LOCALE));
+    expect(error).toMatchObject({ kind: "server-error" });
+    expect(fetchMock.mock.calls.every(([url]) => new URL(url).pathname.startsWith("/en-nz/"))).toBe(true);
+  });
+
+  it("keeps the locale origin when its listing is empty because a probe was rate limited", async () => {
+    const fetchMock = vi.fn(async (url) => {
+      const u = new URL(url);
+      if (!u.pathname.startsWith("/en-nz/")) return jsonResponse(tees);
+      return u.pathname.endsWith("/collections.json") ? jsonResponse({ collections: [] }) : status(429);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { value } = await settle(shopifyAdapter.listCollections(LOCALE));
+    expect(value).toEqual({ collections: [], allProductsHandle: null, partial: true });
+    expect(value.origin).toBeUndefined();
+    expect(fetchMock.mock.calls.every(([url]) => new URL(url).pathname.startsWith("/en-nz/"))).toBe(true);
+  });
+
+  it("still falls back when the locale answers definitively, but reports a transient failure of the plain origin", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url) => (new URL(url).pathname.startsWith("/en-nz/") ? status(404) : status(503)))
+    );
+    const { error } = await settle(shopifyAdapter.listCollections(LOCALE));
+    expect(error).toMatchObject({ kind: "server-error" });
+  });
+});
+
 describe("shopifyAdapter metadata", () => {
   it("labels its filter sections", () => {
     expect(shopifyAdapter.labels).toEqual({ vendors: "Vendor", categories: "Product Type" });
