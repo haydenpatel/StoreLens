@@ -39,11 +39,25 @@ const isObject = (value) => typeof value === "object" && value !== null && !Arra
 const asArray = (value) => (Array.isArray(value) ? value : []);
 const text = (value) => (typeof value === "string" ? value.trim() : "");
 
+// A price as a number, or NaN when the feed gave none: Number(null) is 0, which
+// would turn a product with no price into a free one.
+const toPrice = (value) => {
+  if (typeof value === "number") return value;
+  if (typeof value === "string" && value.trim() !== "") return Number(value);
+  return NaN;
+};
+
+// A product that can't be bought yet is not in stock.
+const NOT_BUYABLE_STATUSES = new Set(["sold-out", "coming-soon"]);
+
 const CURRENCY_CODE = /^[A-Z]{3}$/;
 
 // How long to wait for store.json. It is an optional extra and the products
 // load alongside it, so a slow answer mustn't hold the shop up.
 const STORE_INFO_TIMEOUT_MS = 5000;
+// How much longer the products wait for it once they have arrived themselves.
+// A slow answer then lands in the cached feed for the next read (see readFeed).
+const STORE_INFO_GRACE_MS = 750;
 
 // What the shop says about itself, from store.json: the currency its prices are
 // in (the products feed has none) and how many products it has. Both are
@@ -94,10 +108,26 @@ async function readProducts(shop) {
   return data.filter(isObject);
 }
 
-// The two requests run side by side. Only the products can fail the load.
+// The two requests run side by side. Only the products can fail the load, and
+// they aren't held for store.json: once they are in, it gets a short grace, and
+// if it is later than that the feed goes ahead without the currency and count
+// (prices show with the default "$") and picks them up when they arrive, for
+// whoever reads this cached feed next.
 async function readFeed(shop) {
-  const [products, info] = await Promise.all([readProducts(shop), readStoreInfo(shop)]);
-  return { products, ...info };
+  const infoRequest = readStoreInfo(shop);
+  const products = await readProducts(shop);
+  const feed = { products };
+  let timer;
+  const arrived = infoRequest.then((info) => {
+    Object.assign(feed, info);
+    return true;
+  });
+  const late = new Promise((resolve) => {
+    timer = setTimeout(() => resolve(false), STORE_INFO_GRACE_MS);
+  });
+  await Promise.race([arrived, late]);
+  clearTimeout(timer);
+  return feed;
 }
 
 // The shop's raw products and store info ({ products, currency?, productsCount? }),
@@ -134,8 +164,9 @@ export function normalizeBigCartelProduct(raw, origin, currency) {
   const groups = asArray(raw.option_groups)
     .filter(isObject)
     .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
-  const soldOutProduct = raw.status === "sold-out";
-  const basePrice = Number(raw.default_price ?? raw.price);
+  const soldOutProduct = NOT_BUYABLE_STATUSES.has(raw.status);
+  const productPrice = toPrice(raw.price);
+  const basePrice = Number.isFinite(toPrice(raw.default_price)) ? toPrice(raw.default_price) : productPrice;
 
   const variants = asArray(raw.options)
     .filter(isObject)
@@ -144,7 +175,10 @@ export function normalizeBigCartelProduct(raw, origin, currency) {
       const valueOf = (group) => text(values.find((v) => v.option_group_id === group.id)?.name);
       const optionValues = groups.map(valueOf);
       while (optionValues.length > 0 && optionValues[optionValues.length - 1] === "") optionValues.pop();
-      const price = Number(option.price ?? raw.price);
+      // An option with no price of its own takes the product's; with neither
+      // there is no price to show, and the variant is dropped below.
+      const optionPrice = toPrice(option.price);
+      const price = Number.isFinite(optionPrice) ? optionPrice : productPrice;
       return {
         id: option.id,
         title: groups.length ? text(option.name) : "",

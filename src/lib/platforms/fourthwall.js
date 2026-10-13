@@ -22,14 +22,50 @@ export const MAX_PRODUCT_PAGES = 100;
 // How long detection waits before deciding a store isn't Fourthwall. It runs
 // before every uncached load, so a slow host mustn't hold up a Shopify store.
 const DETECT_TIMEOUT_MS = 5000;
+// The pause before asking again when the first answer was inconclusive.
+const DETECT_RETRY_DELAY_MS = 500;
+
+// Resolves after `ms`, or rejects as soon as the signal aborts.
+const pause = (ms, signal) =>
+  new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
 
 const LOCALE = "(\\/[a-z]{2}-[a-z]{3})?";
 const ISO_8601 = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})$/;
-const COLLECTION_PATH = new RegExp(`^${LOCALE}\\/collections\\/([^/]+?)(?:\\.json|\\/products|\\/\\d+(?:\\.json)?)?\\/?$`, "i");
+const COLLECTION_PATH = new RegExp(`^${LOCALE}\\/collections\\/([^/]+?)(?:\\.json|\\/products(?:\\.json)?|\\/\\d+(?:\\.json)?)?\\/?$`, "i");
 const ROOT_LOCALE_PATH = /^(\/[a-z]{2}-[a-z]{3})\/?$/i;
 
 const SIZE_TOKEN = /^(?:[2-9]?x{0,3}[sl]|[2-9]?xs|m|one size|os|\d{1,2}(?:\.5)?)$/i;
 const PLACEHOLDER_TITLES = new Set(["default", "default title", "default option"]);
+
+const isObject = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+
+// A price in cents as a number, whether the feed sent 2000 or "2000"; NaN for
+// anything else (null must not read as 0).
+const toCents = (value) => {
+  if (typeof value === "number") return value;
+  if (typeof value === "string" && value.trim() !== "") return Number(value);
+  return NaN;
+};
+
+// A product's link: the feed gives a path ("/products/x"), but an absolute URL
+// is kept as it is. Anything else falls back to the product's handle.
+function productUrl(raw, origin) {
+  const url = typeof raw.url === "string" ? raw.url.trim() : "";
+  if (/^https?:\/\//i.test(url)) return url;
+  if (url.startsWith("/") && !url.startsWith("//")) return `${origin}${url}`;
+  return `${origin}/products/${raw.handle}`;
+}
 
 const looksLikeSize = (value) => value.split("/").every((part) => SIZE_TOKEN.test(part.trim()));
 
@@ -69,15 +105,19 @@ function guessOptions(variantTitles) {
 export function normalizeFourthwallProduct(raw, origin) {
   const basePrice = parseFloat(raw.price);
   const compareAt = parseFloat(raw.compare_at_price);
-  const rawVariants = Array.isArray(raw.variants) ? raw.variants : [];
+  // A malformed variant is skipped rather than failing the page.
+  const rawVariants = Array.isArray(raw.variants) ? raw.variants.filter(isObject) : [];
   const { options, variantOptions } = guessOptions(rawVariants.map((v) => String(v.title ?? "")));
   const currency = rawVariants.find((v) => /^[A-Z]{3}$/.test(v.price?.currency_iso))?.price.currency_iso;
   // Stock is only reported for the product as a whole, so every variant shares
-  // it. A product with no variants has nothing to buy, so isn't available.
-  const available = rawVariants.length > 0 && Boolean(raw.available);
+  // it. A product with no variants has nothing to buy, so isn't available. A
+  // missing field isn't "sold out" (that would empty the in-stock view if the
+  // feed dropped it): only an explicit false is.
+  const available = rawVariants.length > 0 && raw.available !== false;
 
   const variants = rawVariants.map((v, i) => {
-    const price = Number.isFinite(v.price?.cents) ? v.price.cents / 100 : basePrice;
+    const cents = toCents(v.price?.cents);
+    const price = Number.isFinite(cents) ? cents / 100 : basePrice;
     return {
       id: v.id,
       title: options.length ? String(v.title) : "",
@@ -94,7 +134,7 @@ export function normalizeFourthwallProduct(raw, origin) {
     id: raw.id,
     handle: raw.handle,
     title: raw.title,
-    url: typeof raw.url === "string" ? `${origin}${raw.url}` : `${origin}/products/${raw.handle}`,
+    url: productUrl(raw, origin),
     images: raw.image ? [{ url: raw.image }] : [],
     vendors: [],
     categories: [],
@@ -133,12 +173,24 @@ async function fetchCollection(collectionUrl, { signal, onProgress, maxPages = M
       // no longer returning products, not a missing collection.
       return page > 1 && err.kind === "not-found" ? new StoreError("empty", { status: err.status, cause: err }) : err;
     };
+    const request = () => fetchWithRetry(`${origin}/collections/${collection}/${page}.json`, { signal });
     let response;
     try {
-      response = await fetchWithRetry(`${origin}/collections/${collection}/${page}.json`, { signal });
+      response = await request();
     } catch (err) {
       if (isAbort(err, signal)) throw err;
-      throw await diagnose({ cause: err });
+      const diagnosis = await diagnose({ cause: err });
+      if (diagnosis.kind !== "not-found" || page > 1) throw diagnosis;
+      // The shop answers but this page threw. The feed's real 404 carries no
+      // CORS headers, so it looks exactly like this, and so does a dropped
+      // connection. Ask once more: a blip then loads the collection, where
+      // calling it "not found" would also drop it from the visited list.
+      try {
+        response = await request();
+      } catch (retryErr) {
+        if (isAbort(retryErr, signal)) throw retryErr;
+        throw diagnosis;
+      }
     }
     if (!response.ok) throw await diagnose({ status: response.status });
 
@@ -152,7 +204,7 @@ async function fetchCollection(collectionUrl, { signal, onProgress, maxPages = M
     if (!Array.isArray(data?.products)) throw new StoreError("unsupported-platform");
     // Never "done" from a page's size: the end is an empty page, whatever the
     // page size turns out to be.
-    return { items: data.products.map((raw) => normalizeFourthwallProduct(raw, origin)), done: false };
+    return { items: data.products.filter(isObject).map((raw) => normalizeFourthwallProduct(raw, origin)), done: false };
   };
 
   const { items, pageError, truncated } = await fetchPages({
@@ -175,28 +227,42 @@ async function fetchCollection(collectionUrl, { signal, onProgress, maxPages = M
   return { products: items, pageError, truncated, notices };
 }
 
-// Asks whether the store is on Fourthwall: its "all" collection answers with
-// {current_page, products}, where Shopify answers {collection} (or a plain 404).
-// One request, no retry (Shopify answers some neighbouring paths with a 429),
-// and a short timeout: not being Fourthwall is the usual answer and must be
-// quick. Only a user abort is rethrown.
-async function detect(url, { signal } = {}) {
+// One detection request: "yes" (a Fourthwall product list), "no" (an answer
+// that says it isn't, or a throw: a host that isn't a store or sends no CORS
+// headers), or "unsure" (a rate limit, a server error or no answer in time),
+// which says nothing about the platform. Only a user abort is rethrown.
+async function askIfFourthwall(url, signal) {
   const timeout = new AbortController();
   const onAbort = () => timeout.abort();
   const timer = setTimeout(onAbort, DETECT_TIMEOUT_MS);
   signal?.addEventListener("abort", onAbort, { once: true });
   try {
     const response = await fetch(`${url.origin}/collections/${DEFAULT_COLLECTION}.json`, { signal: timeout.signal });
-    if (!response.ok) return false;
+    if (response.status === 429 || response.status >= 500) return "unsure";
+    if (!response.ok) return "no";
     const data = await response.json();
-    return Array.isArray(data?.products) && typeof data.current_page === "number";
+    return Array.isArray(data?.products) && typeof data.current_page === "number" ? "yes" : "no";
   } catch (err) {
     if (signal?.aborted) throw err;
-    return false;
+    return timeout.signal.aborted ? "unsure" : "no";
   } finally {
     clearTimeout(timer);
     signal?.removeEventListener("abort", onAbort);
   }
+}
+
+// Asks whether the store is on Fourthwall: its "all" collection answers with
+// {current_page, products}, where Shopify answers {collection} (or a plain 404).
+// Not being Fourthwall is the usual answer and must be quick, so a clear "no"
+// is final after one request with a short timeout. Only an inconclusive answer
+// (slow, rate-limited or failing, as a Fourthwall custom domain can be on a cold
+// cache) is asked once more after a pause; if still unsure, it isn't claimed.
+// Only a user abort is rethrown.
+async function detect(url, { signal } = {}) {
+  const first = await askIfFourthwall(url, signal);
+  if (first !== "unsure") return first === "yes";
+  await pause(DETECT_RETRY_DELAY_MS, signal);
+  return (await askIfFourthwall(url, signal)) === "yes";
 }
 
 /** @type {import("./types").PlatformAdapter} */

@@ -42,8 +42,13 @@ describe("the Big Cartel adapter follows the adapter contract", () => {
       product({ permalink: "flagged", on_sale: true }),
       // A price that isn't a number.
       product({ permalink: "bad-price", options: [option("Default", { price: "free" })] }),
+      // No price anywhere, and not on sale yet.
+      product({ permalink: "no-price", price: null, default_price: null, status: "coming-soon", options: [option("Default", { price: null })] }),
+      // Malformed entries mixed in.
+      null,
+      product({ permalink: "holes", images: [null], categories: [null], options: [null, option("Default")] }),
     ]);
-    expect(products).toHaveLength(6);
+    expect(products).toHaveLength(8);
     for (const p of products) expectNeutralProduct(p, bigcartelAdapter.capabilities);
   });
 

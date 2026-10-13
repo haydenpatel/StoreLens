@@ -181,6 +181,50 @@ describe("normalizeBigCartelProduct", () => {
     expect(p.createdAt).toBeUndefined();
   });
 
+  describe("price and stock edge cases", () => {
+    it("does not turn a missing price into a free product", () => {
+      const p = normalizeBigCartelProduct(
+        product({ price: null, default_price: null, options: [option("Default", { price: null })] }),
+        ORIGIN
+      );
+      expect(p.variants).toEqual([]);
+      expect(p.available).toBe(false);
+    });
+
+    it("uses the product's price for an option with none of its own, and reads numeric strings", () => {
+      const p = normalizeBigCartelProduct(product({ price: "12.5", default_price: "12.5", options: [option("Default", { price: null })] }), ORIGIN);
+      expect(p.variants.map((v) => v.price)).toEqual([12.5]);
+    });
+
+    it("keeps a genuinely free option at 0", () => {
+      const p = normalizeBigCartelProduct(product({ price: 0, default_price: 0, options: [option("Default", { price: 0 })] }), ORIGIN);
+      expect(p.variants.map((v) => v.price)).toEqual([0]);
+    });
+
+    it("does not count a coming-soon product as in stock", () => {
+      const p = normalizeBigCartelProduct(product({ status: "coming-soon" }), ORIGIN);
+      expect(p.available).toBe(false);
+      expect(p.variants.every((v) => !v.available)).toBe(true);
+    });
+  });
+
+  it("skips malformed entries inside a product instead of failing", () => {
+    const group = optionGroup("Size", ["S"]);
+    const p = normalizeBigCartelProduct(
+      product({
+        option_groups: [null, group, 7],
+        options: [null, option("S", { values: [group.values[0], null] }), "x"],
+        images: [null, { url: "https://example.com/a.png" }],
+        categories: [null, { name: "Tees", permalink: "tees" }],
+        artists: [null],
+      }),
+      ORIGIN
+    );
+    expect(p.variants).toHaveLength(1);
+    expect(p.categories).toEqual(["Tees"]);
+    expect(p.images).toHaveLength(1);
+  });
+
   it("drops a created_at it can't read", () => {
     expect(normalizeBigCartelProduct(product({ created_at: "last week" }), ORIGIN).createdAt).toBeUndefined();
   });
@@ -337,13 +381,32 @@ describe("the shop's currency", () => {
     );
     let result;
     const pending = bigcartelAdapter.fetchCollection(`${ORIGIN}/products`).then((r) => (result = r));
-    await vi.advanceTimersByTimeAsync(4_999);
+    // The products wait only a short grace for store.json, not its 5 s timeout.
+    await vi.advanceTimersByTimeAsync(700);
     expect(result).toBeUndefined();
-    await vi.advanceTimersByTimeAsync(1);
+    await vi.advanceTimersByTimeAsync(100);
     await pending;
     expect(result.pageError).toBeNull();
     expect(result.products).toHaveLength(4);
     expect(result.products.every((p) => p.currency === undefined)).toBe(true);
+  });
+
+  it("applies a store.json that arrives after the products to the cached feed", async () => {
+    let release;
+    const slow = new Promise((resolve) => (release = resolve));
+    vi.stubGlobal(
+      "fetch",
+      fakeBigCartelFetch({ "example-shop": catalog() }, (u) =>
+        u.pathname.endsWith("/store.json") ? slow.then(() => jsonResponse({ products_count: 4, currency: { code: "EUR" } })) : undefined
+      )
+    );
+    const first = bigcartelAdapter.fetchCollection(`${ORIGIN}/products`);
+    await vi.advanceTimersByTimeAsync(800);
+    expect((await first).products.every((p) => p.currency === undefined)).toBe(true);
+    release();
+    await vi.advanceTimersByTimeAsync(0);
+    const second = await bigcartelAdapter.fetchCollection(`${ORIGIN}/products`);
+    expect(second.products.every((p) => p.currency === "EUR")).toBe(true);
   });
 
   it("does not stop products loading when store.json throws, is locked or isn't JSON", async () => {
@@ -441,6 +504,12 @@ describe("listCollections", () => {
     const { collections } = await bigcartelAdapter.listCollections(ORIGIN);
     expect(collections.map((c) => c.handle)).toEqual(["all", "tees"]);
     expect(collections[0]).toMatchObject({ title: "All Products", products_count: 2 });
+  });
+
+  it("still loads every product for /category/all, whose handle is the All Products one", async () => {
+    stubShop([product({ categories: [category("All", "all")] }), product()]);
+    const { products } = await bigcartelAdapter.fetchCollection(`${ORIGIN}/category/all`);
+    expect(products).toHaveLength(2);
   });
 
   it("throws the failure, so the page can explain it", async () => {
