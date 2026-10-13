@@ -529,6 +529,32 @@ describe("store resolution that takes a while", () => {
     expect(titleShown("Alpha Tee")).not.toBeNull();
   });
 
+  it("retries only the store on screen: after store A's discovery failed and B's did too, retry opens B's all-products and nothing from A", async () => {
+    let failing = true;
+    const down = (url) =>
+      failing && (url.pathname === "/collections.json" || url.searchParams.get("limit") === "1")
+        ? jsonResponse({}, { ok: false, status: 429 })
+        : undefined;
+    vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: storeA(), [B]: storeB() }, down));
+    openAt(`/${A}`);
+    const user = userEvent.setup();
+    await screen.findByTitle("Retry loading collections", {}, { timeout: 10000 });
+
+    await user.click(input());
+    await user.paste(B);
+    await user.keyboard("{Enter}");
+    // B fails too (the retry button is still there, now for B).
+    await screen.findByDisplayValue(B);
+    await screen.findByTitle("Retry loading collections", {}, { timeout: 10000 });
+
+    failing = false;
+    await user.click(screen.getByTitle("Retry loading collections"));
+    expect(await heading(2, 2)).not.toBeNull();
+    expect(titleShown("Echo Hat")).not.toBeNull();
+    expect(titleShown("Alpha Tee")).toBeNull();
+    expect(input().value).toBe(B);
+  });
+
   it("shows the error when resolving fails for a reason other than being superseded", async () => {
     slowResolve.override = (url, options, real) =>
       url.host === A ? Promise.reject(new TypeError("Failed to fetch")) : real(url, options);

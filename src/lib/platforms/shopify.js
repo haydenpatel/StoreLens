@@ -193,21 +193,24 @@ async function fetchCollectionsPage(origin, page, signal) {
 // collection rather than inferred from list position.
 const ALL_PRODUCTS_HANDLES = ["all", "all-products", "all-1", "everything", "shop-all"];
 
-// What a failed listing or probe response means, by one rule for both.
+// What a failed listing response means: a 404 here isn't a missing collection,
+// the store has no listing at all, which is what a store on another platform
+// looks like.
 function kindFromListingStatus(status) {
-  // A 404 here isn't a missing collection: the store has no listing at all,
-  // which is what a store on another platform looks like.
   return status === 404 || status === 410 ? "unsupported-platform" : kindFromStatus(status);
 }
 
-// A failure that says nothing about what the store has: a rate limit, a server
-// error or a dropped connection. Anything else (a 404, a block, a page that
-// isn't JSON) is the store's own answer. Trade-off: a request that fails at the
-// network level (a /collections.json blocked without CORS headers, say) can't
-// be told apart from being offline, so it counts as transient: such a store's
-// list stays uncached and offers the retry button rather than risk pinning an
-// incomplete list.
-const isTransient = (err) => ["rate-limited", "server-error", "blocked-or-offline"].includes(err?.kind);
+// A status that says nothing about what the store has: a rate limit, a request
+// timeout or a server error. Any other answer (404, 403, 400, ...) is the
+// store's own, however odd, and counts as definitive.
+const isTransientStatus = (status) => status === 429 || status === 408 || status >= 500;
+
+// A failure that says nothing about what the store has: a transient status or a
+// dropped connection. Trade-off: a request that fails at the network level (a
+// /collections.json blocked without CORS headers, say) can't be told apart from
+// being offline, so it counts as transient: such a store's list stays uncached
+// and offers the retry button rather than risk pinning an incomplete list.
+const isTransient = (err) => err?.kind === "blocked-or-offline" || isTransientStatus(err?.status);
 
 // Returns { found, inconclusive }: `inconclusive` means a candidate failed
 // transiently, so "nothing found" may not be the store's real answer.
@@ -221,7 +224,7 @@ async function probeAllProductsCollection(origin, existingHandles, signal) {
         { signal }
       );
       if (!response.ok) {
-        if (isTransient({ kind: kindFromListingStatus(response.status) })) inconclusive = true;
+        if (isTransientStatus(response.status)) inconclusive = true;
         continue;
       }
       const data = await response.json();

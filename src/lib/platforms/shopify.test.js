@@ -677,11 +677,46 @@ describe("listCollections when discovery fails transiently", () => {
     expect(loadCollectionsCache("shopify", ORIGIN)).toBeNull();
   });
 
-  it.each([400, 405, 408, 451])("treats a probe answering %i like the listing does: transient, so not cached", async (code) => {
-    vi.stubGlobal("fetch", vi.fn(async (url) => (url.includes("/collections.json") ? jsonResponse(tees) : status(code))));
+  it("treats a probe answering 408 (request timeout) as transient, so not cached", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url) => (url.includes("/collections.json") ? jsonResponse(tees) : status(408))));
     const { value } = await settle(shopifyAdapter.listCollections(ORIGIN));
     expect(value.partial).toBe(true);
     expect(loadCollectionsCache("shopify", ORIGIN)).toBeNull();
+  });
+
+  it("treats a listing answering 408 as transient", async () => {
+    vi.stubGlobal("fetch", routedFetch({ listing: () => status(408), probes: { all: true } }));
+    const { value } = await settle(shopifyAdapter.listCollections(ORIGIN));
+    expect(value.partial).toBe(true);
+    expect(loadCollectionsCache("shopify", ORIGIN)).toBeNull();
+  });
+
+  it.each([400, 405, 422, 451])("treats a probe answering %i as the store's own answer: definitive and cached", async (code) => {
+    vi.stubGlobal("fetch", vi.fn(async (url) => (url.includes("/collections.json") ? jsonResponse(tees) : status(code))));
+    const { value } = await settle(shopifyAdapter.listCollections(ORIGIN));
+    expect(value.partial).toBeUndefined();
+    expect(loadCollectionsCache("shopify", ORIGIN)).not.toBeNull();
+  });
+
+  it.each([400, 405, 422, 451])("treats a listing answering %i as definitive and caches what probing found", async (code) => {
+    vi.stubGlobal("fetch", routedFetch({ listing: () => status(code), probes: { all: true } }));
+    const { value } = await settle(shopifyAdapter.listCollections(ORIGIN));
+    expect(value.collections.map((c) => c.handle)).toEqual(["all"]);
+    expect(value.partial).toBeUndefined();
+    expect(loadCollectionsCache("shopify", ORIGIN)).not.toBeNull();
+  });
+
+  it("keeps the locale-fallback rule status-based: a 405 locale listing is definitive, so the plain origin is tried", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url) => {
+        const u = new URL(url);
+        if (u.pathname.startsWith("/en-nz/")) return status(405);
+        return u.pathname.endsWith("/collections.json") ? jsonResponse(tees) : status(404);
+      })
+    );
+    const { value } = await settle(shopifyAdapter.listCollections(LOCALE));
+    expect(value.origin).toBe(ORIGIN);
   });
 
   it("treats a probe answering 200 with a body that isn't JSON as definitive (like the listing), and caches", async () => {
