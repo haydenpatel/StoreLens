@@ -1151,6 +1151,21 @@ describe("history writes and load cancellation (#82)", () => {
     });
   });
 
+  describe("Back to a non-canonical entry of the collection already on screen (A2)", () => {
+    it("is normalised in place too", async () => {
+      vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: storeA() }));
+      openAt(`/${A}/collections/tees`);
+      await heading(3, 3);
+      const entries = window.history.length;
+
+      await goTo(`/${A}/collections/tees/products/alpha-tee`);
+      await settle();
+      expect(here()).toBe(`/${A}/collections/tees`);
+      expect(pushedPaths()).toEqual([`/${A}/collections/tees/products/alpha-tee`]);
+      expect(window.history.length).toBe(entries + 1);
+    });
+  });
+
   describe("a load that is still running when the address moves on (B1, H3)", () => {
     const sleepFor = (ms) => settle(ms);
     // Starts with tees held in flight; the test then navigates and releases it.

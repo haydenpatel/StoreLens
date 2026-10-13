@@ -508,7 +508,9 @@ export default function StoreLensApp() {
         window.history.pushState(null, "", path);
       }
     }
-  }, [currentCollectionUrl]);
+    // loadVersion: reloading the collection already on screen from a link with
+    // another path still has to normalize that entry.
+  }, [currentCollectionUrl, loadVersion]);
 
   // Set default filter values
   const resetFilters = () => {
