@@ -952,3 +952,378 @@ describe("a Big Cartel shop", () => {
     expect(screen.queryByText(/dropdown/)).toBeNull();
   });
 });
+
+// The address bar and Recent Stores while collections load, switch and fail (#82).
+describe("history writes and load cancellation (#82)", () => {
+  // The address write is debounced by 300 ms, so these tests run on fake timers
+  // that also follow the real clock (the testing library's own waits need that).
+  beforeEach(() => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const settle = (ms = 450) => act(async () => void (await vi.advanceTimersByTimeAsync(ms)));
+  const userWithTimers = () => userEvent.setup({ advanceTimers: (ms) => vi.advanceTimersByTime(ms) });
+  // Moves the address bar as Back/Forward would, and tells the app.
+  const goTo = (path) =>
+    act(() => {
+      window.history.pushState(null, "", path);
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+  const productsOf = (collection) => ({ products: collection });
+  const priceOf = (rawProduct) => Number(rawProduct.variants[0].price);
+  const savedHistory = () => JSON.parse(window.localStorage.getItem("storelens-url-history"));
+  const holdCollection = (host, handle, promise, { after = 0 } = {}) => {
+    let seen = 0;
+    return (url) =>
+      url.host === host && url.pathname === `/collections/${handle}/products.json` && ++seen > after ? promise : undefined;
+  };
+
+  describe("the debounced address write (H1)", () => {
+    it("writes the filters 300 ms after the last change, and not before", async () => {
+      vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: storeA() }));
+      openAt(`/${A}/collections/tees`);
+      await heading(3, 3);
+      const user = userWithTimers();
+
+      await user.click(screen.getByRole("checkbox", { name: "Acme" }));
+      await settle(100);
+      expect(here()).toBe(`/${A}/collections/tees`);
+
+      await user.click(screen.getByRole("checkbox", { name: "Beta Co" }));
+      await settle(250);
+      expect(here()).toBe(`/${A}/collections/tees`);
+
+      await settle(100);
+      expect(here()).toBe(`/${A}/collections/tees?vendor=Acme&vendor=Beta+Co`);
+    });
+  });
+
+  describe("switching collections in the same store (A1)", () => {
+    it("keeps the price filter on the old entry while the new collection loads", async () => {
+      const store = storeA();
+      const prices = store.collections.tees.map(priceOf).sort((a, b) => a - b);
+      const range = `?minPrice=${prices[0]}&maxPrice=${prices[1]}`;
+      const slowMugs = deferred();
+      vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: store }, holdCollection(A, "mugs", slowMugs.promise)));
+      openAt(`/${A}/collections/tees${range}`);
+      await heading(2, 3);
+      const user = userWithTimers();
+
+      await user.click(input());
+      await user.clear(input());
+      await user.paste(`${A}/collections/mugs`);
+      await settle();
+      expect(here()).toBe(`/${A}/collections/tees${range}`);
+
+      await act(async () => slowMugs.release(jsonResponse(productsOf(store.collections.mugs))));
+      await heading(2, 2);
+      await settle();
+      expect(here()).toBe(`/${A}/collections/mugs`);
+
+      act(() => window.history.back());
+      await heading(2, 3);
+      await settle();
+      expect(here()).toBe(`/${A}/collections/tees${range}`);
+    });
+  });
+
+  describe("Back and Forward onto an entry while its collection loads (A1, B1)", () => {
+    // tees (no filters) -> mugs with a vendor filter, then Back to tees.
+    async function backToTeesWith(teesSecondLoad) {
+      const store = storeA();
+      vi.stubGlobal(
+        "fetch",
+        fakeShopifyFetch({ [A]: store }, holdCollection(A, "tees", teesSecondLoad.promise, { after: 1 }), { honorAbort: true })
+      );
+      openAt(`/${A}/collections/tees`);
+      await heading(3, 3);
+      const user = userWithTimers();
+      await user.click(input());
+      await user.clear(input());
+      await user.paste(`${A}/collections/mugs`);
+      await heading(2, 2);
+      await user.click(screen.getByRole("checkbox", { name: "Acme" }));
+      await settle();
+      expect(here()).toBe(`/${A}/collections/mugs?vendor=Acme`);
+
+      act(() => window.history.back());
+      await settle();
+      return store;
+    }
+
+    it("does not write the previous collection's filters onto an entry that had none", async () => {
+      const slowTees = deferred();
+      const store = await backToTeesWith(slowTees);
+      expect(here()).toBe(`/${A}/collections/tees`);
+
+      await act(async () => slowTees.release(jsonResponse(productsOf(store.collections.tees))));
+      await heading(3, 3);
+      await settle();
+      expect(here()).toBe(`/${A}/collections/tees`);
+    });
+
+    it("leaves the entry as it was when that load fails", async () => {
+      const slowTees = deferred();
+      await backToTeesWith(slowTees);
+
+      await act(async () => slowTees.release(jsonResponse({}, { ok: false, status: 403 })));
+      expect(await screen.findByText(/password protected or blocking access/)).not.toBeNull();
+      await settle();
+      expect(here()).toBe(`/${A}/collections/tees`);
+    });
+  });
+
+  describe("an entry whose store can't be resolved on Back (A1)", () => {
+    it("is not given the page's filters", async () => {
+      vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: storeA() }));
+      openAt(`/${A}/collections/tees`);
+      await heading(3, 3);
+      const user = userWithTimers();
+      await user.click(input());
+      await user.clear(input());
+      await user.paste(`${A}/collections/mugs`);
+      await heading(2, 2);
+      await user.click(screen.getByRole("checkbox", { name: "Acme" }));
+      await settle();
+
+      slowResolve.override = (url) => (url.host === A ? Promise.reject(new TypeError("Failed to fetch")) : undefined);
+      act(() => window.history.back());
+      expect(await screen.findByText("Failed to fetch")).not.toBeNull();
+      await settle();
+      expect(here()).toBe(`/${A}/collections/tees`);
+    });
+  });
+
+  describe("the sort (A4)", () => {
+    it("is not added to an entry that didn't have one when Back returns to it", async () => {
+      vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: storeA() }));
+      openAt(`/${A}/collections/tees`);
+      await heading(3, 3);
+      await goTo(`/${A}/collections/mugs?sort=price-asc`);
+      await heading(2, 2);
+      await settle();
+      expect(here()).toBe(`/${A}/collections/mugs?sort=price-asc`);
+
+      act(() => window.history.back());
+      await heading(3, 3);
+      await settle();
+      expect(here()).toBe(`/${A}/collections/tees`);
+    });
+
+    it("is still kept when the user switches collection", async () => {
+      vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: storeA() }));
+      openAt(`/${A}/collections/mugs?sort=price-asc`);
+      await heading(2, 2);
+      const user = userWithTimers();
+
+      await user.click(input());
+      await user.clear(input());
+      await user.paste(`${A}/collections/tees`);
+      await heading(3, 3);
+      await settle();
+      expect(here()).toBe(`/${A}/collections/tees?sort=price-asc`);
+    });
+  });
+
+  describe("a deep link to a non-canonical path (A2)", () => {
+    it("is normalised in place, without a second history entry", async () => {
+      vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: storeA() }));
+      const entries = window.history.length;
+      openAt(`/${A}/collections/tees/products/alpha-tee?vendor=Acme`);
+
+      await heading(2, 3);
+      await settle();
+      expect(pushedPaths()).toEqual([]);
+      expect(window.history.length).toBe(entries);
+      expect(here()).toBe(`/${A}/collections/tees?vendor=Acme`);
+    });
+  });
+
+  describe("a load that is still running when the address moves on (B1, H3)", () => {
+    const sleepFor = (ms) => settle(ms);
+    // Starts with tees held in flight; the test then navigates and releases it.
+    function holdTees(extraStores = {}, override) {
+      const store = storeA();
+      const slowTees = deferred();
+      const hold = holdCollection(A, "tees", slowTees.promise);
+      vi.stubGlobal(
+        "fetch",
+        fakeShopifyFetch({ [A]: store, ...extraStores }, (url) => hold(url) ?? override?.(url), { honorAbort: true })
+      );
+      openAt(`/${A}/collections/tees`);
+      const release = () => act(async () => slowTees.release(jsonResponse(productsOf(store.collections.tees))));
+      return { release };
+    }
+
+    it("is cancelled by a bare domain, which then loads its own collection", async () => {
+      const slowListing = deferred();
+      const { release } = holdTees({ [B]: storeB() }, (url) =>
+        url.host === B && url.pathname === "/collections.json" ? slowListing.promise : undefined
+      );
+      await waitFor(() => expect(input().disabled).toBe(true));
+
+      await goTo(`/${B}`);
+      await release();
+      await sleepFor(50);
+      expect(titleShown("Bravo Tee")).toBeNull();
+      expect(here()).toBe(`/${B}`);
+
+      await act(async () => slowListing.release(jsonResponse({ collections: [{ handle: "all", title: "All", products_count: 2 }] })));
+      await heading(2, 2);
+      expect(here()).toBe(`/${B}/collections/all`);
+      expect(pushedPaths()).toEqual([`/${B}`]);
+    });
+
+    it("is cancelled by invalid input", async () => {
+      const { release } = holdTees();
+      await waitFor(() => expect(input().disabled).toBe(true));
+
+      await goTo("/not%20a%20url");
+      await release();
+      await sleepFor(50);
+      expect(titleShown("Bravo Tee")).toBeNull();
+      expect(screen.getByText("Please enter a valid store or collection URL")).not.toBeNull();
+      expect(pushedPaths()).toEqual(["/not%20a%20url"]);
+      expect(input().disabled).toBe(false);
+    });
+
+    it("is cancelled by arriving back at the empty page", async () => {
+      const { release } = holdTees();
+      await waitFor(() => expect(input().disabled).toBe(true));
+
+      await goTo("/");
+      await release();
+      await sleepFor(50);
+      expect(titleShown("Bravo Tee")).toBeNull();
+      expect(here()).toBe("/");
+      expect(pushedPaths()).toEqual(["/"]);
+    });
+
+    it("cannot take the filters of the link that replaced it", async () => {
+      const slowB = deferred();
+      slowResolve.override = (url) => (url.host === B ? slowB.promise.then(() => detectAdapter(url)) : undefined);
+      const { release } = holdTees({ [B]: storeB() });
+      await waitFor(() => expect(input().disabled).toBe(true));
+
+      await goTo(`/${B}/collections/all?vendor=Zed`);
+      await release();
+      await sleepFor(50);
+      expect(titleShown("Bravo Tee")).toBeNull();
+      expect(here()).toBe(`/${B}/collections/all?vendor=Zed`);
+
+      await act(async () => slowB.release());
+      await heading(2, 2);
+      expect(titleShown("Echo Hat")).not.toBeNull();
+      expect(here()).toBe(`/${B}/collections/all?vendor=Zed`);
+    });
+  });
+
+  describe("submitting input that isn't a store (B2)", () => {
+    async function loadedTees() {
+      vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: storeA() }));
+      openAt(`/${A}/collections/tees`);
+      await heading(3, 3);
+      return userWithTimers();
+    }
+
+    it("clears the grid, sidebar and address for invalid input", async () => {
+      const user = await loadedTees();
+      await user.clear(input());
+      await user.type(input(), "not a url{Enter}");
+
+      expect(screen.getByText("Please enter a valid store or collection URL")).not.toBeNull();
+      expect(titleShown("Bravo Tee")).toBeNull();
+      expect(screen.queryByText(/products$/)).toBeNull();
+      expect(screen.queryByText("Filters")).toBeNull();
+      expect(here()).toBe("/");
+      expect(pushedPaths()).toEqual(["/"]);
+
+      act(() => window.history.back());
+      await heading(3, 3);
+    });
+
+    it("clears the grid, sidebar and address for an empty submit", async () => {
+      const user = await loadedTees();
+      await user.clear(input());
+      await user.type(input(), "{Enter}");
+
+      expect(titleShown("Bravo Tee")).toBeNull();
+      expect(screen.queryByText("Filters")).toBeNull();
+      expect(here()).toBe("/");
+    });
+  });
+
+  describe("a bare domain pasted while the previous store's discovery is still running (B3)", () => {
+    it("does not let the previous store's discovery start the new store's auto-load", async () => {
+      const slowListingA = deferred();
+      const slowB = deferred();
+      slowResolve.override = (url) => (url.host === B ? slowB.promise.then(() => detectAdapter(url)) : undefined);
+      const hold = (url) => (url.host === A && url.pathname === "/collections.json" ? slowListingA.promise : undefined);
+      const fetchMock = fakeShopifyFetch({ [A]: storeA(), [B]: storeB() }, hold);
+      vi.stubGlobal("fetch", fetchMock);
+      openAt("/");
+      const user = userWithTimers();
+      await user.click(input());
+      await user.paste(A);
+      await user.clear(input());
+      await user.paste(B);
+
+      // B resolves and A's discovery answers before React has re-rendered for B.
+      await act(async () => {
+        slowB.release();
+        for (let i = 0; i < 5; i++) await Promise.resolve();
+        slowListingA.release(jsonResponse({ collections: [{ handle: "all", title: "All", products_count: 3 }] }));
+        for (let i = 0; i < 5; i++) await Promise.resolve();
+      });
+      await heading(2, 2);
+      await settle(50);
+
+      expect(titleShown("Echo Hat")).not.toBeNull();
+      expect(fetchMock.calls.filter((url) => url.host === A && url.pathname.includes("/products.json") && url.pathname !== "/products.json")).toEqual([]);
+      expect(here()).toBe(`/${B}/collections/all`);
+    });
+  });
+
+  describe("Recent Stores (C5)", () => {
+    it("adds a pasted collection's store as soon as it loads, before its collection list arrives", async () => {
+      const slowListingB = deferred();
+      const hold = (url) => (url.host === B && url.pathname === "/collections.json" ? slowListingB.promise : undefined);
+      vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: storeA(), [B]: storeB() }, hold));
+      openAt(`/${A}/collections/tees`);
+      await heading(3, 3);
+      const user = userWithTimers();
+
+      await user.click(input());
+      await user.clear(input());
+      await user.paste(`${B}/collections/all`);
+      await heading(2, 2);
+
+      expect(savedHistory()).toEqual([`https://${B}`, `https://${A}`]);
+    });
+
+    it("keeps its order when Back and Forward move between stores already in it", async () => {
+      vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: storeA(), [B]: storeB() }));
+      openAt(`/${A}/collections/tees`);
+      await heading(3, 3);
+      const user = userWithTimers();
+      await user.click(input());
+      await user.clear(input());
+      await user.paste(B);
+      await heading(2, 2);
+      expect(savedHistory()).toEqual([`https://${B}`, `https://${A}`]);
+
+      act(() => window.history.back());
+      await heading(3, 3);
+      await settle(50);
+      expect(savedHistory()).toEqual([`https://${B}`, `https://${A}`]);
+
+      act(() => window.history.forward());
+      await heading(2, 2);
+      await settle(50);
+      expect(savedHistory()).toEqual([`https://${B}`, `https://${A}`]);
+    });
+  });
+});
