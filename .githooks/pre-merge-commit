@@ -1,5 +1,11 @@
 #!/bin/sh
 # storelens-managed-hook (install-hooks.mjs only replaces or removes hooks carrying this line)
 # A merge (e.g. a pull on a diverged main) commits without running
-# pre-commit, so apply the same guard.
-exec "$(dirname "$0")/pre-commit"
+# pre-commit, so apply the same guard. Self-contained on purpose: it must not
+# exec a pre-commit hook that isn't ours.
+branch=$(git symbolic-ref --short -q HEAD)
+if [ "$branch" = "main" ]; then
+  echo "pre-merge-commit: refusing to merge on main. Create a branch in a worktree:" >&2
+  echo "  git worktree add --no-track -b <branch> ../StoreLens-<n> origin/main" >&2
+  exit 1
+fi

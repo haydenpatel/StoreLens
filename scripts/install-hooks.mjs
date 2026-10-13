@@ -7,7 +7,7 @@
 // Safety rules:
 // - It never fails `npm install`: any error prints a warning and exits 0.
 // - Hooks are ours only if they carry the MARKER line (or match a legacy
-//   signature from before the marker existed). A same-named hook that isn't
+//   header from before the marker existed). A same-named hook that isn't
 //   ours is left in place with a warning.
 // - Hooks we installed earlier that .githooks no longer has are removed.
 // - Decision on refreshing from the current branch: kept as is. Main and work
@@ -21,14 +21,18 @@ import {
 import path from "node:path";
 
 const MARKER = "storelens-managed-hook";
-const LEGACY = ["refusing to commit on main", "apply the same guard"];
+// First comment lines of the hooks as installed before the marker existed.
+const LEGACY = [
+  "#!/bin/sh\n# Local guard: work happens on issue branches in worktrees",
+  "#!/bin/sh\n# A merge (e.g. a pull on a diverged main) commits without running",
+];
 
 const git = (...args) =>
   execFileSync("git", args, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
 const warn = (msg) => console.warn(`install-hooks: ${msg}`);
 const isOurs = (file) => {
   const text = readFileSync(file, "utf8");
-  return text.includes(MARKER) || LEGACY.some((s) => text.includes(s));
+  return text.includes(MARKER) || LEGACY.some((s) => text.startsWith(s));
 };
 
 try {
