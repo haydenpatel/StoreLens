@@ -137,9 +137,11 @@ function main() {
   let milestone = null;
   if (found.length) {
     milestone = findMilestone(
-      JSON.parse(run("gh", ["api", "--paginate", "repos/{owner}/{repo}/milestones?state=open"])),
+      JSON.parse(run("gh", ["api", "repos/{owner}/{repo}/milestones?state=open&per_page=100"])),
     );
-    if (!milestone) {
+    if (milestone) {
+      if (dryRun) console.log(`milestone  ${milestone}`);
+    } else {
       console.warn(`warning: no open milestone titled "${MILESTONE}"; opening issues without one`);
     }
   }
