@@ -67,7 +67,9 @@ export function normalizeShopifyProduct(raw, origin) {
     // which would empty the default in-stock view: only an explicit false is.
     available: v.available !== false,
     options: placeholder ? [] : trimTrailingEmpty([v.option1, v.option2, v.option3]),
-  }));
+  }))
+    // An unparseable price is "unavailable", not NaN: the variant is dropped.
+    .filter((variant) => Number.isFinite(variant.price));
 
   let url = null;
   if (raw.handle && origin) {
@@ -298,7 +300,7 @@ async function discoverCollections(origin, signal, { forceRefresh = false } = {}
     .filter((c) => typeof c === "object" && c !== null && c.products_count > 0)
     .map((c) => ({
       handle: c.handle,
-      title: c.title,
+      title: typeof c.title === "string" && c.title.trim() ? c.title : c.handle,
       products_count: c.products_count,
     }));
 

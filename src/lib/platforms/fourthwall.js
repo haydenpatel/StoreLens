@@ -105,30 +105,32 @@ function guessOptions(variantTitles) {
 export function normalizeFourthwallProduct(raw, origin) {
   const basePrice = parseFloat(raw.price);
   const compareAt = parseFloat(raw.compare_at_price);
-  // A malformed variant is skipped rather than failing the page.
-  const rawVariants = Array.isArray(raw.variants) ? raw.variants.filter(isObject) : [];
-  const { options, variantOptions } = guessOptions(rawVariants.map((v) => String(v.title ?? "")));
-  const currency = rawVariants.find((v) => /^[A-Z]{3}$/.test(v.price?.currency_iso))?.price.currency_iso;
+  // A malformed variant is skipped rather than failing the page, and so is one
+  // with no price anywhere (there is nothing to show). Options are guessed from
+  // the variants that remain, so no option value is left matching nothing.
+  const priced = (Array.isArray(raw.variants) ? raw.variants.filter(isObject) : [])
+    .map((v) => {
+      const cents = toCents(v.price?.cents);
+      return { v, price: Number.isFinite(cents) ? cents / 100 : basePrice };
+    })
+    .filter(({ price }) => Number.isFinite(price));
+  const { options, variantOptions } = guessOptions(priced.map(({ v }) => String(v.title ?? "")));
+  const currency = priced.find(({ v }) => /^[A-Z]{3}$/.test(v.price?.currency_iso))?.v.price.currency_iso;
   // Stock is only reported for the product as a whole, so every variant shares
-  // it. A product with no variants has nothing to buy, so isn't available. A
-  // missing field isn't "sold out" (that would empty the in-stock view if the
-  // feed dropped it): only an explicit false is.
+  // it. A missing field isn't "sold out" (that would empty the in-stock view if
+  // the feed dropped it): only an explicit false is.
   const available = raw.available !== false;
 
-  const variants = rawVariants.map((v, i) => {
-    const cents = toCents(v.price?.cents);
-    const price = Number.isFinite(cents) ? cents / 100 : basePrice;
-    return {
-      id: v.id,
-      title: options.length ? String(v.title) : "",
-      price,
-      // The compare-at price is the product's, so it applies to each variant
-      // sold below it; a dearer variant (a bigger size) isn't on sale.
-      compareAtPrice: compareAt > 0 && compareAt > price ? compareAt : null,
-      available,
-      options: variantOptions[i],
-    };
-  }).filter((variant) => Number.isFinite(variant.price)); // no price anywhere: nothing to show
+  const variants = priced.map(({ v, price }, i) => ({
+    id: v.id,
+    title: options.length ? String(v.title) : "",
+    price,
+    // The compare-at price is the product's, so it applies to each variant
+    // sold below it; a dearer variant (a bigger size) isn't on sale.
+    compareAtPrice: compareAt > 0 && compareAt > price ? compareAt : null,
+    available,
+    options: variantOptions[i],
+  }));
 
   return {
     id: raw.id,
@@ -229,8 +231,8 @@ async function fetchCollection(collectionUrl, { signal, onProgress, maxPages = M
 
 // One detection request: "yes" (a Fourthwall product list), "no" (an answer
 // that says it isn't, or a throw: a host that isn't a store or sends no CORS
-// headers), or "unsure" (a rate limit, a server error or no answer in time),
-// which says nothing about the platform. Only a user abort is rethrown.
+// headers), or "unsure" (a readable rate limit or server error, or no answer in
+// time), which says nothing about the platform. Only a user abort is rethrown.
 async function askIfFourthwall(url, signal) {
   const timeout = new AbortController();
   const onAbort = () => timeout.abort();
@@ -254,10 +256,12 @@ async function askIfFourthwall(url, signal) {
 // Asks whether the store is on Fourthwall: its "all" collection answers with
 // {current_page, products}, where Shopify answers {collection} (or a plain 404).
 // Not being Fourthwall is the usual answer and must be quick, so a clear "no"
-// is final after one request with a short timeout. Only an inconclusive answer
-// (slow, rate-limited or failing, as a Fourthwall custom domain can be on a cold
-// cache) is asked once more after a pause; if still unsure, it isn't claimed.
-// Only a user abort is rethrown.
+// (including any throw: Fourthwall's 429 and 5xx carry no CORS headers, so they
+// arrive as one and are not retried) is final after one request with a short
+// timeout. Only an answer that is readable but inconclusive, or too slow (a
+// custom domain on a cold cache), is asked once more after a pause. The worst
+// case is two timeouts and the pause, about 10.5 s; if still unsure, the store
+// isn't claimed. Only a user abort is rethrown.
 async function detect(url, { signal } = {}) {
   const first = await askIfFourthwall(url, signal);
   if (first !== "unsure") return first === "yes";

@@ -304,6 +304,16 @@ describe("normalizeFourthwallProduct edge cases", () => {
     expect(p.variants.map((v) => v.title)).toEqual(["M"]);
   });
 
+  it("guesses options from the variants that have a price, leaving no value that matches nothing", () => {
+    const p = normalize(
+      product({
+        price: undefined,
+        variants: [variant("Black, S"), { id: "x", title: "Red, M", price: {} }, variant("Black, L")],
+      })
+    );
+    expect(p.options.map((o) => o.values)).toEqual([["Black"], ["S", "L"]]);
+  });
+
   it("skips a null variant instead of failing", () => {
     const p = normalize(product({ variants: [null, variant("S"), "x", variant("M")] }));
     expect(p.variants.map((v) => v.title)).toEqual(["S", "M"]);
@@ -643,6 +653,13 @@ describe("detect", () => {
     await vi.runAllTimersAsync();
     expect(await pending).toBe(true);
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not retry a throw, which is how a CORS-less 429 or 5xx reaches the browser", async () => {
+    const fetchMock = vi.fn(async () => Promise.reject(new TypeError("Failed to fetch")));
+    vi.stubGlobal("fetch", fetchMock);
+    expect(await detect()).toBe(false);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("says no, after only one more request, when the store keeps throttling", async () => {

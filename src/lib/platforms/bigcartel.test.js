@@ -196,6 +196,11 @@ describe("normalizeBigCartelProduct", () => {
       expect(p.variants.map((v) => v.price)).toEqual([12.5]);
     });
 
+    it("falls back to default_price, not price, for an option with no price of its own", () => {
+      const p = normalizeBigCartelProduct(product({ price: 30, default_price: 40, options: [option("Default", { price: null })] }), ORIGIN);
+      expect(p.variants.map((v) => v.price)).toEqual([40]);
+    });
+
     it("keeps a genuinely free option at 0", () => {
       const p = normalizeBigCartelProduct(product({ price: 0, default_price: 0, options: [option("Default", { price: 0 })] }), ORIGIN);
       expect(p.variants.map((v) => v.price)).toEqual([0]);

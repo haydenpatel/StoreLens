@@ -293,6 +293,11 @@ describe("normalizeShopifyProduct with malformed entries", () => {
     expect(n.images).toEqual([{ url: "https://example.com/a.jpg" }]);
   });
 
+  it("drops a variant whose price can't be read instead of passing NaN on", () => {
+    const n = normalize(product({ variants: [variant({ price: null }), variant({ price: "abc" }), variant({ price: "12.00" })] }));
+    expect(n.variants.map((v) => v.price)).toEqual([12]);
+  });
+
   it("treats a missing available field as available, and only false as sold out", () => {
     const v = variant();
     delete v.available;
@@ -943,6 +948,7 @@ describe("listCollections", () => {
     );
     const result = await shopifyAdapter.listCollections(ORIGIN);
     expect(result.collections.map((c) => c.handle).sort()).toEqual(["a", "b", "untitled"]);
+    expect(result.collections.find((c) => c.handle === "untitled").title).toBe("untitled");
   });
 
   it("prepends a probed all-products collection that the listing omits", async () => {

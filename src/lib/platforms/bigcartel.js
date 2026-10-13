@@ -175,10 +175,11 @@ export function normalizeBigCartelProduct(raw, origin, currency) {
       const valueOf = (group) => text(values.find((v) => v.option_group_id === group.id)?.name);
       const optionValues = groups.map(valueOf);
       while (optionValues.length > 0 && optionValues[optionValues.length - 1] === "") optionValues.pop();
-      // An option with no price of its own takes the product's; with neither
-      // there is no price to show, and the variant is dropped below.
+      // An option with no price of its own takes the product's default price
+      // (the same base the compare-at price uses); with neither there is no
+      // price to show, and the variant is dropped below.
       const optionPrice = toPrice(option.price);
-      const price = Number.isFinite(optionPrice) ? optionPrice : productPrice;
+      const price = Number.isFinite(optionPrice) ? optionPrice : basePrice;
       return {
         id: option.id,
         title: groups.length ? text(option.name) : "",
