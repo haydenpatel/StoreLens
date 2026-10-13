@@ -1,4 +1,5 @@
 #!/bin/sh
+# storelens-managed-hook (install-hooks.mjs only replaces or removes hooks carrying this line)
 # A merge (e.g. a pull on a diverged main) commits without running
 # pre-commit, so apply the same guard.
 exec "$(dirname "$0")/pre-commit"
