@@ -196,8 +196,16 @@ describe("normalizeBigCartelProduct", () => {
       expect(p.variants.map((v) => v.price)).toEqual([12.5]);
     });
 
-    it("falls back to default_price, not price, for an option with no price of its own", () => {
-      const p = normalizeBigCartelProduct(product({ price: 30, default_price: 40, options: [option("Default", { price: null })] }), ORIGIN);
+    it("gives an option with no price of its own the product's current price, keeping the sale", () => {
+      const p = normalizeBigCartelProduct(
+        product({ on_sale: true, price: 30, default_price: 40, options: [option("Default", { price: null })] }),
+        ORIGIN
+      );
+      expect(p.variants[0]).toMatchObject({ price: 30, compareAtPrice: 40 });
+    });
+
+    it("falls back to default_price when the product has no current price either", () => {
+      const p = normalizeBigCartelProduct(product({ price: null, default_price: 40, options: [option("Default", { price: null })] }), ORIGIN);
       expect(p.variants.map((v) => v.price)).toEqual([40]);
     });
 
