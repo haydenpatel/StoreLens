@@ -14,6 +14,7 @@ import {
   filterAndSortProducts,
   parseFilterParams,
   restoreOptionSelections,
+  withSearchText,
 } from "@/lib/filters";
 import {
   addressMatches,
@@ -58,7 +59,11 @@ function readSavedHistory() {
     }
     localStorage.removeItem(LEGACY_HISTORY_KEY);
     if (saved) {
-      return JSON.parse(saved);
+      const parsed = JSON.parse(saved);
+      // Anything but an array of strings would break the header's list.
+      if (Array.isArray(parsed) && parsed.every((entry) => typeof entry === "string")) {
+        return parsed;
+      }
     }
   } catch {
     /* localStorage unavailable or history corrupted — ignore */
@@ -311,7 +316,7 @@ export default function StoreLensApp() {
     // can throw (quota exceeded, private browsing, storage blocked) — that
     // shouldn't leave the loading spinner stuck when products already loaded.
     try {
-      setProducts(allProducts);
+      setProducts(withSearchText(allProducts));
       setLoadedAdapter(loadAdapter);
       setPlatformNotices(notices ?? []);
       // The load worked, so the store really is on this platform.
@@ -530,6 +535,7 @@ export default function StoreLensApp() {
     setSelectedOptions({});
     setInStockOnly(true);
     setSaleOnly(false);
+    setPriceRange([filterData.minPrice, filterData.maxPrice]);
   };
 
   // Discovery only ever runs from a discrete user action (submit, paste,

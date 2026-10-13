@@ -4,6 +4,44 @@ import { getDiscountData } from "@/lib/utils";
 // (see platforms/types.js), kept out of the page component so it can be unit
 // tested without rendering it.
 
+// The sort values the sort dropdown offers (ProductGrid); anything else in a
+// link is ignored.
+export const SORT_VALUES = [
+  "title-asc",
+  "title-desc",
+  "price-asc",
+  "price-desc",
+  "newest",
+  "discount-percent",
+  "discount-amount",
+];
+
+// The text of an HTML description, for search. Done once when products load
+// (see withSearchText) rather than on every keystroke.
+export function htmlToText(html) {
+  if (!html) return "";
+  const source = String(html);
+  try {
+    if (typeof DOMParser !== "undefined") {
+      const doc = new DOMParser().parseFromString(source, "text/html");
+      return (doc.body?.textContent ?? "").replace(/\s+/g, " ").trim();
+    }
+  } catch {
+    /* fall back to a plain tag strip */
+  }
+  const entities = { "&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": '"', "&#39;": "'", "&nbsp;": " " };
+  return source
+    .replace(/<[^>]*>/g, " ")
+    .replace(/&(?:amp|lt|gt|quot|nbsp|#39);/g, (entity) => entities[entity])
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// Adds `descriptionText` (the description without its markup) to each product.
+export function withSearchText(products) {
+  return products.map((product) => ({ ...product, descriptionText: htmlToText(product.description) }));
+}
+
 // Parses filter/sort state out of the URL's query string (?q=...&vendor=a,b&...).
 // Returns null when there's nothing to restore, so callers can tell "no
 // params" apart from "params that happen to match the defaults".
@@ -38,9 +76,12 @@ export function parseFilterParams(search) {
   }
   if (params.has("inStock")) result.inStockOnly = params.get("inStock") !== "0";
   if (params.has("sale")) result.saleOnly = params.get("sale") === "1";
-  if (params.has("minPrice") && params.has("maxPrice")) {
-    const min = Number(params.get("minPrice"));
-    const max = Number(params.get("maxPrice"));
+  // An empty value (?minPrice=&maxPrice=) is absent, not zero.
+  const minParam = params.get("minPrice");
+  const maxParam = params.get("maxPrice");
+  if (minParam?.trim() && maxParam?.trim()) {
+    const min = Number(minParam);
+    const max = Number(maxParam);
     // Number.isFinite (not just !isNaN) rejects Infinity/-Infinity too - a
     // link like ?minPrice=Infinity&maxPrice=Infinity parses without error
     // but then fails every product's price check, silently filtering out
@@ -50,7 +91,10 @@ export function parseFilterParams(search) {
       result.priceRange = [min, max];
     }
   }
-  if (params.has("sort")) result.sortBy = params.get("sort");
+  // An unknown sort would leave the dropdown blank and the grid unsorted.
+  if (params.has("sort") && SORT_VALUES.includes(params.get("sort"))) {
+    result.sortBy = params.get("sort");
+  }
 
   return Object.keys(result).length > 0 ? result : null;
 }
@@ -235,6 +279,12 @@ const createdTime = (product) => {
   return Number.isFinite(time) ? time : 0;
 };
 
+const pricesOf = (product) => (product.variants || []).map(v => v.price).filter(Number.isFinite);
+
+// a - b that treats an unpriced product (+/-Infinity, where the difference
+// would be NaN) as equal to another unpriced one.
+const comparePrices = (a, b) => (a === b ? 0 : a - b);
+
 export function filterAndSortProducts(products, state, capabilities = {}) {
   const {
     searchQuery, selectedVendors, selectedTypes, selectedTags, selectedOptions, priceRange, saleOnly, sortBy,
@@ -248,7 +298,7 @@ export function filterAndSortProducts(products, state, capabilities = {}) {
     const query = searchQuery.toLowerCase();
     filtered = filtered.filter(p => 
       p.title?.toLowerCase().includes(query) ||
-      p.description?.toLowerCase().includes(query)
+      (p.descriptionText ?? htmlToText(p.description)).toLowerCase().includes(query)
     );
   }
 
@@ -287,7 +337,10 @@ export function filterAndSortProducts(products, state, capabilities = {}) {
 
   // Price range
   filtered = filtered.filter(p => {
-    const prices = p.variants?.map(v => v.price) || [];
+    const prices = (p.variants || []).map(v => v.price).filter(Number.isFinite);
+    // No usable price: nothing to compare, so it stays (ProductCard shows
+    // "Price unavailable") instead of vanishing while still being counted.
+    if (prices.length === 0) return true;
     const minProductPrice = Math.min(...prices);
     const maxProductPrice = Math.max(...prices);
     return maxProductPrice >= priceRange[0] && minProductPrice <= priceRange[1];
@@ -295,8 +348,9 @@ export function filterAndSortProducts(products, state, capabilities = {}) {
 
   // In stock only
   if (inStockOnly) {
+    // A product with no variants has no stock data to say it is sold out.
     filtered = filtered.filter(p =>
-      p.variants?.some(v => v.available)
+      !p.variants?.length || p.variants.some(v => v.available)
     );
   }
 
@@ -316,14 +370,14 @@ export function filterAndSortProducts(products, state, capabilities = {}) {
       case "title-desc":
         return (b.title || "").localeCompare(a.title || "");
       case "price-asc": {
-        const aMin = Math.min(...(a.variants || []).map(v => v.price), Infinity);
-        const bMin = Math.min(...(b.variants || []).map(v => v.price), Infinity);
-        return aMin - bMin;
+        const aMin = Math.min(...pricesOf(a), Infinity);
+        const bMin = Math.min(...pricesOf(b), Infinity);
+        return comparePrices(aMin, bMin);
       }
       case "price-desc": {
-        const aMax = Math.max(...(a.variants || []).map(v => v.price), -Infinity);
-        const bMax = Math.max(...(b.variants || []).map(v => v.price), -Infinity);
-        return bMax - aMax;
+        const aMax = Math.max(...pricesOf(a), -Infinity);
+        const bMax = Math.max(...pricesOf(b), -Infinity);
+        return comparePrices(bMax, aMax);
       }
       case "newest":
         return createdTime(b) - createdTime(a);

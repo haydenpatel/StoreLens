@@ -1417,3 +1417,85 @@ describe("history writes and load cancellation (#82)", () => {
     });
   });
 });
+
+describe("input and filter fixes (#84)", () => {
+  const pricedStore = () => ({
+    collections: {
+      all: ["Low Tee:10", "Mid Tee:20", "High Tee:30"].map((entry) => {
+        const [title, price] = entry.split(":");
+        return product({
+          title,
+          handle: title.toLowerCase().replace(/ /g, "-"),
+          vendor: "Acme",
+          variants: [variant({ price: `${price}.00` })],
+        });
+      }),
+    },
+  });
+
+  it("Reset restores the full price range and clears the filter count and URL params", async () => {
+    vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: pricedStore() }));
+    openAt(`/${A}/collections/all?minPrice=25&maxPrice=30`);
+    await heading(1, 3);
+    const user = userEvent.setup();
+
+    const reset = screen.getAllByRole("button", { name: /reset/i }).find((button) => !button.disabled);
+    await user.click(reset);
+
+    await heading(3, 3);
+    await waitFor(() => expect(window.location.search).toBe(""));
+    expect(screen.getAllByRole("button", { name: /reset/i }).every((button) => button.disabled || button.className.includes("disabled"))).toBe(true);
+  });
+
+  it("shows a product with no variants instead of counting but hiding it", async () => {
+    const store = pricedStore();
+    store.collections.all.push(product({ title: "Mystery Item", handle: "mystery-item", vendor: "Acme", variants: [] }));
+    vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: store }));
+    openAt(`/${A}/collections/all`);
+
+    await heading(4, 4);
+    expect(titleShown("Mystery Item")).not.toBeNull();
+    expect(screen.getAllByText("Price unavailable").length).toBeGreaterThan(0);
+  });
+
+  it("search ignores markup in descriptions", async () => {
+    const store = pricedStore();
+    store.collections.all[0].body_html = "<div><span>Soft cotton</span></div>";
+    vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: store }));
+    openAt(`/${A}/collections/all?q=span`);
+    await heading(0, 3);
+
+    cleanup();
+    openAt(`/${A}/collections/all?q=cotton`);
+    await heading(1, 3);
+    expect(titleShown("Low Tee")).not.toBeNull();
+  });
+
+  it("an empty price range and an unknown sort in the link are ignored", async () => {
+    vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: pricedStore() }));
+    openAt(`/${A}/collections/all?minPrice=&maxPrice=&sort=bogus`);
+    await heading(3, 3);
+    expect(screen.getAllByRole("combobox").some((box) => /Title A-Z/.test(box.textContent))).toBe(true);
+  });
+
+  it("starts with no Recent Stores when the saved history is not an array of strings", async () => {
+    window.localStorage.setItem("storelens-url-history", JSON.stringify({ not: "an array" }));
+    vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: pricedStore() }));
+    openAt("/");
+    expect(input()).not.toBeNull();
+    window.localStorage.setItem("storelens-url-history", JSON.stringify([1, 2]));
+    cleanup();
+    openAt("/");
+    expect(input()).not.toBeNull();
+  });
+
+  it("loads a bare domain starting with http", async () => {
+    vi.stubGlobal("fetch", fakeShopifyFetch({ ["httpie.shop"]: pricedStore() }));
+    openAt("/");
+    const user = userEvent.setup();
+    await user.click(input());
+    await user.paste("httpie.shop");
+    await heading(3, 3);
+    expect(here()).toBe("/httpie.shop/collections/all");
+  });
+});
