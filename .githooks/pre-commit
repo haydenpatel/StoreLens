@@ -1,4 +1,5 @@
 #!/bin/sh
+# storelens-managed-hook (install-hooks.mjs only replaces or removes hooks carrying this line)
 # Local guard: work happens on issue branches in worktrees and reaches main
 # only through a squash-merged PR on GitHub, so never commit on main here.
 branch=$(git symbolic-ref --short -q HEAD)
