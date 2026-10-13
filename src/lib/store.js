@@ -2,7 +2,7 @@ export function parseUserInputToURL(input) {
   try {
     const value = input?.trim();
     if (!value) return null;
-    const prefixed = value.startsWith("http") ? value : `https://${value}`;
+    const prefixed = /^https?:\/\//i.test(value) ? value : `https://${value}`;
     return new URL(prefixed);
   } catch {
     return null;

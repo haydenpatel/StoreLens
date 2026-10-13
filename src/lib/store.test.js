@@ -35,6 +35,16 @@ describe("parseUserInputToURL", () => {
     expect(parseUserInputToURL("  shop.example.com  ").href).toBe("https://shop.example.com/");
   });
 
+  it("treats a bare domain that merely starts with http as a domain (#84)", () => {
+    expect(parseUserInputToURL("httpie.shop").href).toBe("https://httpie.shop/");
+    expect(parseUserInputToURL("httpbin.org/anything").href).toBe("https://httpbin.org/anything");
+  });
+
+  it("reads the scheme case-insensitively (#84)", () => {
+    expect(parseUserInputToURL("HTTPS://Shop.com").href).toBe("https://shop.com/");
+    expect(parseUserInputToURL("HTTP://Shop.com").href).toBe("http://shop.com/");
+  });
+
   it("keeps an explicit http or https scheme and path", () => {
     expect(parseUserInputToURL("http://shop.example.com/collections/tees").href).toBe(
       "http://shop.example.com/collections/tees"
