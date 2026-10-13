@@ -85,9 +85,11 @@
  * @property {string} [collectionsNote]   For a platform with no collection listing: shown, disabled, at the end of the collection dropdown
  *   (which offers only "All Products" and the collection on screen) to say why other collections aren't listed.
  * @property {(origin: string, signal?: AbortSignal, opts?: {forceRefresh?: boolean}) =>
- *   Promise<{collections: {handle: string, title: string, products_count: number|null}[], allProductsHandle: string|null, origin?: string}>} [listCollections]
+ *   Promise<{collections: {handle: string, title: string, products_count: number|null}[], allProductsHandle: string|null, origin?: string, partial?: boolean}>} [listCollections]
  *   Optional: platforms without a listing omit it and set defaultCollection.
  *   `origin`, when present, is the origin that actually worked (e.g. a locale prefix turned out not to be one); the caller switches to it.
+ *   `partial: true` means a request failed transiently (rate limit, server error, dropped connection), so the list may be incomplete or empty;
+ *   it is not cached, and the UI offers a retry (which passes `forceRefresh`). A transient failure never makes the adapter switch origin.
  * @property {(collectionUrl: string, opts: {signal?: AbortSignal, onProgress?: (p: {loaded: number}) => void}) => Promise<FetchCollectionResult>} fetchCollection
  *   Throws on an invalid URL, and rethrows an abort. Everything else is reported in the result.
  *   `pageError` is a StoreError (see lib/errors.js) when the failure is one the UI can explain.

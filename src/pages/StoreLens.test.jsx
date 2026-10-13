@@ -489,6 +489,27 @@ describe("store resolution that takes a while", () => {
     expect(replacedPaths()).toContain(`/${A}/collections/all`);
   });
 
+  it("offers the retry button after a partial collection list, and a retry fetches a fresh one", async () => {
+    // Only probing can find this store's collections, and the first probe is rate limited.
+    let limited = true;
+    const probe = (url) =>
+      limited && url.pathname === "/collections/all/products.json" && url.searchParams.get("limit") === "1"
+        ? jsonResponse({}, { ok: false, status: 429 })
+        : undefined;
+    vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: { ...storeA(), listCollections: false } }, probe));
+    openAt(`/${A}`);
+    const user = userEvent.setup();
+
+    const retry = await screen.findByTitle("Retry loading collections");
+    expect(screen.getByText(/may be incomplete/)).not.toBeNull();
+    expect(Object.keys(localStorage).filter((k) => k.startsWith("storelens:collections:"))).toEqual([]);
+
+    limited = false;
+    await user.click(retry);
+    await waitFor(() => expect(screen.queryByTitle("Retry loading collections")).toBeNull());
+    expect(Object.keys(localStorage).filter((k) => k.startsWith("storelens:collections:"))).toHaveLength(1);
+  });
+
   it("shows the error when resolving fails for a reason other than being superseded", async () => {
     slowResolve.override = (url, options, real) =>
       url.host === A ? Promise.reject(new TypeError("Failed to fetch")) : real(url, options);

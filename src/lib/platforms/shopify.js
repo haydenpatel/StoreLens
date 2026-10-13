@@ -193,18 +193,29 @@ async function fetchCollectionsPage(origin, page, signal) {
 // collection rather than inferred from list position.
 const ALL_PRODUCTS_HANDLES = ["all", "all-products", "all-1", "everything", "shop-all"];
 
+// A failure that says nothing about what the store has: a rate limit, a server
+// error or a dropped connection. Anything else (a 404, a block, a page that
+// isn't JSON) is the store's own answer.
+const isTransient = (err) => ["rate-limited", "server-error", "blocked-or-offline"].includes(err?.kind);
+
+// Returns { found, inconclusive }: `inconclusive` means a candidate failed
+// transiently, so "nothing found" may not be the store's real answer.
 async function probeAllProductsCollection(origin, existingHandles, signal) {
+  let inconclusive = false;
   for (const handle of ALL_PRODUCTS_HANDLES) {
-    if (existingHandles.has(handle)) return null;
+    if (existingHandles.has(handle)) return { found: null, inconclusive };
     try {
       const response = await fetch(
         `${origin}/collections/${handle}/products.json?limit=1`,
         { signal }
       );
-      if (!response.ok) continue;
+      if (!response.ok) {
+        if (response.status === 429 || response.status >= 500) inconclusive = true;
+        continue;
+      }
       const data = await response.json();
       if (Array.isArray(data?.products) && data.products.length > 0) {
-        return { handle, title: "All Products", products_count: null };
+        return { found: { handle, title: "All Products", products_count: null }, inconclusive };
       }
     } catch (err) {
       // An abort means the caller cancelled this discovery (e.g. the user
@@ -212,10 +223,11 @@ async function probeAllProductsCollection(origin, existingHandles, signal) {
       // candidate failed", so the aborted discovery can't save a partial
       // result to the cache.
       if (err?.name === "AbortError") throw err;
-      /* try the next candidate handle */
+      // A dropped connection or an unreadable body says nothing about this handle.
+      inconclusive = true;
     }
   }
-  return null;
+  return { found: null, inconclusive };
 }
 
 async function discoverCollections(origin, signal, { forceRefresh = false } = {}) {
@@ -229,6 +241,10 @@ async function discoverCollections(origin, signal, { forceRefresh = false } = {}
   // still finding the store's all-products collection by direct probing.
   let allCollections = [];
   let listingError = null;
+  // Whether anything below failed transiently. A result built from a failed
+  // request is shown but not cached, so it can't pin an incomplete list for
+  // hours; the caller flags it as `partial` so the user can try again.
+  let partial = false;
   try {
     const seenPages = new Set();
     const maxPages = 20;
@@ -252,7 +268,8 @@ async function discoverCollections(origin, signal, { forceRefresh = false } = {}
   } catch (err) {
     if (err?.name === "AbortError") throw err;
     listingError = err;
-    allCollections = [];
+    // Keep the pages that did load: a partial list beats none.
+    if (isTransient(err)) partial = true;
   }
 
   const mapped = allCollections
@@ -263,11 +280,12 @@ async function discoverCollections(origin, signal, { forceRefresh = false } = {}
       products_count: c.products_count,
     }));
 
-  const probed = await probeAllProductsCollection(
+  const { found: probed, inconclusive } = await probeAllProductsCollection(
     origin,
     new Set(mapped.map((c) => c.handle)),
     signal
   );
+  if (inconclusive) partial = true;
   const withProbe = probed ? [probed, ...mapped] : mapped;
 
   if (withProbe.length === 0 && listingError) {
@@ -293,6 +311,7 @@ async function discoverCollections(origin, signal, { forceRefresh = false } = {}
   const allProductsMatch = filtered.find((c) => ALL_PRODUCTS_HANDLES.includes(c.handle));
   const allProductsHandle = allProductsMatch ? allProductsMatch.handle : null;
 
+  if (partial) return { collections: filtered, allProductsHandle, partial: true };
   saveCollectionsCache(PLATFORM_ID, origin, filtered, allProductsHandle);
   return { collections: filtered, allProductsHandle };
 }
@@ -300,9 +319,12 @@ async function discoverCollections(origin, signal, { forceRefresh = false } = {}
 const hasUsableCollections = (result) => result.collections.length > 0 || Boolean(result.allProductsHandle);
 
 // parseUrl treats a short first path segment (/en-nz) as a Markets locale, but
-// it could just as well be an ordinary page (/uk). When nothing can be found
-// under the locale-bearing origin, try the plain origin; if that works the
-// result carries `origin` so the caller switches to it.
+// it could just as well be an ordinary page (/uk). When the locale-bearing
+// origin definitively has nothing (it answered, and the answer was "no"), try
+// the plain origin; if that works the result carries `origin` so the caller
+// switches to it. A transient failure (rate limit, server error, dropped
+// connection) proves nothing about the locale, so it is never a reason to
+// switch: the user keeps their market and sees the error or a partial result.
 async function listCollections(origin, signal, options = {}) {
   const plainOrigin = new URL(origin).origin;
   if (plainOrigin === origin) return discoverCollections(origin, signal, options);
@@ -316,12 +338,18 @@ async function listCollections(origin, signal, options = {}) {
     primaryError = err;
   }
   if (primary && hasUsableCollections(primary)) return primary;
+  if (primaryError && isTransient(primaryError)) throw primaryError;
+  if (primary?.partial) return primary;
 
   try {
     const fallback = await discoverCollections(plainOrigin, signal, options);
     if (hasUsableCollections(fallback)) return { ...fallback, origin: plainOrigin };
+    // Nothing usable and not conclusive: stay in the user's market.
+    if (fallback.partial) return { collections: [], allProductsHandle: null, partial: true };
   } catch (err) {
     if (err?.name === "AbortError") throw err;
+    // The locale said "no", but the plain origin couldn't be checked.
+    if (isTransient(err)) throw err;
   }
   if (primaryError) throw primaryError;
   return primary;

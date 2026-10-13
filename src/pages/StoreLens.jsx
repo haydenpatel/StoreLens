@@ -42,6 +42,8 @@ const NO_COLLECTIONS = {
   collections: [],
   error: null,
   allProductsHandle: null,
+  // The list may be incomplete (a request failed transiently): offer a retry.
+  partial: false,
 };
 
 // Recent Stores as saved in localStorage; read once when the page mounts.
@@ -544,7 +546,7 @@ export default function StoreLensApp() {
         const discoveryAdapter = adapterRef.current;
         // Platforms without a collection listing skip discovery and open
         // their default collection instead.
-        const { collections, allProductsHandle, origin: resolvedOrigin } =
+        const { collections, allProductsHandle, origin: resolvedOrigin, partial = false } =
           discoveryAdapter.capabilities.collectionDiscovery !== false && discoveryAdapter.listCollections
             ? await discoveryAdapter.listCollections(storeOrigin, controller.signal, { forceRefresh })
             : {
@@ -573,6 +575,7 @@ export default function StoreLensApp() {
             collections,
             error: null,
             allProductsHandle,
+            partial,
           });
           discoveredOriginRef.current = storeOrigin;
           updateHistoryEntry(storeOrigin, { keepOrder: inputFromAddressBarRef.current });
@@ -595,7 +598,9 @@ export default function StoreLensApp() {
               loadCollectionByHandle(allProductsHandle, storeOrigin, { fromAddressBar: pendingAutoLoad.fromAddressBar });
             } else {
               setInfoNotice(
-                "I couldn't automatically find an all-products collection for this store. Please choose a collection from the dropdown above."
+                partial
+                  ? "I couldn't automatically find an all-products collection, but the store didn't answer every request, so the list may be incomplete. Try the retry button, or choose a collection from the dropdown above."
+                  : "I couldn't automatically find an all-products collection for this store. Please choose a collection from the dropdown above."
               );
               showFailedStore(appPathFor(storeOrigin), pendingAutoLoad.fromAddressBar);
             }
@@ -613,6 +618,7 @@ export default function StoreLensApp() {
                 ? `Couldn't load collections: ${describeStoreErrorReason(err)}`
                 : err.message || "Couldn't load collections for this store",
             allProductsHandle: null,
+            partial: false,
           });
           const pendingAutoLoad = autoLoadPendingRef.current?.origin === storeOrigin ? autoLoadPendingRef.current : null;
           if (pendingAutoLoad) {
@@ -794,6 +800,7 @@ export default function StoreLensApp() {
         collectionsNote={adapter.collectionsNote}
         collectionsStatus={collectionsState.status}
         collectionsError={collectionsState.error}
+        collectionsPartial={collectionsState.partial}
         selectedHandle={selectedHandle}
         onSelectHandle={handleSelectHandle}
         onRetryCollections={handleRetryDiscovery}
