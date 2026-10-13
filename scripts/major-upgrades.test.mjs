@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { findMajorUpgrades, issueBody, rangeMajor, releasesUrl } from "./major-upgrades.mjs";
+import { describe, expect, it, vi } from "vitest";
+import { findMajorUpgrades, findMilestone, loadMilestone, issueBody, rangeMajor, releasesUrl } from "./major-upgrades.mjs";
 
 const pkg = {
   dependencies: { "lucide-react": "^0.554.0", react: "^19.2.0", "tailwind-merge": "^3.4.0" },
@@ -106,5 +106,43 @@ describe("issueBody", () => {
     expect(body).toContain("- `vite`: `^7.2.2` → `8.3.2` ([release notes](https://v))");
     expect(body).toContain("`@vitejs/plugin-react`");
     expect(body).toContain("move together");
+  });
+});
+
+describe("findMilestone", () => {
+  it("returns the title of the open milestone with that title", () => {
+    const milestones = [
+      { title: "0.3.0", state: "open" },
+      { title: "Toolchain upgrades", state: "open" },
+    ];
+    expect(findMilestone(milestones)).toBe("Toolchain upgrades");
+  });
+
+  it("returns null when it is missing or closed, so the issue opens without one", () => {
+    expect(findMilestone([])).toBeNull();
+    expect(findMilestone([{ title: "0.3.0", state: "open" }])).toBeNull();
+    expect(findMilestone([{ title: "Toolchain upgrades", state: "closed" }])).toBeNull();
+  });
+});
+
+describe("loadMilestone", () => {
+  const open = JSON.stringify([{ title: "Toolchain upgrades", state: "open" }]);
+
+  it("returns the milestone without warning", () => {
+    const warn = vi.fn();
+    expect(loadMilestone(() => open, warn)).toBe("Toolchain upgrades");
+    expect(loadMilestone(() => "[]", warn)).toBeNull();
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it("returns null and warns when the fetch fails or returns bad JSON", () => {
+    const warn = vi.fn();
+    const fail = () => {
+      throw new Error("gh exited 1");
+    };
+    expect(loadMilestone(fail, warn)).toBeNull();
+    expect(loadMilestone(() => "not json", warn)).toBeNull();
+    expect(warn).toHaveBeenCalledTimes(2);
+    expect(warn.mock.calls[0][0]).toContain("gh exited 1");
   });
 });
