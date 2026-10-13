@@ -172,7 +172,7 @@ async function fetchCollectionsPage(origin, page, signal) {
     console.error(`Collection discovery failed for ${origin}: ${response.status} ${response.statusText}`);
     // A 404 here isn't a missing collection: the store has no listing at all,
     // which is what a store on another platform looks like.
-    const kind = response.status === 404 || response.status === 410 ? "unsupported-platform" : kindFromStatus(response.status);
+    const kind = kindFromListingStatus(response.status);
     throw new StoreError(kind, { status: response.status });
   }
   let data;
@@ -193,9 +193,20 @@ async function fetchCollectionsPage(origin, page, signal) {
 // collection rather than inferred from list position.
 const ALL_PRODUCTS_HANDLES = ["all", "all-products", "all-1", "everything", "shop-all"];
 
+// What a failed listing or probe response means, by one rule for both.
+function kindFromListingStatus(status) {
+  // A 404 here isn't a missing collection: the store has no listing at all,
+  // which is what a store on another platform looks like.
+  return status === 404 || status === 410 ? "unsupported-platform" : kindFromStatus(status);
+}
+
 // A failure that says nothing about what the store has: a rate limit, a server
 // error or a dropped connection. Anything else (a 404, a block, a page that
-// isn't JSON) is the store's own answer.
+// isn't JSON) is the store's own answer. Trade-off: a request that fails at the
+// network level (a /collections.json blocked without CORS headers, say) can't
+// be told apart from being offline, so it counts as transient: such a store's
+// list stays uncached and offers the retry button rather than risk pinning an
+// incomplete list.
 const isTransient = (err) => ["rate-limited", "server-error", "blocked-or-offline"].includes(err?.kind);
 
 // Returns { found, inconclusive }: `inconclusive` means a candidate failed
@@ -210,7 +221,7 @@ async function probeAllProductsCollection(origin, existingHandles, signal) {
         { signal }
       );
       if (!response.ok) {
-        if (response.status === 429 || response.status >= 500) inconclusive = true;
+        if (isTransient({ kind: kindFromListingStatus(response.status) })) inconclusive = true;
         continue;
       }
       const data = await response.json();
@@ -223,8 +234,9 @@ async function probeAllProductsCollection(origin, existingHandles, signal) {
       // candidate failed", so the aborted discovery can't save a partial
       // result to the cache.
       if (err?.name === "AbortError") throw err;
-      // A dropped connection or an unreadable body says nothing about this handle.
-      inconclusive = true;
+      // A body that isn't JSON is a page, not a feed: the store's own answer.
+      // A dropped connection or a body cut short says nothing about this handle.
+      if (!(err instanceof SyntaxError)) inconclusive = true;
     }
   }
   return { found: null, inconclusive };

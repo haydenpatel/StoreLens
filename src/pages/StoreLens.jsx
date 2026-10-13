@@ -138,6 +138,11 @@ export default function StoreLensApp() {
   // choosing it; it travels with the pending auto-load because the load starts
   // later, after discovery.
   const autoLoadPendingRef = useRef(null);
+  // The auto-load a discovery consumed without opening anything (it failed, or
+  // found no all-products collection). Retry re-arms it, so a retry that works
+  // opens the collection the user was waiting for. Dropped as soon as anything
+  // else is opened or another store is entered.
+  const unfulfilledAutoLoadRef = useRef(null);
   // Aborts the store resolution (which adapter handles a pasted URL) still
   // running for an earlier input, so a slow one can't land after a newer paste.
   const resolveAbortRef = useRef(null);
@@ -349,6 +354,7 @@ export default function StoreLensApp() {
       setError("Please select a collection to load.");
       return;
     }
+    unfulfilledAutoLoadRef.current = null;
     const url = adapterRef.current.collectionUrl(origin, handle);
     setSelectedHandle(handle);
     setInputHandle(handle);
@@ -395,6 +401,7 @@ export default function StoreLensApp() {
     }
     // A valid new input replaces whatever store was still waiting on discovery.
     autoLoadPendingRef.current = null;
+    unfulfilledAutoLoadRef.current = null;
     // Show what was entered at once (a paste is intercepted, so the box would
     // stay empty while a slow platform check runs); it is tidied up below.
     setStoreInput(value);
@@ -563,7 +570,8 @@ export default function StoreLensApp() {
         if (!controller.signal.aborted && resolvedOrigin && resolvedOrigin !== storeOrigin) {
           // The adapter found the store under a different origin (e.g. /uk was
           // a page, not a locale). Switch to it and let discovery run again
-          // (a cache hit now) so the pending auto-load picks up from there.
+          // (a cache hit, unless the result was partial: that isn't cached, so
+          // it is discovered again) so the pending auto-load picks up from there.
           setStoreOrigin(resolvedOrigin);
           setStoreInput(getDisplayOrigin(resolvedOrigin));
           if (autoLoadPendingRef.current?.origin === storeOrigin) autoLoadPendingRef.current.origin = resolvedOrigin;
@@ -597,6 +605,7 @@ export default function StoreLensApp() {
               // loaded before.
               loadCollectionByHandle(allProductsHandle, storeOrigin, { fromAddressBar: pendingAutoLoad.fromAddressBar });
             } else {
+              unfulfilledAutoLoadRef.current = pendingAutoLoad;
               setInfoNotice(
                 partial
                   ? "I couldn't automatically find an all-products collection, but the store didn't answer every request, so the list may be incomplete. Try the retry button, or choose a collection from the dropdown above."
@@ -623,6 +632,7 @@ export default function StoreLensApp() {
           const pendingAutoLoad = autoLoadPendingRef.current?.origin === storeOrigin ? autoLoadPendingRef.current : null;
           if (pendingAutoLoad) {
             autoLoadPendingRef.current = null;
+            unfulfilledAutoLoadRef.current = pendingAutoLoad;
             setError(
               err instanceof StoreError
                 ? describeStoreError(err, errorContext())
@@ -644,6 +654,12 @@ export default function StoreLensApp() {
 
   const handleRetryDiscovery = () => {
     forceRefreshDiscoveryRef.current = true;
+    const unfulfilled = unfulfilledAutoLoadRef.current;
+    unfulfilledAutoLoadRef.current = null;
+    if (unfulfilled?.origin === storeOrigin) {
+      autoLoadPendingRef.current = unfulfilled;
+      clearMessage();
+    }
     setDiscoveryRetryNonce((n) => n + 1);
   };
 

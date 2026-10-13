@@ -677,6 +677,87 @@ describe("listCollections when discovery fails transiently", () => {
     expect(loadCollectionsCache("shopify", ORIGIN)).toBeNull();
   });
 
+  it.each([400, 405, 408, 451])("treats a probe answering %i like the listing does: transient, so not cached", async (code) => {
+    vi.stubGlobal("fetch", vi.fn(async (url) => (url.includes("/collections.json") ? jsonResponse(tees) : status(code))));
+    const { value } = await settle(shopifyAdapter.listCollections(ORIGIN));
+    expect(value.partial).toBe(true);
+    expect(loadCollectionsCache("shopify", ORIGIN)).toBeNull();
+  });
+
+  it("treats a probe answering 200 with a body that isn't JSON as definitive (like the listing), and caches", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url) =>
+        url.includes("/collections.json")
+          ? jsonResponse(tees)
+          : { ok: true, status: 200, json: async () => Promise.reject(new SyntaxError("<html>")) }
+      )
+    );
+    const { value } = await settle(shopifyAdapter.listCollections(ORIGIN));
+    expect(value.partial).toBeUndefined();
+    expect(loadCollectionsCache("shopify", ORIGIN)).not.toBeNull();
+  });
+
+  it("treats a probe body cut short as transient", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url) =>
+        url.includes("/collections.json")
+          ? jsonResponse(tees)
+          : { ok: true, status: 200, json: async () => Promise.reject(new TypeError("network error")) }
+      )
+    );
+    const { value } = await settle(shopifyAdapter.listCollections(ORIGIN));
+    expect(value.partial).toBe(true);
+    expect(loadCollectionsCache("shopify", ORIGIN)).toBeNull();
+  });
+
+  it("caches a 403 listing (a store that blocks it) as a definitive answer", async () => {
+    vi.stubGlobal("fetch", routedFetch({ listing: () => status(403), probes: { all: true } }));
+    const { value } = await settle(shopifyAdapter.listCollections(ORIGIN));
+    expect(value.collections.map((c) => c.handle)).toEqual(["all"]);
+    expect(value.partial).toBeUndefined();
+    expect(loadCollectionsCache("shopify", ORIGIN)).not.toBeNull();
+  });
+
+  it("treats a listing that is an HTML page as definitive: an unsupported store, not cached as partial", async () => {
+    vi.stubGlobal(
+      "fetch",
+      routedFetch({ listing: () => ({ ok: true, status: 200, json: async () => Promise.reject(new SyntaxError("<html>")) }) })
+    );
+    const { error } = await settle(shopifyAdapter.listCollections(ORIGIN));
+    expect(error).toMatchObject({ kind: "unsupported-platform" });
+  });
+
+  it("propagates an abort in the middle of the listing, keeping what loaded out of the cache", async () => {
+    const abort = Object.assign(new Error("aborted"), { name: "AbortError" });
+    const full = Array.from({ length: 250 }, (_, i) => ({ handle: `c${i}`, title: `C${i}`, products_count: 1 }));
+    const fetchMock = routedFetch({
+      listing: (page) => {
+        if (page === 1) return jsonResponse({ collections: full });
+        throw abort;
+      },
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const { error } = await settle(shopifyAdapter.listCollections(ORIGIN));
+    expect(error).toBe(abort);
+    expect(loadCollectionsCache("shopify", ORIGIN)).toBeNull();
+    expect(probeUrls(fetchMock)).toEqual([]);
+  });
+
+  it("propagates an abort in the middle of probing, without trying the other handles", async () => {
+    const abort = Object.assign(new Error("aborted"), { name: "AbortError" });
+    const fetchMock = vi.fn(async (url) => {
+      if (url.includes("/collections.json")) return status(429);
+      throw abort;
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const { error } = await settle(shopifyAdapter.listCollections(ORIGIN));
+    expect(error).toBe(abort);
+    expect(loadCollectionsCache("shopify", ORIGIN)).toBeNull();
+    expect(fetchMock.mock.calls.filter(([u]) => u.includes("/collections/"))).toHaveLength(1);
+  });
+
   it("still caches a definitive answer (listing works, every probe is a 404)", async () => {
     vi.stubGlobal("fetch", routedFetch({ listing: () => jsonResponse(tees) }));
     const { value } = await settle(shopifyAdapter.listCollections(ORIGIN));

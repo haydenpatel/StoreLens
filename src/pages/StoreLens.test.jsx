@@ -510,6 +510,25 @@ describe("store resolution that takes a while", () => {
     expect(Object.keys(localStorage).filter((k) => k.startsWith("storelens:collections:"))).toHaveLength(1);
   });
 
+  it("opens all-products when a retry succeeds after the discovery that was waiting to open it failed", async () => {
+    let failing = true;
+    const down = (url) =>
+      failing && url.host === A && (url.pathname === "/collections.json" || url.searchParams.get("limit") === "1")
+        ? jsonResponse({}, { ok: false, status: 429 })
+        : undefined;
+    vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: storeA() }, down));
+    openAt(`/${A}`);
+    const user = userEvent.setup();
+
+    const retry = await screen.findByTitle("Retry loading collections", {}, { timeout: 10000 });
+    expect(titleShown("Alpha Tee")).toBeNull();
+
+    failing = false;
+    await user.click(retry);
+    expect(await heading(3, 3)).not.toBeNull();
+    expect(titleShown("Alpha Tee")).not.toBeNull();
+  });
+
   it("shows the error when resolving fails for a reason other than being superseded", async () => {
     slowResolve.override = (url, options, real) =>
       url.host === A ? Promise.reject(new TypeError("Failed to fetch")) : real(url, options);
