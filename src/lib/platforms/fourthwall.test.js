@@ -20,6 +20,7 @@ describe("parseUrl", () => {
     ["a collection", `${ORIGIN}/collections/tees`, "tees"],
     ["the collection .json form", `${ORIGIN}/collections/tees.json`, "tees"],
     ["a collection's /products page", `${ORIGIN}/collections/all/products`, "all"],
+    ["a collection's /products.json", `${ORIGIN}/collections/tees/products.json`, "tees"],
     ["a numbered page", `${ORIGIN}/collections/all/3`, "all"],
     ["a numbered .json page", `${ORIGIN}/collections/all/3.json`, "all"],
     ["a trailing slash", `${ORIGIN}/collections/tees/`, "tees"],
@@ -266,6 +267,59 @@ describe("normalizeFourthwallProduct", () => {
   });
 });
 
+describe("normalizeFourthwallProduct edge cases", () => {
+  const normalize = (raw) => normalizeFourthwallProduct(raw, ORIGIN);
+
+  it("keeps an absolute product url, and joins a path to the origin", () => {
+    expect(normalize(product({ handle: "a", url: "https://other.example.com/products/a" })).url).toBe("https://other.example.com/products/a");
+    expect(normalize(product({ handle: "a", url: "/products/a" })).url).toBe(`${ORIGIN}/products/a`);
+    expect(normalize(product({ handle: "a", url: "//evil.example.com/x" })).url).toBe(`${ORIGIN}/products/a`);
+    expect(normalize(product({ handle: "a", url: "javascript:alert(1)" })).url).toBe(`${ORIGIN}/products/a`);
+    expect(normalize(product({ handle: "a", url: undefined })).url).toBe(`${ORIGIN}/products/a`);
+  });
+
+  it("reads cents sent as a string, and falls back to the product price for junk", () => {
+    const p = normalize(
+      product({
+        price: "9.00",
+        variants: [
+          { id: "1", title: "S", price: { cents: "2500", currency_iso: "USD" } },
+          { id: "2", title: "M", price: { cents: null, currency_iso: "USD" } },
+          { id: "3", title: "L", price: { cents: "", currency_iso: "USD" } },
+        ],
+      })
+    );
+    expect(p.variants.map((v) => v.price)).toEqual([25, 9, 9]);
+  });
+
+  it("treats a missing availability field as available, and only false as sold out", () => {
+    const missing = product();
+    delete missing.available;
+    expect(normalize(missing).available).toBe(true);
+    expect(normalize(product({ available: false })).available).toBe(false);
+  });
+
+  it("drops a variant that has no price anywhere, rather than passing NaN on", () => {
+    const p = normalize(product({ price: undefined, variants: [{ id: "1", title: "S", price: {} }, variant("M")] }));
+    expect(p.variants.map((v) => v.title)).toEqual(["M"]);
+  });
+
+  it("guesses options from the variants that have a price, leaving no value that matches nothing", () => {
+    const p = normalize(
+      product({
+        price: undefined,
+        variants: [variant("Black, S"), { id: "x", title: "Red, M", price: {} }, variant("Black, L")],
+      })
+    );
+    expect(p.options.map((o) => o.values)).toEqual([["Black"], ["S", "L"]]);
+  });
+
+  it("skips a null variant instead of failing", () => {
+    const p = normalize(product({ variants: [null, variant("S"), "x", variant("M")] }));
+    expect(p.variants.map((v) => v.title)).toEqual(["S", "M"]);
+  });
+});
+
 describe("fetchCollection", () => {
   const COLLECTION = `${ORIGIN}/collections/all`;
   const stubShop = (products, collection = "all", override, options) => {
@@ -297,6 +351,13 @@ describe("fetchCollection", () => {
     expect(result.products.map((p) => p.title).slice(0, 3)).toEqual(["Item 1", "Item 2", "Item 3"]);
     expect(result.products.at(-1).title).toBe(`Item ${PAGE_SIZE * 2 + 5}`);
     expect(result).toMatchObject({ pageError: null, truncated: false });
+  });
+
+  it("shows the rest of a page that has a null product in it", async () => {
+    stubShop([product({ handle: "a" }), null, product({ handle: "b" }), 5]);
+    const result = await fourthwallAdapter.fetchCollection(COLLECTION);
+    expect(result.pageError).toBeNull();
+    expect(result.products.map((p) => p.handle)).toEqual(["a", "b"]);
   });
 
   it("returns no products, and no error, for an empty shop", async () => {
@@ -365,12 +426,42 @@ describe("fetchCollection", () => {
   });
 
   describe("when the first page fails", () => {
-    it("is not-found for a missing collection of a shop that can be read", async () => {
-      // The feed's 404 has no CORS headers, so the browser sees fetch throw.
-      stubShop(many(2), "all");
+    it("is not-found for a missing collection of a shop that can be read, after asking twice", async () => {
+      // The feed's 404 has no CORS headers, so the browser sees fetch throw, as it
+      // does for a dropped connection: the page is asked for again before the
+      // collection is called missing.
+      const fetchMock = stubShop(many(2), "all");
       const result = await fourthwallAdapter.fetchCollection(`${ORIGIN}/collections/missing`);
       expect(result.products).toEqual([]);
       expect(result.pageError.kind).toBe("not-found");
+      expect(pathsRequested(fetchMock).filter((p) => p === "/collections/missing/1.json")).toHaveLength(2);
+    });
+
+    it("loads the collection, not not-found, when a transient failure clears on the second ask", async () => {
+      let first = true;
+      vi.stubGlobal(
+        "fetch",
+        fakeFourthwallFetch({ "shop.example.com": { collections: { all: many(2), tees: many(3) } } }, (u) => {
+          if (first && u.pathname === "/collections/tees/1.json") {
+            first = false;
+            throw new TypeError("Failed to fetch");
+          }
+        })
+      );
+      const result = await fourthwallAdapter.fetchCollection(`${ORIGIN}/collections/tees`);
+      expect(result.pageError).toBeNull();
+      expect(result.products).toHaveLength(3);
+    });
+
+    it("is not not-found for a 5xx or 429, with the shop's probe working", async () => {
+      for (const [status, kind] of [[500, "server-error"], [503, "server-error"], [429, "rate-limited"]]) {
+        vi.stubGlobal("fetch", async (input) =>
+          String(input).endsWith("/collections/all.json") ? jsonResponse(collectionPage([])) : jsonResponse({}, { ok: false, status })
+        );
+        const run = fourthwallAdapter.fetchCollection(`${ORIGIN}/collections/tees`);
+        await vi.runAllTimersAsync();
+        expect((await run).pageError.kind).toBe(kind);
+      }
     });
 
     it("probes the shop's 'all' collection on the plain origin", async () => {
@@ -523,7 +614,7 @@ describe("detect", () => {
   it.each([
     ["Shopify's answer", () => jsonResponse({ collection: { handle: "all", products_count: 3 } })],
     ["a missing collection", () => jsonResponse({}, { ok: false, status: 404 })],
-    ["a throttled request", () => jsonResponse({}, { ok: false, status: 429 })],
+    ["a forbidden request", () => jsonResponse({}, { ok: false, status: 403 })],
     ["a list without current_page", () => jsonResponse({ products: [] })],
     ["a current_page without a list", () => jsonResponse({ current_page: 1 })],
     ["JSON that is not an object", () => jsonResponse(null)],
@@ -539,14 +630,61 @@ describe("detect", () => {
     expect(await detect()).toBe(false);
   });
 
-  it("makes one request and never retries, even when told to back off", async () => {
-    const fetchMock = vi.fn(async () => jsonResponse({}, { ok: false, status: 429 }));
+  it("makes one request for a clear answer, however it comes out", async () => {
+    for (const respond of [() => jsonResponse({}, { ok: false, status: 404 }), () => jsonResponse({ collection: {} }), () => jsonResponse(collectionPage([]))]) {
+      const fetchMock = vi.fn(async () => respond());
+      vi.stubGlobal("fetch", fetchMock);
+      await detect();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    }
+    const throws = vi.fn(async () => Promise.reject(new TypeError("Failed to fetch")));
+    vi.stubGlobal("fetch", throws);
+    expect(await detect()).toBe(false);
+    expect(throws).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([429, 503])("asks once more after a %i, and says yes when the shop then answers", async (status) => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({}, { ok: false, status }))
+      .mockResolvedValueOnce(jsonResponse(collectionPage([product()])));
+    vi.stubGlobal("fetch", fetchMock);
+    const pending = detect();
+    await vi.runAllTimersAsync();
+    expect(await pending).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not retry a throw, which is how a CORS-less 429 or 5xx reaches the browser", async () => {
+    const fetchMock = vi.fn(async () => Promise.reject(new TypeError("Failed to fetch")));
     vi.stubGlobal("fetch", fetchMock);
     expect(await detect()).toBe(false);
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("gives up after a few seconds and says no", async () => {
+  it("says no, after only one more request, when the store keeps throttling", async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({}, { ok: false, status: 429 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const pending = detect();
+    await vi.runAllTimersAsync();
+    expect(await pending).toBe(false);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("gives a first answer that is too slow a second chance", async () => {
+    let calls = 0;
+    vi.stubGlobal("fetch", (_, { signal }) => {
+      calls++;
+      if (calls > 1) return Promise.resolve(jsonResponse(collectionPage([product()])));
+      return new Promise((_resolve, reject) => signal.addEventListener("abort", () => reject(new DOMException("x", "AbortError"))));
+    });
+    const pending = detect();
+    await vi.runAllTimersAsync();
+    expect(await pending).toBe(true);
+    expect(calls).toBe(2);
+  });
+
+  it("gives up after a few seconds a request and says no", async () => {
     vi.stubGlobal(
       "fetch",
       (_, { signal }) => new Promise((_resolve, reject) => signal.addEventListener("abort", () => reject(new DOMException("x", "AbortError"))))
@@ -557,8 +695,18 @@ describe("detect", () => {
     pending.then(() => (settled = true));
     await Promise.resolve();
     expect(settled).toBe(false);
-    await vi.advanceTimersByTimeAsync(2);
+    await vi.runAllTimersAsync();
     expect(await pending).toBe(false);
+  });
+
+  it("rethrows an abort that arrives while it waits to ask again", async () => {
+    const controller = new AbortController();
+    vi.stubGlobal("fetch", async () => jsonResponse({}, { ok: false, status: 429 }));
+    const pending = detect(`${ORIGIN}/collections/tees`, { signal: controller.signal });
+    const assertion = expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    await vi.advanceTimersByTimeAsync(100);
+    controller.abort();
+    await assertion;
   });
 
   it("rethrows an abort from the caller instead of saying no", async () => {

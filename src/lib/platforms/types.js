@@ -76,8 +76,8 @@
  * @property {(url: URL, opts: {signal?: AbortSignal}) => Promise<boolean>} [detect]
  *   Optional network check, for a platform whose stores can't be recognised from the URL alone (a custom
  *   domain). Called by the registry's `resolveAdapter` when no adapter claimed the URL: it must make at
- *   most one cheap request, never retry, give up quickly, resolve false (not throw) when the store isn't
- *   this platform, and rethrow an abort.
+ *   most one cheap request (asked once more only after a readable inconclusive answer or a timeout), give up quickly,
+ *   resolve false (not throw) when the store isn't this platform, and rethrow an abort.
  * @property {(url: URL) => {origin: string, collection: string|null}} parseUrl
  *   `origin` may carry a locale prefix (e.g. https://shop.example.com/en-nz) when the platform has one.
  * @property {(origin: string, collection: string) => string} collectionUrl

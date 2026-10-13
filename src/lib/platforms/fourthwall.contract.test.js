@@ -39,8 +39,13 @@ describe("the Fourthwall adapter follows the adapter contract", () => {
       product({ handle: "ragged", variants: [variant("Black, XS"), variant("Black, Vintage Wash, S")] }),
       // Sold out.
       product({ handle: "sold-out", available: false }),
+      // An absolute url, string cents and no availability field.
+      product({ handle: "loose", url: "https://shop.example.com/products/loose", available: undefined, variants: [{ id: "v", title: "S", price: { cents: "1500", currency_iso: "USD" } }] }),
+      // A null product and a null variant.
+      null,
+      product({ handle: "holes", variants: [null, variant("S")] }),
     ]);
-    expect(products).toHaveLength(5);
+    expect(products).toHaveLength(7);
     for (const p of products) expectNeutralProduct(p, fourthwallAdapter.capabilities);
   });
 
