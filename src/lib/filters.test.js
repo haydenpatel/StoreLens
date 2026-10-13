@@ -4,7 +4,9 @@ import {
   computeFilterData,
   countActiveFilters,
   filterAndSortProducts,
+  htmlToText,
   parseFilterParams,
+  withSearchText,
   restoreOptionSelections,
 } from "./filters";
 import { normalizeShopifyProduct } from "./platforms/shopify";
@@ -294,9 +296,23 @@ describe("filterAndSortProducts", () => {
       expect(run({ priceRange: [21, 21] })).toEqual(["Acme Blue Tee"]);
     });
 
-    it("excludes a product with no variants as soon as a price range applies", () => {
-      const products = norm([product({ title: "No variants", variants: [] })]);
-      expect(run({}, products)).toEqual([]);
+    it("keeps a product with no variants or no usable price when a price range applies (#84)", () => {
+      const products = norm([
+        product({ title: "No variants", variants: [] }),
+        product({ title: "Garbled", variants: [variant({ price: "n/a" })] }),
+        product({ title: "Priced", variants: [variant({ price: "500.00" })] }),
+      ]);
+      expect(run({ priceRange: [0, 10] }, products)).toEqual(["Garbled", "No variants"]);
+      expect(run({ priceRange: [0, 10], inStockOnly: true }, products)).toEqual(["Garbled", "No variants"]);
+    });
+
+    it("sorts unpriced products without NaN comparisons (#84)", () => {
+      const products = norm([
+        product({ title: "A none", variants: [] }),
+        product({ title: "B cheap", variants: [variant({ price: "5.00" })] }),
+        product({ title: "C none", variants: [] }),
+      ]);
+      expect(run({ sortBy: "price-asc" }, products)).toEqual(["B cheap", "A none", "C none"]);
     });
   });
 
@@ -382,6 +398,24 @@ describe("filterAndSortProducts", () => {
         "Cedar Mug",
         "Delta Cap",
       ]);
+    });
+  });
+
+  describe("search (#84)", () => {
+    const withDescription = (title, description) =>
+      norm([product({ title, body_html: description, variants: [variant({ price: "5.00" })] })])[0];
+
+    it("matches the description's text, not its markup", () => {
+      const products = [withDescription("Plain Tee", "<div><span>Soft cotton</span><p>Machine wash</p></div>")];
+      expect(run({ searchQuery: "span" }, products)).toEqual([]);
+      expect(run({ searchQuery: "div" }, products)).toEqual([]);
+      expect(run({ searchQuery: "cotton" }, products)).toEqual(["Plain Tee"]);
+    });
+
+    it("strips tags once when products load", () => {
+      const [loaded] = withSearchText([withDescription("Plain Tee", "<p>Soft &amp; warm</p>")]);
+      expect(loaded.descriptionText).toBe("Soft & warm");
+      expect(htmlToText(undefined)).toBe("");
     });
   });
 
@@ -492,6 +526,16 @@ describe("parseFilterParams", () => {
       ["inverted", "?minPrice=50&maxPrice=5&q=x"],
     ])("ignores %s ranges", (_label, search) => {
       expect(parseFilterParams(search).priceRange).toBeUndefined();
+    });
+
+    it("treats empty bounds as absent (#84)", () => {
+      expect(parseFilterParams("?minPrice=&maxPrice=&q=x").priceRange).toBeUndefined();
+      expect(parseFilterParams("?minPrice=&maxPrice=5&q=x").priceRange).toBeUndefined();
+    });
+
+    it("ignores an unknown sort value but keeps a known one (#84)", () => {
+      expect(parseFilterParams("?sort=bogus&q=x").sortBy).toBeUndefined();
+      expect(parseFilterParams("?sort=price-desc").sortBy).toBe("price-desc");
     });
 
     it("accepts equal bounds", () => {
