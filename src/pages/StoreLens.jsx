@@ -35,6 +35,8 @@ const errorContext = () => ({ supported: supportedPlatformNames(), notes: suppor
 const LEGACY_HISTORY_KEY = "shopify-url-history";
 const HISTORY_KEY = "storelens-url-history";
 
+const DEFAULT_SORT = "title-asc";
+
 const NO_COLLECTIONS = {
   status: "idle",
   collections: [],
@@ -141,9 +143,18 @@ export default function StoreLensApp() {
   // waiting to be applied once a collection's own data has settled - see the
   // restore effect below for why it can't just be applied immediately.
   const pendingFilterParamsRef = useRef(null);
-  const updateHistoryEntry = (entry) => {
+  // The store whose collection discovery has finished, null while it is running
+  // or for a store not discovered yet. Read by loads, which run from closures of
+  // an earlier render and so can't trust collectionsState.
+  const discoveredOriginRef = useRef(null);
+  // Whether the input being worked on came from the address bar; Recent Stores
+  // keeps its order for those, since Back/Forward only revisits a store.
+  const inputFromAddressBarRef = useRef(false);
+  // `keepOrder`: a store already in Recent Stores stays where it is.
+  const updateHistoryEntry = (entry, { keepOrder = false } = {}) => {
     if (!entry) return;
     setUrlHistory((prev) => {
+      if (keepOrder && prev.includes(entry)) return prev;
       const updated = [entry, ...prev.filter((u) => u !== entry)].slice(0, 5);
       try {
         localStorage.setItem(HISTORY_KEY, JSON.stringify(updated));
@@ -176,7 +187,7 @@ export default function StoreLensApp() {
 
   const [inStockOnly, setInStockOnly] = useState(false);
   const [saleOnly, setSaleOnly] = useState(false);
-  const [sortBy, setSortBy] = useState("title-asc");
+  const [sortBy, setSortBy] = useState(DEFAULT_SORT);
 
   // Back/Forward can kick off a new load while a previous one is still
   // in-flight (rapid navigation) - without tracking which call is current,
@@ -185,23 +196,25 @@ export default function StoreLensApp() {
   // the rest of the app's state) points at another.
   const fetchCollectionAbortRef = useRef(null);
 
-  // Whether the load that put the current collection on screen was a bare
-  // domain's auto-resolved default (never an explicit choice: dropdown, paste,
-  // or a deep link that already names a handle). The URL-sync effect reads it to
-  // replaceState instead of pushState for that one case.
-  const lastLoadWasAutoDefaultRef = useRef(false);
+  // Whether the load that put the current collection on screen was asked for by
+  // the address bar (a deep link or Back/Forward) rather than chosen by the user.
+  // The address is then already an entry of its own, so the URL-sync effect only
+  // normalizes it with replaceState: a bare domain's auto-resolved default, or a
+  // link to a path that isn't the collection's canonical one.
+  const lastLoadWasFromAddressBarRef = useRef(false);
 
   // Nothing is going to show for the store or collection just asked for (its
   // discovery found nothing to open, or its collection failed to load), so drop
   // the previous page: no stale grid or filters under the new message, and an
-  // address bar that names what was asked for instead of what is gone. The
-  // attempt is pushed so Back returns to the previous page; one that came from
-  // the address bar itself (a deep link, Back/Forward) only normalizes in place,
-  // since pushing there would trap Back in a loop.
+  // address bar that names what was asked for instead of what is gone (`path`;
+  // null leaves the address alone). The attempt is pushed so Back returns to the
+  // previous page; one that came from the address bar itself (a deep link,
+  // Back/Forward) only normalizes in place, since pushing there would trap Back
+  // in a loop.
   const showFailedStore = (path, fromAddressBar) => {
     setProducts([]);
     setCurrentCollectionUrl("");
-    if (addressMatches(path, window.location.pathname)) return;
+    if (!path || addressMatches(path, window.location.pathname)) return;
     if (fromAddressBar) window.history.replaceState(null, "", path);
     else window.history.pushState(null, "", path);
   };
@@ -225,9 +238,8 @@ export default function StoreLensApp() {
   // `fromAddressBar`: the load was asked for by the address bar (a deep link or
   // Back/Forward), not by the user pasting or choosing something; it decides
   // whether a failure replaces or pushes the history entry, and whether
-  // filters waiting from the link still apply. `autoDefault`: it is a bare
-  // domain's auto-resolved default collection.
-  const fetchCollection = async (url, { fromAddressBar = false, autoDefault = false } = {}) => {
+  // filters waiting from the link still apply.
+  const fetchCollection = async (url, { fromAddressBar = false } = {}) => {
     fetchCollectionAbortRef.current?.abort();
     const controller = new AbortController();
     fetchCollectionAbortRef.current = controller;
@@ -300,7 +312,7 @@ export default function StoreLensApp() {
       rememberVisitedCollection(loadAdapter, url);
       setCurrentCollectionUrl(url);
       setLoadVersion((version) => version + 1);
-      lastLoadWasAutoDefaultRef.current = autoDefault;
+      lastLoadWasFromAddressBarRef.current = fromAddressBar;
       resetFilters();
 
       if (pageError) {
@@ -313,14 +325,15 @@ export default function StoreLensApp() {
         );
       }
 
-      if (collectionsState.status !== "ready") {
-        // Domain only, never the collection path - a collection URL here
-        // (raced ahead of discovery's own history write below) would
-        // otherwise bump other domains out of Recent Stores every time
-        // someone just browses collections within the same store.
-        // The store's origin including any locale, so Recent Stores reopens
-        // the same market.
-        updateHistoryEntry(loadAdapter.parseUrl(new URL(url)).origin);
+      // Domain only, never the collection path - a collection URL here would
+      // otherwise bump other domains out of Recent Stores every time someone just
+      // browses collections within the same store. The store's origin including
+      // any locale, so Recent Stores reopens the same market. Skipped once the
+      // store's discovery has made its own entry (the ref, not collectionsState:
+      // this closure may predate the store being switched).
+      const storeOfLoad = loadAdapter.parseUrl(new URL(url)).origin;
+      if (discoveredOriginRef.current !== storeOfLoad) {
+        updateHistoryEntry(storeOfLoad, { keepOrder: fromAddressBar });
       }
     } finally {
       if (isCurrent()) {
@@ -351,6 +364,11 @@ export default function StoreLensApp() {
     resolveAbortRef.current?.abort();
     const resolution = new AbortController();
     resolveAbortRef.current = resolution;
+    // Whatever collection was still loading belongs to the store being left, and
+    // must not finish later over the page this input is about to show.
+    fetchCollectionAbortRef.current?.abort();
+    setLoading(false);
+    inputFromAddressBarRef.current = fromAddressBar;
     // Every way of switching store comes through here (paste, submit, Recent
     // Stores, Back/Forward), so a message about the previous one must not linger.
     clearMessage();
@@ -361,6 +379,11 @@ export default function StoreLensApp() {
       setStoreOrigin("");
       setInputHandle("");
       setSelectedHandle("");
+      autoLoadPendingRef.current = null;
+      pendingFilterParamsRef.current = null;
+      // Nothing is left to show: drop the previous page like a failed load does
+      // (a link in the address bar keeps its address).
+      showFailedStore(fromAddressBar ? null : "/", fromAddressBar);
       // Only surface an error for genuinely invalid input — an empty
       // submission (e.g. pressing Enter on an empty box) isn't a mistake.
       if (value?.trim()) {
@@ -401,7 +424,7 @@ export default function StoreLensApp() {
       // collection) instead of leaving the user stuck on an empty page.
       setSelectedHandle("");
       setCurrentCollectionUrl("");
-      autoLoadPendingRef.current = { fromAddressBar };
+      autoLoadPendingRef.current = { fromAddressBar, origin };
     }
     setDiscoveryRetryNonce((n) => n + 1);
   };
@@ -430,21 +453,13 @@ export default function StoreLensApp() {
     }
     const path = rawPath.replace(/\/$/, "");
     if (path) {
-      pendingFilterParamsRef.current = parseFilterParams(window.location.search);
+      // An entry without a query still has its say: no filters, and no sort.
+      pendingFilterParamsRef.current = parseFilterParams(window.location.search) ?? {};
       applyUserInput(path, { fromAddressBar: true });
     } else {
-      // Cancel whatever collection request might still be in flight -
-      // otherwise a slow one can resolve after landing here, repopulating
-      // products/currentCollectionUrl and pushing a stale URL right back
-      // onto history even though the user navigated back to empty.
-      fetchCollectionAbortRef.current?.abort();
+      // Back at the empty page: applyUserInput drops the store, cancels any load
+      // still running and clears the page.
       pendingFilterParamsRef.current = null;
-      setLoading(false);
-      setProducts([]);
-      setCurrentCollectionUrl("");
-      clearMessage();
-      setLoadWarning(null);
-      setLinkWarning(null);
       applyUserInput("", { fromAddressBar: true });
     }
   };
@@ -471,13 +486,14 @@ export default function StoreLensApp() {
   // load never reaches here at all, since currentCollectionUrl only changes
   // on a successful one, so there's nothing that can go stale.
   //
-  // The one exception: a bare domain resolving to its store's default
-  // collection is an auto-resolved implicit guess, not a deliberate choice -
-  // pushing it would mean Back from it lands on the bare-domain entry, which
-  // immediately re-resolves and re-pushes the very same URL, truncating the
-  // forward stack and trapping Back/Forward in a loop. replaceState instead
-  // normalizes the bare entry to its explicit URL in place, so it never
-  // exists ambiguously in history to begin with.
+  // The exception: a load the address bar asked for (a deep link, Back/Forward)
+  // already has its entry. A bare domain resolving to its store's default
+  // collection is an auto-resolved implicit guess - pushing it would mean Back
+  // from it lands on the bare-domain entry, which immediately re-resolves and
+  // re-pushes the very same URL, truncating the forward stack and trapping
+  // Back/Forward in a loop - and a non-canonical path would leave a duplicate
+  // entry for the same page. replaceState instead normalizes the entry to the
+  // collection's explicit URL in place, keeping its query.
   useEffect(() => {
     if (!currentCollectionUrl) return;
     const path = appPathFor(currentCollectionUrl);
@@ -486,13 +502,15 @@ export default function StoreLensApp() {
     // slash-terminated deep link doesn't look like a "change" and push a
     // spurious duplicate entry for what's already the same page.
     if (!addressMatches(path, window.location.pathname)) {
-      if (lastLoadWasAutoDefaultRef.current) {
-        window.history.replaceState(null, "", path);
+      if (lastLoadWasFromAddressBarRef.current) {
+        window.history.replaceState(null, "", path + window.location.search);
       } else {
         window.history.pushState(null, "", path);
       }
     }
-  }, [currentCollectionUrl]);
+    // loadVersion: reloading the collection already on screen from a link with
+    // another path still has to normalize that entry.
+  }, [currentCollectionUrl, loadVersion]);
 
   // Set default filter values
   const resetFilters = () => {
@@ -519,6 +537,7 @@ export default function StoreLensApp() {
         status: "loading",
         error: null,
       }));
+      discoveredOriginRef.current = null;
       const forceRefresh = forceRefreshDiscoveryRef.current;
       forceRefreshDiscoveryRef.current = false;
       try {
@@ -545,6 +564,7 @@ export default function StoreLensApp() {
           // (a cache hit now) so the pending auto-load picks up from there.
           setStoreOrigin(resolvedOrigin);
           setStoreInput(getDisplayOrigin(resolvedOrigin));
+          if (autoLoadPendingRef.current?.origin === storeOrigin) autoLoadPendingRef.current.origin = resolvedOrigin;
           return;
         }
         if (!controller.signal.aborted) {
@@ -554,25 +574,25 @@ export default function StoreLensApp() {
             error: null,
             allProductsHandle,
           });
-          updateHistoryEntry(storeOrigin);
+          discoveredOriginRef.current = storeOrigin;
+          updateHistoryEntry(storeOrigin, { keepOrder: inputFromAddressBarRef.current });
           // Consume the flag here, against this exact discovery's fresh
           // result, rather than in a separate effect watching collectionsState:
           // that raced against a stale "ready" state left over from whichever
           // store was discovered previously, firing before this discovery
           // resolved and consuming the flag before it had real data to use.
-          const pendingAutoLoad = autoLoadPendingRef.current;
+          // The flag names the store it was set for: a discovery that is about to
+          // be superseded must not consume the one set for the store replacing it.
+          const pendingAutoLoad = autoLoadPendingRef.current?.origin === storeOrigin ? autoLoadPendingRef.current : null;
           if (pendingAutoLoad) {
             autoLoadPendingRef.current = null;
             if (allProductsHandle) {
-              // Only replaceState (via lastLoadWasAutoDefaultRef) when this bare
+              // Only replaceState (via lastLoadWasFromAddressBarRef) when this bare
               // domain itself came from the address bar (a deep link or
               // Back/Forward) - a manually submitted bare domain (paste, history
               // select) should still push, so Back can return to whatever was
               // loaded before.
-              loadCollectionByHandle(allProductsHandle, storeOrigin, {
-                fromAddressBar: pendingAutoLoad.fromAddressBar,
-                autoDefault: pendingAutoLoad.fromAddressBar,
-              });
+              loadCollectionByHandle(allProductsHandle, storeOrigin, { fromAddressBar: pendingAutoLoad.fromAddressBar });
             } else {
               setInfoNotice(
                 "I couldn't automatically find an all-products collection for this store. Please choose a collection from the dropdown above."
@@ -594,7 +614,7 @@ export default function StoreLensApp() {
                 : err.message || "Couldn't load collections for this store",
             allProductsHandle: null,
           });
-          const pendingAutoLoad = autoLoadPendingRef.current;
+          const pendingAutoLoad = autoLoadPendingRef.current?.origin === storeOrigin ? autoLoadPendingRef.current : null;
           if (pendingAutoLoad) {
             autoLoadPendingRef.current = null;
             setError(
@@ -691,7 +711,10 @@ export default function StoreLensApp() {
     if (pending.inStockOnly !== undefined) setInStockOnly(pending.inStockOnly);
     if (pending.saleOnly !== undefined) setSaleOnly(pending.saleOnly);
     if (pending.priceRange !== undefined) setPriceRange(pending.priceRange);
-    if (pending.sortBy !== undefined) setSortBy(pending.sortBy);
+    // An entry is the whole view: with no sort in its link it is the default, so
+    // Back/Forward can't carry the previous page's sort onto it. (Switching
+    // collection by hand has no pending link, and keeps the sort.)
+    setSortBy(pending.sortBy ?? DEFAULT_SORT);
     // Deliberately keyed on loadVersion alone (see above); products and
     // filterData are read from the same render that set it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -709,13 +732,16 @@ export default function StoreLensApp() {
   // this on every keystroke/step, and replaceState doesn't need to keep up
   // with each one - only the final value once things settle is worth
   // writing. Each change resets the pending write rather than queuing one.
+  //
+  // Nothing is written while a store is resolving or a collection loading: the
+  // state is then the previous page's (or emptied for the load), while the
+  // address may already be the next entry's. It is written once the load ends.
   useEffect(() => {
-    if (!currentCollectionUrl) return;
+    if (!currentCollectionUrl || loading || resolving) return;
     const timeoutId = setTimeout(() => {
-      // Back/Forward landed on an entry whose collection is still loading: its
-      // filters are waiting to be applied, so the state here is the previous
-      // collection's and must not be written over the entry's own query.
-      if (pendingFilterParamsRef.current) return;
+      // The address has moved on without the page (e.g. Back to a store that
+      // then couldn't be resolved): these filters belong to another entry.
+      if (!addressMatches(appPathFor(currentCollectionUrl), window.location.pathname)) return;
       const newSearch = buildFilterSearch(
         { searchQuery, selectedVendors, selectedTypes, selectedTags, selectedOptions, inStockOnly, saleOnly, priceRange, sortBy },
         filterData,
@@ -728,6 +754,8 @@ export default function StoreLensApp() {
     return () => clearTimeout(timeoutId);
   }, [
     currentCollectionUrl,
+    loading,
+    resolving,
     searchQuery,
     selectedVendors,
     selectedTypes,
