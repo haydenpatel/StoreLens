@@ -7,7 +7,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { currencySymbol } from "@/lib/currency";
+import { currencyLabel } from "@/lib/currency";
 import ProductCard from "./ProductCard";
 
 // Rendering a DOM card per product doesn't scale to collections with
@@ -81,7 +81,7 @@ function ProductGrid({ products, totalProducts, sortBy, setSortBy, currency }) {
               <SelectItem value="price-desc">Price: High to Low</SelectItem>
               <SelectItem value="newest">Newest First</SelectItem>
               <SelectItem value="discount-percent">Discount %: High to Low</SelectItem>
-              <SelectItem value="discount-amount">Discount {currencySymbol(currency)}: High to Low</SelectItem>
+              <SelectItem value="discount-amount">Discount {currencyLabel(currency)}: High to Low</SelectItem>
             </SelectContent>
           </Select>
         </div>

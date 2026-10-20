@@ -30,6 +30,9 @@ function routedFetch({ listing, probes = {} }) {
   });
 }
 
+// Calls other than the optional /meta.json currency read.
+const feedCalls = (fetchMock) => fetchMock.mock.calls.filter(([url]) => !url.includes("/meta.json")).length;
+
 const probeUrls = (fetchMock) =>
   fetchMock.mock.calls.map(([url]) => url).filter((u) => u.includes("/products.json"));
 
@@ -365,7 +368,7 @@ describe("fetchCollection", () => {
 
     const { products } = await shopifyAdapter.fetchCollection(COLLECTION);
     expect(products).toHaveLength(510);
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(feedCalls(fetchMock)).toBe(3);
   });
 
   it("stops on an empty page", async () => {
@@ -374,7 +377,7 @@ describe("fetchCollection", () => {
 
     const { products } = await shopifyAdapter.fetchCollection(COLLECTION);
     expect(products).toHaveLength(250);
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(feedCalls(fetchMock)).toBe(2);
   });
 
   it("keeps what loaded and reports the error when a later page fails", async () => {
@@ -400,7 +403,7 @@ describe("fetchCollection", () => {
     let calls = 0;
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () => (++calls === 1 ? jsonResponse({}, { ok: false, status: 429 }) : jsonResponse({ products: rawProducts(2) })))
+      vi.fn(async (url) => (url.includes("/meta.json") ? jsonResponse({}) : ++calls === 1 ? jsonResponse({}, { ok: false, status: 429 }) : jsonResponse({ products: rawProducts(2) })))
     );
     const result = await settled(shopifyAdapter.fetchCollection(COLLECTION));
     expect(result.products).toHaveLength(2);
@@ -420,6 +423,58 @@ describe("fetchCollection", () => {
     const onProgress = vi.fn();
     await shopifyAdapter.fetchCollection(COLLECTION, { onProgress });
     expect(onProgress.mock.calls.map(([p]) => p.loaded)).toEqual([250, 260]);
+  });
+
+  describe("the store's currency (meta.json)", () => {
+    // Serves products for the feed and `meta` for /meta.json (a response, or a function throwing/never settling).
+    const withMeta = (meta) =>
+      vi.fn(async (url, init) => {
+        const u = new URL(url);
+        if (u.pathname.endsWith("/meta.json")) return typeof meta === "function" ? meta(init) : meta;
+        return jsonResponse({ products: rawProducts(2) });
+      });
+    const currencies = (r) => r.products.map((p) => p.currency);
+
+    it("sets the currency on every product and reads meta.json from the origin", async () => {
+      const fetchMock = withMeta(jsonResponse({ currency: "CAD" }));
+      vi.stubGlobal("fetch", fetchMock);
+      const result = await settled(shopifyAdapter.fetchCollection(COLLECTION));
+      expect(currencies(result)).toEqual(["CAD", "CAD"]);
+      expect(fetchMock.mock.calls[0][0]).toContain("/products.json");
+      expect(fetchMock.mock.calls.map(([u]) => u)).toContain(`${ORIGIN}/meta.json`);
+    });
+
+    it("doesn't read meta.json on a locale path, so prices keep the default", async () => {
+      const fetchMock = withMeta(jsonResponse({ currency: "USD" }));
+      vi.stubGlobal("fetch", fetchMock);
+      const result = await settled(shopifyAdapter.fetchCollection(`${ORIGIN}/en-ca/collections/tees`));
+      expect(currencies(result)).toEqual([undefined, undefined]);
+      expect(fetchMock.mock.calls.some(([u]) => u.includes("meta.json"))).toBe(false);
+    });
+
+    it.each([
+      ["the request throws", () => { throw new TypeError("blocked"); }],
+      ["a non-OK response", jsonResponse({}, { ok: false, status: 404 })],
+      ["a body that isn't JSON", { ok: true, status: 200, json: async () => { throw new SyntaxError("x"); } }],
+      ["a wrong shape", jsonResponse(["USD"])],
+      ["no currency", jsonResponse({})],
+      ["a currency that isn't a 3-letter code", jsonResponse({ currency: "usd" })],
+      ["a currency that isn't a string", jsonResponse({ currency: 5 })],
+      ["a null body", jsonResponse(null)],
+    ])("still loads the products with the default when meta.json gives %s", async (_, meta) => {
+      vi.stubGlobal("fetch", withMeta(meta));
+      const result = await settled(shopifyAdapter.fetchCollection(COLLECTION));
+      expect(result.products).toHaveLength(2);
+      expect(result.pageError).toBeNull();
+      expect(currencies(result)).toEqual([undefined, undefined]);
+    });
+
+    it("still loads the products with the default when meta.json never answers", async () => {
+      vi.stubGlobal("fetch", withMeta((init) => new Promise((_, reject) => init.signal.addEventListener("abort", () => reject(new Error("aborted"))))));
+      const result = await settled(shopifyAdapter.fetchCollection(COLLECTION));
+      expect(result.products).toHaveLength(2);
+      expect(currencies(result)).toEqual([undefined, undefined]);
+    });
   });
 
   describe("when the first page fails", () => {
@@ -464,7 +519,7 @@ describe("fetchCollection", () => {
       vi.stubGlobal("fetch", fetchMock);
       const result = await shopifyAdapter.fetchCollection(COLLECTION);
       expect(result.pageError.kind).toBe("locked");
-      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(feedCalls(fetchMock)).toBe(1);
     });
 
     it("is unsupported-platform when the response isn't JSON", async () => {
@@ -530,7 +585,7 @@ describe("fetchCollection", () => {
     const result = await shopifyAdapter.fetchCollection(COLLECTION, { maxPages: 2 });
     expect(result.products).toHaveLength(500);
     expect(result.truncated).toBe(true);
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(feedCalls(fetchMock)).toBe(2);
   });
 
   it("is not truncated when the last allowed page is short", async () => {

@@ -8,7 +8,7 @@ import { Search, X } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator"
 import { cn } from "@/lib/utils";
-import { formatMoney } from "@/lib/currency";
+import { formatMoneyRange } from "@/lib/currency";
 
 
 export default function Sidebar({
@@ -230,7 +230,7 @@ export default function Sidebar({
           {/* Price Range */}
           <div className="space-y-3">
             <Label className="text-sm font-medium">
-              Price Range: <span className="font-[350]">{formatMoney(priceRange[0], filterData.currency, { decimals: 0 })} - {formatMoney(priceRange[1], filterData.currency, { decimals: 0 })}</span>
+              Price Range: <span className="font-[350]">{formatMoneyRange(priceRange[0], priceRange[1], filterData.currency, { decimals: 0 })}</span>
             </Label>
             {/* With one price there is nothing to choose, and Radix computes
                 NaN% positions (division by a zero range), so show no slider. */}

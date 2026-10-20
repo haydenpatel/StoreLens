@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ExternalLink, Package } from "lucide-react";
 import { getDiscountData } from "@/lib/utils";
-import { formatMoney } from "@/lib/currency";
+import { formatMoney, formatMoneyRange } from "@/lib/currency";
 
 function ProductCard({ product }) {
   const image = product.images?.[0]?.url || null;
@@ -53,9 +53,7 @@ function ProductCard({ product }) {
 
   const priceDisplay = minPrice === null
     ? "Price unavailable"
-    : minPrice === maxPrice
-    ? formatMoney(minPrice, product.currency)
-    : `${formatMoney(minPrice, product.currency)} - ${formatMoney(maxPrice, product.currency)}`;
+    : formatMoneyRange(minPrice, maxPrice, product.currency);
 
   return (
     <Card className="group hover:shadow-lg transition-all duration-200 border-border py-0">
