@@ -135,7 +135,8 @@ async function checkShopify({ host, collection }) {
     } else if (!inspect(report, page2, validateShopifyPage(page2.data))) {
       report.fails.push("page 2 unusable");
     } else if (page2.data.products.length === 0) {
-      report.fails.push("page 2 is empty although page 1 was full");
+      // A collection of exactly one full page (250, 500...) ends this way legitimately.
+      report.note += ", page 2 empty (exactly one full page, paging not exercised)";
     } else if (page2.data.products[0].id === page1.data.products[0].id) {
       report.fails.push("page 2 repeats page 1 (paging ignored)");
     } else {
@@ -258,9 +259,12 @@ async function main() {
   const errorJobs = PLATFORMS.map(async (platform) => {
     let result;
     try {
+      if (!EXPECTED_ERRORS[platform.id]) return null;
       // Probe through a store that answered, not one that has gone.
       const sample = stores.find((r) => r.platform === platform && r.status !== "gone" && r.status !== "fail");
-      if (!sample) return null;
+      if (!sample) {
+        return { platform, store: "(error responses)", status: "warn", detail: "skipped: no healthy sample store to probe through" };
+      }
       const report = await checkErrorResponses(platform, sample.store);
       if (!report) return null;
       result = summarise(report);
@@ -294,11 +298,12 @@ async function main() {
     const counts = Object.entries(tally)
       .map(([status, n]) => `${n} ${status}`)
       .join(", ");
-    const verdict = passing > 0 ? "OK" : "FAILED";
+    const changed = extras.some((r) => r.platform === platform && r.status === "fail");
+    const verdict = passing === 0 ? "FAILED" : changed ? "OK, but error-response assumptions changed" : "OK";
     if (passing === 0) failed = true;
     console.log(`${platform.name}: ${verdict} (${counts})`);
   }
-  const drifted = extras.filter((r) => r.status !== "pass");
+  const drifted = extras.filter((r) => r.status === "fail");
   for (const r of drifted) console.log(`${r.platform.name}: error-response assumptions changed (${r.detail})`);
   if (drifted.length) failed = true;
   const overall = worstStatus(rows.map((r) => r.status));
