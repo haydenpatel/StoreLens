@@ -121,7 +121,7 @@ StoreLens relies on each platform’s public JSON endpoints. Stores that restric
 
 - Shopify enforces a limit of 1,000 collection pages (and 250 products per page).
   For a collection larger than 250,000 items StoreLens shows the first 250,000 products, with a warning.
-- The products feed has no currency, so StoreLens reads the store's from its `/meta.json`; if that can't be read, prices show with "$".
+- The products feed has no currency, so StoreLens reads the store's from its `/meta.json`; if that can't be read or is slow, prices show with "$".
 - On a Markets locale path (such as `/en-ca`) prices show with "$" whatever the market's currency: `/meta.json` reports the store's base currency there, not the market's, and the only source that names the market's currency (`/cart.js`) can't be read from a browser.
 
 
