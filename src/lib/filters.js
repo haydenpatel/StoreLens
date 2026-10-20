@@ -239,6 +239,30 @@ export function restoreOptionSelections(selectedOptions, filterOptions) {
   return { options, ignored };
 }
 
+// Matches vendor, category or tag selections read from a link to the values
+// this collection has. Values are compared ignoring case and surrounding
+// whitespace and come back in the collection's spelling; a value it doesn't
+// have can't match anything, so it is dropped and returned in `ignored`.
+export function restoreListSelections(selected, available) {
+  const byValue = new Map(available.map(value => [normalizeOptionValue(value), value]));
+  const values = [];
+  const ignored = [];
+  selected.forEach(value => {
+    const canonical = byValue.get(normalizeOptionValue(value));
+    if (canonical === undefined) ignored.push(value);
+    else if (!values.includes(canonical)) values.push(canonical);
+  });
+  return { values, ignored };
+}
+
+// Fits a price range read from a link to this collection's prices: clamped to
+// its lowest and highest. A range that misses them entirely can't show
+// anything, so it is dropped (`range` is null) and `ignored` is true.
+export function restorePriceRange([min, max], minPrice, maxPrice) {
+  if (max < minPrice || min > maxPrice) return { range: null, ignored: true };
+  return { range: [Math.max(min, minPrice), Math.min(max, maxPrice)], ignored: false };
+}
+
 // Selections for filters a platform can't populate (capabilities.* === false)
 // are ignored everywhere: a deep link carrying ?vendor=... must not filter a
 // catalog whose vendor control is hidden. Capabilities default to supported.

@@ -7,7 +7,9 @@ import {
   htmlToText,
   parseFilterParams,
   withSearchText,
+  restoreListSelections,
   restoreOptionSelections,
+  restorePriceRange,
 } from "./filters";
 import { normalizeShopifyProduct } from "./platforms/shopify";
 import {
@@ -752,3 +754,46 @@ describe("restoreOptionSelections", () => {
   });
 });
 
+
+describe("restoreListSelections", () => {
+  const available = ["Acme", "Beta Co"];
+
+  it("returns matches in the collection's spelling, ignoring case and whitespace", () => {
+    expect(restoreListSelections(["ACME", " beta co "], available)).toEqual({
+      values: ["Acme", "Beta Co"],
+      ignored: [],
+    });
+  });
+
+  it("drops and reports a value the collection doesn't have", () => {
+    expect(restoreListSelections(["Acme", "Nope"], available)).toEqual({ values: ["Acme"], ignored: ["Nope"] });
+  });
+
+  it("de-duplicates values that match once their case is aligned", () => {
+    expect(restoreListSelections(["Acme", "acme"], available).values).toEqual(["Acme"]);
+  });
+
+  it("drops everything when the collection has no values", () => {
+    expect(restoreListSelections(["Acme"], [])).toEqual({ values: [], ignored: ["Acme"] });
+  });
+});
+
+describe("restorePriceRange", () => {
+  it("keeps a range inside the collection's prices", () => {
+    expect(restorePriceRange([12, 18], 10, 20)).toEqual({ range: [12, 18], ignored: false });
+  });
+
+  it("clamps a range that sticks out", () => {
+    expect(restorePriceRange([0, 15], 10, 20).range).toEqual([10, 15]);
+    expect(restorePriceRange([15, 500], 10, 20).range).toEqual([15, 20]);
+  });
+
+  it("drops a range that doesn't overlap the collection's prices", () => {
+    expect(restorePriceRange([1000, 2000], 10, 20)).toEqual({ range: null, ignored: true });
+    expect(restorePriceRange([1, 5], 10, 20)).toEqual({ range: null, ignored: true });
+  });
+
+  it("keeps a range that only touches an end", () => {
+    expect(restorePriceRange([20, 30], 10, 20).range).toEqual([20, 20]);
+  });
+});

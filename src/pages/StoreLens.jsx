@@ -13,7 +13,9 @@ import {
   countActiveFilters,
   filterAndSortProducts,
   parseFilterParams,
+  restoreListSelections,
   restoreOptionSelections,
+  restorePriceRange,
   withSearchText,
 } from "@/lib/filters";
 import {
@@ -722,23 +724,41 @@ export default function StoreLensApp() {
     if (!pending || !currentCollectionUrl) return;
     pendingFilterParamsRef.current = null;
     if (pending.searchQuery !== undefined) setSearchQuery(pending.searchQuery);
-    if (pending.selectedVendors !== undefined) setSelectedVendors(pending.selectedVendors);
-    if (pending.selectedTypes !== undefined) setSelectedTypes(pending.selectedTypes);
-    if (pending.selectedTags !== undefined) setSelectedTags(pending.selectedTags);
+    // Selections that don't fit this collection can't filter anything, so
+    // they are dropped and named in one warning instead of emptying the list.
+    // A platform without a filter can't populate it, so its selections are
+    // never applied and there is nothing to report.
+    const ignored = [];
+    const restoreList = (selected, available, supported, label, setSelected) => {
+      if (selected === undefined) return;
+      if (!supported) return setSelected([]);
+      const restored = restoreListSelections(selected, available);
+      setSelected(restored.values);
+      restored.ignored.forEach(value => ignored.push(`${label}: ${value}`));
+    };
+    const { capabilities } = loadedAdapter;
+    restoreList(pending.selectedVendors, filterData.vendors, capabilities.vendors !== false, "Vendor", setSelectedVendors);
+    restoreList(pending.selectedTypes, filterData.types, capabilities.categories !== false, "Category", setSelectedTypes);
+    restoreList(pending.selectedTags, filterData.tags, capabilities.tags !== false, "Tag", setSelectedTags);
     if (pending.selectedOptions !== undefined) {
       // Match saved option names and values to this collection's own labels.
-      // Options it doesn't have can't filter anything, so say so instead of
-      // quietly emptying the list.
-      const { options, ignored } = restoreOptionSelections(pending.selectedOptions, filterData.options);
-      setSelectedOptions(options);
-      if (ignored.length > 0) {
-        const message = `Some filters in this link don't apply to this collection and were ignored (${ignored.join(", ")}).`;
-        setLinkWarning(message);
-      }
+      // Options it doesn't have can't filter anything.
+      const restored = restoreOptionSelections(pending.selectedOptions, filterData.options);
+      setSelectedOptions(restored.options);
+      ignored.push(...restored.ignored);
     }
     if (pending.inStockOnly !== undefined) setInStockOnly(pending.inStockOnly);
     if (pending.saleOnly !== undefined) setSaleOnly(pending.saleOnly);
-    if (pending.priceRange !== undefined) setPriceRange(pending.priceRange);
+    if (pending.priceRange !== undefined) {
+      // Clamped to this collection's prices; a range outside them is dropped
+      // and the full range stays.
+      const restored = restorePriceRange(pending.priceRange, filterData.minPrice, filterData.maxPrice);
+      if (restored.range) setPriceRange(restored.range);
+      else ignored.push(`Price: ${pending.priceRange[0]} - ${pending.priceRange[1]}`);
+    }
+    if (ignored.length > 0) {
+      setLinkWarning(`Some filters in this link don't apply to this collection and were ignored (${ignored.join(", ")}).`);
+    }
     // An entry is the whole view: with no sort in its link it is the default, so
     // Back/Forward can't carry the previous page's sort onto it. (Switching
     // collection by hand has no pending link, and keeps the sort.)
