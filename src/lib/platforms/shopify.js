@@ -11,6 +11,32 @@ const PLATFORM_ID = "shopify";
 export const MAX_PRODUCT_PAGES = 1000;
 const PAGE_SIZE = 250;
 
+const CURRENCY_CODE = /^[A-Z]{3}$/;
+
+// How long to wait for /meta.json. It is an optional extra and the products
+// load alongside it, so a slow answer mustn't hold the store up.
+const META_TIMEOUT_MS = 5000;
+// How much longer the products wait for it once they have all arrived.
+const META_GRACE_MS = 750;
+
+// The store's base currency, from /meta.json (keyless and readable from the
+// browser). Any failure, or a slow answer, just means it is unknown and prices
+// show with the default "$".
+async function readCurrency(origin) {
+  const timeout = new AbortController();
+  const timer = setTimeout(() => timeout.abort(), META_TIMEOUT_MS);
+  try {
+    const response = await fetch(`${origin}/meta.json`, { signal: timeout.signal });
+    if (!response.ok) return undefined;
+    const code = (await response.json())?.currency;
+    return typeof code === "string" && CURRENCY_CODE.test(code) ? code : undefined;
+  } catch {
+    return undefined;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function trimTrailingEmpty(values) {
   const out = [...values];
   while (out.length > 0 && (out[out.length - 1] === null || out[out.length - 1] === undefined)) {
@@ -123,6 +149,11 @@ async function fetchCollection(collectionUrl, { signal, maxPages = MAX_PRODUCT_P
   // Every Shopify store answers this, so it tells "this collection doesn't
   // exist" apart from "this store can't be read" when the first page fails.
   const probe = () => probeUrl(`${origin}/products.json?limit=1`, signal);
+  // meta.json reports the store's base currency even on a Markets locale path,
+  // whose feed carries converted prices, so the currency is only read (and
+  // applied) on the plain origin. A locale path keeps the default "$".
+  const isLocalePath = shopifyAdapter.parseUrl(new URL(collectionUrl)).origin !== origin;
+  let currencyRequest = null;
 
   const fetchPage = async (page) => {
     // Only the first page is worth a probe: if it loaded, the store is readable.
@@ -134,7 +165,10 @@ async function fetchCollection(collectionUrl, { signal, maxPages = MAX_PRODUCT_P
     };
     let response;
     try {
-      response = await fetchWithRetry(`${jsonUrl}?page=${page}&limit=${PAGE_SIZE}`, { signal });
+      const request = fetchWithRetry(`${jsonUrl}?page=${page}&limit=${PAGE_SIZE}`, { signal });
+      // Read alongside the first page, not before it: the products don't wait on it.
+      if (page === 1 && !isLocalePath && !currencyRequest) currencyRequest = readCurrency(origin);
+      response = await request;
     } catch (err) {
       if (isAbort(err, signal)) throw err;
       throw await diagnose({ cause: err });
@@ -166,6 +200,15 @@ async function fetchCollection(collectionUrl, { signal, maxPages = MAX_PRODUCT_P
     signal,
     onProgress,
   });
+  if (currencyRequest) {
+    let timer;
+    const grace = new Promise((resolve) => {
+      timer = setTimeout(() => resolve(undefined), META_GRACE_MS);
+    });
+    const currency = await Promise.race([currencyRequest, grace]);
+    clearTimeout(timer);
+    if (currency) for (const item of items) item.currency = currency;
+  }
   return { products: items, pageError, truncated };
 }
 
