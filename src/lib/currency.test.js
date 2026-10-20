@@ -1,63 +1,93 @@
 import { describe, it, expect } from "vitest";
-import { currencySymbol, formatMoney } from "./currency";
+import { currencyLabel, formatMoney, formatMoneyRange } from "./currency";
 
-describe("currencySymbol", () => {
-  it("falls back to $ when the platform gives no currency", () => {
-    expect(currencySymbol()).toBe("$");
-    expect(currencySymbol(undefined)).toBe("$");
-    expect(currencySymbol("")).toBe("$");
-  });
-
-  it("returns the narrow symbol for a known currency", () => {
-    expect(currencySymbol("USD")).toBe("$");
-    expect(currencySymbol("EUR")).toBe("\u20ac");
-    expect(currencySymbol("GBP")).toBe("\u00a3");
-    expect(currencySymbol("NZD")).toBe("$");
-  });
-
-  it("returns the code itself for something that isn't a valid currency", () => {
-    expect(currencySymbol("nope!")).toBe("nope!");
-  });
-});
+const NB = " ";
 
 describe("formatMoney", () => {
-  it("formats with a $ and two decimals when there is no currency, as before", () => {
+  it("formats with a bare $ and two decimals when the currency is unknown, as before", () => {
     expect(formatMoney(20)).toBe("$20.00");
     expect(formatMoney(12.5, undefined)).toBe("$12.50");
+    expect(formatMoney(12.5, "")).toBe("$12.50");
   });
 
-  it("formats with the currency's own symbol and separators", () => {
-    expect(formatMoney(1234.5, "USD")).toBe("$1,234.50");
-    expect(formatMoney(20, "EUR")).toBe("\u20ac20.00");
-    expect(formatMoney(20, "JPY")).toBe("\u00a520");
+  it.each([
+    ["USD", `$1,234.50${NB}USD`],
+    ["CAD", `$1,234.50${NB}CAD`],
+    ["AUD", `$1,234.50${NB}AUD`],
+    ["NZD", `$1,234.50${NB}NZD`],
+    ["GBP", `£1,234.50${NB}GBP`],
+    ["EUR", `€1,234.50${NB}EUR`],
+    ["JPY", `¥1,235${NB}JPY`],
+    ["SGD", `$1,234.50${NB}SGD`],
+    ["SEK", `kr${NB}1,234.50${NB}SEK`],
+    ["CHF", `CHF${NB}1,234.50`],
+    ["MXN", `$1,234.50${NB}MXN`],
+    ["BRL", `R$1,234.50${NB}BRL`],
+    ["INR", `₹1,234.50${NB}INR`],
+  ])("formats %s as <symbol><number> <CODE>", (code, expected) => {
+    expect(formatMoney(1234.5, code)).toBe(expected);
   });
 
-  it("uses the narrow symbol, so dollar currencies read the same as the label", () => {
-    expect(formatMoney(20, "NZD")).toBe("$20.00");
-    expect(formatMoney(20, "AUD")).toBe("$20.00");
-    expect(formatMoney(20, "CAD")).toBe("$20.00");
+  it("never formats the dollar currencies the same as USD or each other", () => {
+    const codes = ["USD", "CAD", "AUD", "NZD", "HKD", "MXN"];
+    const out = codes.map((code) => formatMoney(20, code));
+    expect(new Set(out).size).toBe(codes.length);
   });
 
-  it("agrees with currencySymbol for every currency", () => {
-    for (const code of ["USD", "NZD", "AUD", "CAD", "EUR", "GBP", "JPY", "CHF", "SEK"]) {
-      expect(formatMoney(5, code)).toContain(currencySymbol(code));
-    }
+  it("keeps the currency's own decimals, with zero for JPY", () => {
+    expect(formatMoney(13, "JPY")).toBe(`¥13${NB}JPY`);
   });
 
   it("can show whole units, as the price-range label does", () => {
     expect(formatMoney(10, undefined, { decimals: 0 })).toBe("$10");
-    expect(formatMoney(10, "USD", { decimals: 0 })).toBe("$10");
-    expect(formatMoney(1234, "EUR", { decimals: 0 })).toBe("\u20ac1,234");
+    expect(formatMoney(10, "USD", { decimals: 0 })).toBe(`$10${NB}USD`);
+    expect(formatMoney(1234, "EUR", { decimals: 0 })).toBe(`€1,234${NB}EUR`);
+    expect(formatMoney(10, "CHF", { decimals: 0 })).toBe(`CHF${NB}10`);
   });
 
-  it("separates a code-style symbol from the amount, like the card amounts", () => {
-    // CHF's narrow symbol is the code itself.
-    expect(currencySymbol("CHF")).toBe("CHF");
-    expect(formatMoney(10, "CHF", { decimals: 0 })).toBe("CHF\u00a010");
-    expect(formatMoney(10, "CHF")).toBe("CHF\u00a010.00");
+  it("uses en-US digits whatever the reader's locale", () => {
+    expect(formatMoney(1234567.891, "EUR")).toBe(`€1,234,567.89${NB}EUR`);
   });
 
   it("falls back to code and amount for an invalid currency", () => {
     expect(formatMoney(5, "nope!")).toBe("nope! 5.00");
+  });
+});
+
+describe("formatMoneyRange", () => {
+  it("shows the code once, at the end", () => {
+    expect(formatMoneyRange(5, 730, "CAD", { decimals: 0 })).toBe(`$5 - $730${NB}CAD`);
+    expect(formatMoneyRange(19.99, 29.99, "GBP")).toBe(`£19.99 - £29.99${NB}GBP`);
+  });
+
+  it("is a single value when min equals max", () => {
+    expect(formatMoneyRange(5, 5, "CAD")).toBe(`$5.00${NB}CAD`);
+    expect(formatMoneyRange(5, 5)).toBe("$5.00");
+  });
+
+  it("keeps a bare $ range when the currency is unknown", () => {
+    expect(formatMoneyRange(5, 10)).toBe("$5.00 - $10.00");
+    expect(formatMoneyRange(5, 10, undefined, { decimals: 0 })).toBe("$5 - $10");
+  });
+
+  it("repeats the symbol but adds no code for a currency whose symbol is its code", () => {
+    expect(formatMoneyRange(5, 10, "CHF", { decimals: 0 })).toBe(`CHF${NB}5 - CHF${NB}10`);
+  });
+
+  it("falls back to code and amounts for an invalid currency", () => {
+    expect(formatMoneyRange(5, 10, "nope!")).toBe("nope! 5.00 - 10.00");
+  });
+});
+
+describe("currencyLabel", () => {
+  it("is a bare $ when the currency is unknown", () => {
+    expect(currencyLabel()).toBe("$");
+    expect(currencyLabel("")).toBe("$");
+  });
+
+  it("shows the code for a known currency, as the amounts end with it", () => {
+    expect(currencyLabel("CAD")).toBe("(CAD)");
+    expect(formatMoney(5, "CAD")).toContain("CAD");
+    expect(formatMoney(5, "USD")).toContain(currencyLabel("USD").slice(1, -1));
   });
 });

@@ -924,13 +924,13 @@ describe("a Big Cartel shop", () => {
   });
 
   describe("prices", () => {
-    const shownPrices = () => screen.getAllByText(/^[^\d\s]*\d+\.\d{2}$/).map((el) => el.textContent);
+    const shownPrices = () => screen.getAllByText(/^[^\d\s]*\d+\.\d{2}(\s[A-Z]{3})?$/).map((el) => el.textContent);
 
     it("are shown in the shop's own currency", async () => {
       stub({ "example-shop": feed() }, undefined, { stores: { "example-shop": { currency: "EUR" } } });
       openAt(`/${BC}`);
       await heading(4, 4);
-      expect(shownPrices().sort()).toEqual(["€12.00", "€15.00", "€20.00", "€25.00"]);
+      expect(shownPrices().sort()).toEqual(["€12.00\u00a0EUR", "€15.00\u00a0EUR", "€20.00\u00a0EUR", "€25.00\u00a0EUR"]);
     });
 
     it("fall back to $ when store.json can't be read, and the products still load", async () => {
