@@ -114,6 +114,17 @@ describe("Sidebar collapsed sections", () => {
   });
 });
 
+describe("Sidebar selections missing from the collection", () => {
+  it("lists a selected value the collection doesn't have, so it can be cleared", async () => {
+    const filterData = { ...computeFilterData([product(10), product(20)]), tags: ["a", "b"] };
+    const props = renderSidebar({ filterData, selectedTags: ["from-a-link"] });
+    const box = checkbox("from-a-link");
+    expect(box.getAttribute("aria-checked")).toBe("true");
+    await userEvent.click(box);
+    expect(props.setSelectedTags).toHaveBeenCalledWith([]);
+  });
+});
+
 describe("Sidebar tags", () => {
   it("makes every tag reachable, not just the first 20", async () => {
     const tags = names("tag", 45);
