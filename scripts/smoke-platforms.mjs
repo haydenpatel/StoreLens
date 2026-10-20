@@ -267,7 +267,7 @@ async function main() {
     } catch (err) {
       result = { status: "fail", detail: `script error: ${err?.message}` };
     }
-    return { platform, store: "(error responses)", extra: true, ...result };
+    return { platform, store: "(error responses)", ...result };
   });
   const extras = (await Promise.all(errorJobs)).filter(Boolean);
   const rows = [...stores, ...extras];
