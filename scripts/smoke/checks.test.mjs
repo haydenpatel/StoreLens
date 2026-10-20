@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   checkCors,
+  checkErrorResponse,
   validateBigCartelProducts,
+  validateBigCartelStore,
   validateFourthwallPage,
   validateShopifyCollections,
   validateShopifyPage,
@@ -118,5 +120,39 @@ describe("worstStatus", () => {
     expect(worstStatus(["pass", "gone", "warn"])).toBe("gone");
     expect(worstStatus(["pass", "warn"])).toBe("warn");
     expect(worstStatus(["pass"])).toBe("pass");
+  });
+});
+
+describe("validateBigCartelStore", () => {
+  it("accepts a currency code and a numeric products_count", () => {
+    expect(validateBigCartelStore({ currency: { code: "USD" }, products_count: 3 })).toEqual([]);
+  });
+
+  it("reports what is missing", () => {
+    expect(validateBigCartelStore({ currency: {}, products_count: "3" })).toEqual([
+      "currency.code missing",
+      "products_count is not a number",
+    ]);
+    expect(validateBigCartelStore([])).toEqual(["response is not an object"]);
+  });
+});
+
+describe("checkErrorResponse", () => {
+  const res = (status, cors) => ({ status, headers: new Headers(cors ? { "access-control-allow-origin": "*" } : {}) });
+
+  it("accepts the assumed status and CORS presence", () => {
+    expect(checkErrorResponse(res(404, false), { status: 404, cors: false })).toEqual([]);
+    expect(checkErrorResponse(res(404, true), { status: 404, cors: true })).toEqual([]);
+  });
+
+  it("flags a changed status or CORS header", () => {
+    expect(checkErrorResponse(res(403, false), { status: 404, cors: false })).toEqual(["status is 403, expected 404"]);
+    expect(checkErrorResponse(res(422, true), { status: 422, cors: false })).toEqual([
+      "Access-Control-Allow-Origin is present, expected absent",
+    ]);
+  });
+
+  it("reports a failed request", () => {
+    expect(checkErrorResponse({ error: "timed out" }, { status: 404, cors: true })).toEqual(["request failed: timed out"]);
   });
 });

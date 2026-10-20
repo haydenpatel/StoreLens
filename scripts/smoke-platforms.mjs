@@ -11,13 +11,20 @@
 //
 // Result per store:  pass | warn (works, but something looks off) |
 //   gone (store removed/locked/empty: refresh the sample list) | fail.
-// Exit code is 1 if any platform has no passing store.
+// Each of Fourthwall and Big Cartel also gets an "error responses" row: it
+// requests a known-missing resource and checks the status and CORS header the
+// adapters' error handling assumes (see EXPECTED_ERRORS). A change there fails
+// the run, since the user-facing error messages would go wrong silently.
+// Exit code is 1 if any platform has no passing store, or an error-response
+// assumption has changed.
 
 import { PLATFORMS } from "./smoke-platforms.config.mjs";
 import {
   STORELENS_ORIGIN,
   checkCors,
+  checkErrorResponse,
   validateBigCartelProducts,
+  validateBigCartelStore,
   validateFourthwallPage,
   validateShopifyCollections,
   validateShopifyPage,
@@ -27,7 +34,11 @@ import {
 const TIMEOUT_MS = 15_000;
 const SHOPIFY_PAGE_SIZE = 250;
 const FOURTHWALL_MAX_PAGES = 40; // 800 products; far more than a sample store should have
-const GONE_STATUSES = new Set([401, 403, 404, 410]);
+// A missing or removed store. 401/403 are not here: they could be a feed that
+// changed or started blocking us, which should fail rather than hide. Big Cartel
+// answers 403 for a locked shop, so it adds that one (see GONE_EXTRA).
+const GONE_STATUSES = new Set([404, 410]);
+const GONE_EXTRA = { bigcartel: new Set([403]) };
 const GONE_NETWORK_CODES = new Set(["ENOTFOUND", "ECONNREFUSED", "EAI_AGAIN"]);
 
 async function requestOnce(url) {
@@ -68,13 +79,13 @@ function newReport() {
 
 // Handles the failure modes common to every first request. Returns true if the
 // response is usable (HTTP 200, JSON).
-function gate(report, res) {
+function gate(report, res, extraGone) {
   if (res.error) {
     if (res.gone) report.gone = res.error;
     else report.fails.push(`request failed: ${res.error}`);
     return false;
   }
-  if (GONE_STATUSES.has(res.status)) {
+  if (GONE_STATUSES.has(res.status) || extraGone?.has(res.status)) {
     report.gone = `HTTP ${res.status}`;
     return false;
   }
@@ -123,7 +134,9 @@ async function checkShopify({ host, collection }) {
       failLaterPage(report, "page 2");
     } else if (!inspect(report, page2, validateShopifyPage(page2.data))) {
       report.fails.push("page 2 unusable");
-    } else if (page2.data.products[0]?.id === page1.data.products[0].id) {
+    } else if (page2.data.products.length === 0) {
+      report.fails.push("page 2 is empty although page 1 was full");
+    } else if (page2.data.products[0].id === page1.data.products[0].id) {
       report.fails.push("page 2 repeats page 1 (paging ignored)");
     } else {
       report.note += `, paging works`;
@@ -170,13 +183,49 @@ async function checkFourthwall({ host }) {
 async function checkBigCartel({ shop }) {
   const report = newReport();
   const res = await request(`https://api.bigcartel.com/${shop}/products.json`);
-  if (!gate(report, res)) return report;
+  if (!gate(report, res, GONE_EXTRA.bigcartel)) return report;
   if (!inspect(report, res, validateBigCartelProducts(res.data))) return report;
   if (res.data.length === 0) {
     report.gone = "no products";
     return report;
   }
   report.note = `${res.data.length} products`;
+
+  // store.json supplies the currency and the product count; the adapter relies on both.
+  const info = await request(`https://api.bigcartel.com/${shop}/store.json`);
+  if (info.error || info.status !== 200 || info.parseError) {
+    report.fails.push(`store.json unavailable (${info.error ?? `HTTP ${info.status}`})`);
+  } else {
+    const problems = [...checkCors(info.headers), ...validateBigCartelStore(info.data)];
+    if (problems.length) report.fails.push(`store.json: ${problems.join("; ")}`);
+    else report.note += `, store.json ok (${info.data.currency.code}, products_count ${info.data.products_count})`;
+  }
+  return report;
+}
+
+// What the adapters assume about error responses, probed with a request for
+// something that cannot exist. Fourthwall's errors carry no CORS headers, so the
+// browser sees a network failure and the adapter probes to tell "not found" from
+// "blocked"; Big Cartel's do, so the status is read directly.
+const EXPECTED_ERRORS = {
+  fourthwall: (host) => [
+    { what: "nonexistent collection", url: `https://${host}/collections/storelens-smoke-no-such-collection/1.json`, expected: { status: 404, cors: false } },
+    { what: "page 0", url: `https://${host}/collections/all/0.json`, expected: { status: 422, cors: false } },
+  ],
+  bigcartel: () => [
+    { what: "nonexistent shop", url: `https://api.bigcartel.com/storelens-smoke-no-such-shop/products.json`, expected: { status: 404, cors: true } },
+  ],
+};
+
+async function checkErrorResponses(platform, sampleStore) {
+  const report = newReport();
+  const probes = EXPECTED_ERRORS[platform.id]?.(sampleStore);
+  if (!probes) return null;
+  for (const { what, url, expected } of probes) {
+    const problems = checkErrorResponse(await request(url), expected);
+    if (problems.length) report.fails.push(`${what}: ${problems.join("; ")}`);
+  }
+  if (!report.fails.length) report.note = `${probes.map((p) => p.what).join(", ")} as assumed (HTTP ${probes.map((p) => p.expected.status).join("/")}, CORS ${probes[0].expected.cors ? "present" : "absent"})`;
   return report;
 }
 
@@ -205,7 +254,23 @@ async function main() {
       return { platform, store: label(store), ...result };
     })
   );
-  const rows = await Promise.all(jobs);
+  const stores = await Promise.all(jobs);
+  const errorJobs = PLATFORMS.map(async (platform) => {
+    let result;
+    try {
+      // Probe through a store that answered, not one that has gone.
+      const sample = stores.find((r) => r.platform === platform && r.status !== "gone" && r.status !== "fail");
+      if (!sample) return null;
+      const report = await checkErrorResponses(platform, sample.store);
+      if (!report) return null;
+      result = summarise(report);
+    } catch (err) {
+      result = { status: "fail", detail: `script error: ${err?.message}` };
+    }
+    return { platform, store: "(error responses)", extra: true, ...result };
+  });
+  const extras = (await Promise.all(errorJobs)).filter(Boolean);
+  const rows = [...stores, ...extras];
 
   const widths = {
     platform: Math.max(8, ...rows.map((r) => r.platform.name.length)),
@@ -222,7 +287,7 @@ async function main() {
   console.log("");
   let failed = false;
   for (const platform of PLATFORMS) {
-    const mine = rows.filter((r) => r.platform === platform);
+    const mine = stores.filter((r) => r.platform === platform);
     const passing = mine.filter((r) => r.status === "pass" || r.status === "warn").length;
     const tally = {};
     for (const r of mine) tally[r.status] = (tally[r.status] ?? 0) + 1;
@@ -233,8 +298,11 @@ async function main() {
     if (passing === 0) failed = true;
     console.log(`${platform.name}: ${verdict} (${counts})`);
   }
+  const drifted = extras.filter((r) => r.status !== "pass");
+  for (const r of drifted) console.log(`${r.platform.name}: error-response assumptions changed (${r.detail})`);
+  if (drifted.length) failed = true;
   const overall = worstStatus(rows.map((r) => r.status));
-  console.log(`\n${failed ? "Platform-wide failure." : overall === "pass" ? "All stores passed." : "No platform-wide failure; see rows above."} (${Math.round((Date.now() - started) / 1000)}s)`);
+  console.log(`\n${failed ? "Platform-wide failure or changed error responses." : overall === "pass" ? "All stores passed." : "No platform-wide failure; see rows above."} (${Math.round((Date.now() - started) / 1000)}s)`);
   process.exitCode = failed ? 1 : 0;
 }
 

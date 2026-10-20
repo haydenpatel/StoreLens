@@ -15,6 +15,7 @@
 //   checked out is harmless in practice, and tracking a "canonical" branch
 //   would need git plumbing for no real gain.
 import { execFileSync } from "node:child_process";
+import os from "node:os";
 import {
   chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, unlinkSync,
 } from "node:fs";
@@ -84,7 +85,20 @@ try {
 
   try {
     const custom = git("config", "--get", "core.hooksPath");
-    warn(`core.hooksPath is set to "${custom}", so git won't run the hooks installed in ${hooksDir}.`);
+    // Git resolves a relative path from the checkout root, and expands a leading ~/.
+    const expanded = custom.startsWith("~/") ? path.join(os.homedir(), custom.slice(2)) : custom;
+    const resolved = path.resolve(expanded);
+    const same = (a, b) => {
+      try {
+        return realpathSync(a) === realpathSync(b);
+      } catch {
+        return path.resolve(a) === path.resolve(b);
+      }
+    };
+    // Pointing at the shared hooks folder or at .githooks itself is fine: the hooks run.
+    if (!same(resolved, hooksDir) && !same(resolved, source)) {
+      warn(`core.hooksPath is set to "${custom}", so git runs the hooks from there, not from ${hooksDir}, and the main-branch guard is not active unless that folder has the StoreLens hooks.`);
+    }
   } catch {
     /* not set: git uses the hooks folder */
   }

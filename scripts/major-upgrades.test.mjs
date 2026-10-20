@@ -78,6 +78,24 @@ describe("findMajorUpgrades", () => {
   });
 });
 
+describe("package groups", () => {
+  it("puts React, its types and Tailwind with its Vite plugin into one issue each", () => {
+    const found = findMajorUpgrades(
+      {
+        dependencies: { react: "^19.0.0", "react-dom": "^19.0.0", tailwindcss: "^4.0.0", "@tailwindcss/vite": "^4.0.0" },
+        devDependencies: { "@types/react": "^19.0.0", "@types/react-dom": "^19.0.0" },
+      },
+      Object.fromEntries(
+        ["react", "react-dom", "tailwindcss", "@tailwindcss/vite", "@types/react", "@types/react-dom"].map((n) => [n, { latest: "20.0.0" }]),
+      ),
+    );
+    expect(found.map((f) => f.upgrades.map((u) => u.name))).toEqual([
+      ["react", "react-dom", "@types/react", "@types/react-dom"],
+      ["tailwindcss", "@tailwindcss/vite"],
+    ]);
+  });
+});
+
 describe("releasesUrl", () => {
   it("links GitHub repositories to their releases", () => {
     expect(releasesUrl("git+https://github.com/vitejs/vite.git", "vite")).toBe(
@@ -85,6 +103,13 @@ describe("releasesUrl", () => {
     );
     expect(releasesUrl("git@github.com:lucide-icons/lucide.git", "lucide-react")).toBe(
       "https://github.com/lucide-icons/lucide/releases",
+    );
+  });
+
+  it("falls back to the npm page for characters that don't belong in a repo path", () => {
+    expect(releasesUrl("git+https://github.com/own)er/re po.git", "x")).toBe("https://www.npmjs.com/package/x");
+    expect(releasesUrl("https://github.com/owner/repo](https://evil.example)", "x")).toBe(
+      "https://www.npmjs.com/package/x",
     );
   });
 
