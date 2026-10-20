@@ -754,7 +754,6 @@ describe("restoreOptionSelections", () => {
   });
 });
 
-
 describe("restoreListSelections", () => {
   const available = ["Acme", "Beta Co"];
 
@@ -773,6 +772,12 @@ describe("restoreListSelections", () => {
     expect(restoreListSelections(["Acme", "acme"], available).values).toEqual(["Acme"]);
   });
 
+  it("selects every spelling the collection has, unless the value matches one exactly", () => {
+    const spelled = ["Acme", "ACME", "acme", "Beta Co"];
+    expect(restoreListSelections(["aCME"], spelled).values).toEqual(["Acme", "ACME", "acme"]);
+    expect(restoreListSelections(["ACME"], spelled).values).toEqual(["ACME"]);
+  });
+
   it("drops everything when the collection has no values", () => {
     expect(restoreListSelections(["Acme"], [])).toEqual({ values: [], ignored: ["Acme"] });
   });
@@ -780,20 +785,20 @@ describe("restoreListSelections", () => {
 
 describe("restorePriceRange", () => {
   it("keeps a range inside the collection's prices", () => {
-    expect(restorePriceRange([12, 18], 10, 20)).toEqual({ range: [12, 18], ignored: false });
+    expect(restorePriceRange([12, 18], 10, 20)).toEqual([12, 18]);
   });
 
   it("clamps a range that sticks out", () => {
-    expect(restorePriceRange([0, 15], 10, 20).range).toEqual([10, 15]);
-    expect(restorePriceRange([15, 500], 10, 20).range).toEqual([15, 20]);
+    expect(restorePriceRange([0, 15], 10, 20)).toEqual([10, 15]);
+    expect(restorePriceRange([15, 500], 10, 20)).toEqual([15, 20]);
   });
 
   it("drops a range that doesn't overlap the collection's prices", () => {
-    expect(restorePriceRange([1000, 2000], 10, 20)).toEqual({ range: null, ignored: true });
-    expect(restorePriceRange([1, 5], 10, 20)).toEqual({ range: null, ignored: true });
+    expect(restorePriceRange([1000, 2000], 10, 20)).toBeNull();
+    expect(restorePriceRange([1, 5], 10, 20)).toBeNull();
   });
 
   it("keeps a range that only touches an end", () => {
-    expect(restorePriceRange([20, 30], 10, 20).range).toEqual([20, 20]);
+    expect(restorePriceRange([20, 30], 10, 20)).toEqual([20, 20]);
   });
 });

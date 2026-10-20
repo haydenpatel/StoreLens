@@ -731,7 +731,10 @@ export default function StoreLensApp() {
     const ignored = [];
     const restoreList = (selected, available, supported, label, setSelected) => {
       if (selected === undefined) return;
-      if (!supported) return setSelected([]);
+      if (!supported) {
+        setSelected([]);
+        return;
+      }
       const restored = restoreListSelections(selected, available);
       setSelected(restored.values);
       restored.ignored.forEach(value => ignored.push(`${label}: ${value}`));
@@ -753,7 +756,7 @@ export default function StoreLensApp() {
       // Clamped to this collection's prices; a range outside them is dropped
       // and the full range stays.
       const restored = restorePriceRange(pending.priceRange, filterData.minPrice, filterData.maxPrice);
-      if (restored.range) setPriceRange(restored.range);
+      if (restored) setPriceRange(restored);
       else ignored.push(`Price: ${pending.priceRange[0]} - ${pending.priceRange[1]}`);
     }
     if (ignored.length > 0) {

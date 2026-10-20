@@ -240,27 +240,33 @@ export function restoreOptionSelections(selectedOptions, filterOptions) {
 }
 
 // Matches vendor, category or tag selections read from a link to the values
-// this collection has. Values are compared ignoring case and surrounding
-// whitespace and come back in the collection's spelling; a value it doesn't
-// have can't match anything, so it is dropped and returned in `ignored`.
+// this collection has. A value that is there exactly is kept as is; otherwise
+// it is compared ignoring case and surrounding whitespace and selects every
+// spelling the collection has ("ACME" picks both "Acme" and "acme", as they
+// are separate values when filtering). A value it doesn't have can't match
+// anything, so it is dropped and returned in `ignored`.
 export function restoreListSelections(selected, available) {
-  const byValue = new Map(available.map(value => [normalizeOptionValue(value), value]));
+  const spellings = new Map();
+  available.forEach(value => {
+    const key = normalizeOptionValue(value);
+    spellings.set(key, [...(spellings.get(key) ?? []), value]);
+  });
   const values = [];
   const ignored = [];
   selected.forEach(value => {
-    const canonical = byValue.get(normalizeOptionValue(value));
-    if (canonical === undefined) ignored.push(value);
-    else if (!values.includes(canonical)) values.push(canonical);
+    const matches = available.includes(value) ? [value] : spellings.get(normalizeOptionValue(value));
+    if (!matches) ignored.push(value);
+    else matches.forEach(match => { if (!values.includes(match)) values.push(match); });
   });
   return { values, ignored };
 }
 
 // Fits a price range read from a link to this collection's prices: clamped to
 // its lowest and highest. A range that misses them entirely can't show
-// anything, so it is dropped (`range` is null) and `ignored` is true.
+// anything, so it is dropped (null).
 export function restorePriceRange([min, max], minPrice, maxPrice) {
-  if (max < minPrice || min > maxPrice) return { range: null, ignored: true };
-  return { range: [Math.max(min, minPrice), Math.min(max, maxPrice)], ignored: false };
+  if (max < minPrice || min > maxPrice) return null;
+  return [Math.max(min, minPrice), Math.min(max, maxPrice)];
 }
 
 // Selections for filters a platform can't populate (capabilities.* === false)
