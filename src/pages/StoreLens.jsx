@@ -225,6 +225,7 @@ export default function StoreLensApp() {
   // in a loop.
   const showFailedStore = (path, fromAddressBar) => {
     setProducts([]);
+    setIsFilterDrawerOpen(false);
     setCurrentCollectionUrl("");
     if (!path || addressMatches(path, window.location.pathname)) return;
     if (fromAddressBar) window.history.replaceState(null, "", path);
@@ -272,6 +273,7 @@ export default function StoreLensApp() {
     setLinkWarning(null);
     setPlatformNotices([]);
     setProducts([]);
+    setIsFilterDrawerOpen(false);
 
     // Captured once: the user can paste a different store while this load is
     // still in flight, which swaps adapterRef for the new store's adapter.
@@ -896,9 +898,9 @@ export default function StoreLensApp() {
 
           {!loading &&
             products.length > 0 &&
-            platformNotices.map((notice) => (
+            platformNotices.map((notice, i) => (
               <Notice
-                key={notice.message}
+                key={`${i}-${notice.message}`}
                 level={notice.level}
                 onDismiss={() => setPlatformNotices((prev) => prev.filter((n) => n !== notice))}
               >

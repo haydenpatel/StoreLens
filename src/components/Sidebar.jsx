@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useId, useRef, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -67,6 +67,7 @@ export default function Sidebar({
   const [isDesktop, setIsDesktop] = useState(
     () => typeof window !== "undefined" && window.matchMedia("(min-width: 1280px)").matches
   );
+  const headingId = useId();
   const closeButtonRef = useRef(null);
   const asideRef = useRef(null);
 
@@ -131,6 +132,7 @@ export default function Sidebar({
       )}
       <aside
         ref={asideRef}
+        {...(isDesktop ? {} : { role: "dialog", "aria-modal": "true", "aria-labelledby": headingId })}
         className={cn(
           "fixed left-0 top-0 z-50 h-screen w-80 max-w-[85vw] bg-secondary border-r border-sidebar-border shadow-xl transition-transform duration-200 ease-in-out",
           isOpen ? "translate-x-0" : "-translate-x-full",
@@ -167,7 +169,7 @@ export default function Sidebar({
 
           {/* Header */}
           <div className="flex items-center justify-between gap-2">
-            <h2 className="font-semibold text-sidebar-primary">Filters</h2>
+            <h2 id={headingId} className="font-semibold text-sidebar-primary">Filters</h2>
             <div className="flex items-center gap-2">
             {hasActiveFilters && (
               <Button
@@ -183,6 +185,7 @@ export default function Sidebar({
               <Button
                 variant="disabled"
                 size="sm"
+                disabled
               >
                 <X className="w-3 h-3 mr-1" />
                 Reset
@@ -298,6 +301,7 @@ function FilterSection({ title, items: collectionItems, selected, onToggle }) {
   // have; list it (last) so it can still be seen and cleared.
   const items = [...collectionItems, ...new Set(selected.filter(item => !collectionItems.includes(item)))];
   const [expanded, setExpanded] = React.useState(items.length <= 8);
+  const idPrefix = useId();
 
   // A collapsed section still shows what is selected, so no active filter is
   // ever hidden behind "Show more".
@@ -321,15 +325,15 @@ function FilterSection({ title, items: collectionItems, selected, onToggle }) {
         )}
       </div>
       <div className="space-y-2">
-        {displayItems.map(item => (
+        {displayItems.map((item, index) => (
           <div key={item} className="flex items-center space-x-2">
             <Checkbox
-              id={`${title}-${item}`}
+              id={`${idPrefix}-${index}`}
               checked={selected.includes(item)}
               onCheckedChange={() => onToggle(item)}
             />
             <Label 
-              htmlFor={`${title}-${item}`} 
+              htmlFor={`${idPrefix}-${index}`} 
               className="text-sm font-[350] cursor-pointer flex-1 truncate"
             >
               {item}

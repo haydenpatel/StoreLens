@@ -28,3 +28,11 @@ describe("ProductCard currency", () => {
     expect(text()).not.toMatch(/\b[A-Z]{3}\b/);
   });
 });
+
+describe("ProductCard tags (#113)", () => {
+  it("renders repeated tags and skips non-string ones instead of crashing", () => {
+    const p = { ...product("USD", [variant(5)]), tags: ["new", "new", null, 7, "sale"] };
+    expect(() => render(<ProductCard product={p} />)).not.toThrow();
+    expect(text()).toContain("sale");
+  });
+});
