@@ -232,14 +232,18 @@ export default function Sidebar({
             <Label className="text-sm font-medium">
               Price Range: <span className="font-[350]">{formatMoney(priceRange[0], filterData.currency, { decimals: 0 })} - {formatMoney(priceRange[1], filterData.currency, { decimals: 0 })}</span>
             </Label>
-            <Slider
-              min={filterData.minPrice}
-              max={filterData.maxPrice}
-              step={1}
-              value={priceRange}
-              onValueChange={setPriceRange}
-              className="w-full"
-            />
+            {/* With one price there is nothing to choose, and Radix computes
+                NaN% positions (division by a zero range), so show no slider. */}
+            {filterData.minPrice < filterData.maxPrice && (
+              <Slider
+                min={filterData.minPrice}
+                max={filterData.maxPrice}
+                step={1}
+                value={priceRange}
+                onValueChange={setPriceRange}
+                className="w-full"
+              />
+            )}
           </div>
 
           {/* Vendors */}
@@ -277,7 +281,7 @@ export default function Sidebar({
           {capabilities.tags !== false && filterData.tags.length > 0 && (
             <FilterSection
               title="Tags"
-              items={filterData.tags.slice(0, 20)}
+              items={filterData.tags}
               selected={selectedTags}
               onToggle={(v) => toggleSelection(selectedTags, setSelectedTags, v)}
             />
@@ -289,11 +293,17 @@ export default function Sidebar({
   );
 }
 
-function FilterSection({ title, items, selected, onToggle }) {
+function FilterSection({ title, items: collectionItems, selected, onToggle }) {
+  // A selection restored from a link can name something this collection doesn't
+  // have; list it (last) so it can still be seen and cleared.
+  const items = [...collectionItems, ...new Set(selected.filter(item => !collectionItems.includes(item)))];
   const [expanded, setExpanded] = React.useState(items.length <= 8);
 
-  const displayItems = expanded ? items : items.slice(0, 5);
-  const hasMore = items.length > 5;
+  // A collapsed section still shows what is selected, so no active filter is
+  // ever hidden behind "Show more".
+  const displayItems = expanded ? items : items.filter((item, i) => i < 5 || selected.includes(item));
+  const hiddenCount = items.length - displayItems.length;
+  const hasMore = expanded ? items.length > 5 : hiddenCount > 0;
 
   return (
     <div className="space-y-2">
@@ -306,7 +316,7 @@ function FilterSection({ title, items, selected, onToggle }) {
             onClick={() => setExpanded(!expanded)}
             className="text-sidebar-primary p-0 h-auto"
           >
-            {expanded ? "Show less" : `Show ${items.length - 5} more`}
+            {expanded ? "Show less" : `Show ${hiddenCount} more`}
           </Button></>
         )}
       </div>
