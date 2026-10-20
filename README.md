@@ -121,7 +121,7 @@ StoreLens relies on each platform’s public JSON endpoints. Stores that restric
 
 - Shopify enforces a limit of 1,000 collection pages (and 250 products per page).
   For a collection larger than 250,000 items StoreLens shows the first 250,000 products, with a warning.
-- Known currencies are shown as symbol, amount and code ("$12.50 CAD", "£12.50 GBP"), so a CAD price is never mistaken for USD. A bare "$" with no code means the currency is unknown. This applies to Shopify and Big Cartel.
+- Known currencies are shown as symbol, amount and code ("$12.50 CAD", "£12.50 GBP"), so a CAD price is never mistaken for USD. A bare "$" with no code means the currency is unknown. This applies to every platform that reports a currency (Shopify via `/meta.json`, Big Cartel, Fourthwall); a Fourthwall shop in USD therefore reads "$12.50 USD".
 - The products feed has no currency, so StoreLens reads the store's from its `/meta.json`; if that can't be read or is slow, prices show with "$".
 - On a Markets locale path (such as `/en-ca`) prices show a bare "$" with no code, whatever the market's currency: `/meta.json` reports the store's base currency there, not the market's, and the only source that names the market's currency (`/cart.js`) can't be read from a browser.
 
