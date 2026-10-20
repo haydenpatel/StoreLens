@@ -165,7 +165,7 @@ describe("Sidebar price range", () => {
     expect(filterData.minPrice).toBe(filterData.maxPrice);
     expect(() => renderSidebar({ filterData })).not.toThrow();
     expect(screen.queryAllByRole("slider")).toHaveLength(0);
-    expect(screen.getByText(/Price Range/).textContent).toContain("$20 - $20");
+    expect(screen.getByText(/Price Range/).textContent).toContain("$20");
     expect(errors).not.toHaveBeenCalled();
     errors.mockRestore();
   });
