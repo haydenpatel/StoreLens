@@ -8,11 +8,12 @@ describe("currencySymbol", () => {
     expect(currencySymbol("")).toBe("$");
   });
 
-  it("returns the narrow symbol for a known currency", () => {
+  it("returns the symbol for a known currency", () => {
     expect(currencySymbol("USD")).toBe("$");
     expect(currencySymbol("EUR")).toBe("\u20ac");
     expect(currencySymbol("GBP")).toBe("\u00a3");
-    expect(currencySymbol("NZD")).toBe("$");
+    expect(currencySymbol("NZD")).toBe("NZ$");
+    expect(currencySymbol("CAD")).toBe("CA$");
   });
 
   it("returns the code itself for something that isn't a valid currency", () => {
@@ -32,10 +33,30 @@ describe("formatMoney", () => {
     expect(formatMoney(20, "JPY")).toBe("\u00a520");
   });
 
-  it("uses the narrow symbol, so dollar currencies read the same as the label", () => {
-    expect(formatMoney(20, "NZD")).toBe("$20.00");
-    expect(formatMoney(20, "AUD")).toBe("$20.00");
-    expect(formatMoney(20, "CAD")).toBe("$20.00");
+  it.each([
+    ["USD", "$1,234.50"],
+    ["CAD", "CA$1,234.50"],
+    ["AUD", "A$1,234.50"],
+    ["NZD", "NZ$1,234.50"],
+    ["GBP", "\u00a31,234.50"],
+    ["EUR", "\u20ac1,234.50"],
+    ["JPY", "\u00a51,235"],
+    ["SGD", "SGD\u00a01,234.50"],
+    ["HKD", "HK$1,234.50"],
+    ["SEK", "SEK\u00a01,234.50"],
+    ["CHF", "CHF\u00a01,234.50"],
+    ["MXN", "MX$1,234.50"],
+    ["BRL", "R$1,234.50"],
+    ["INR", "\u20b91,234.50"],
+  ])("formats %s as %s", (code, expected) => {
+    expect(formatMoney(1234.5, code)).toBe(expected);
+  });
+
+  it("never formats a dollar currency the same as USD", () => {
+    for (const code of ["CAD", "AUD", "NZD", "HKD", "MXN"]) {
+      expect(formatMoney(20, code)).not.toBe(formatMoney(20, "USD"));
+      expect(currencySymbol(code)).not.toBe(currencySymbol("USD"));
+    }
   });
 
   it("agrees with currencySymbol for every currency", () => {
@@ -51,7 +72,7 @@ describe("formatMoney", () => {
   });
 
   it("separates a code-style symbol from the amount, like the card amounts", () => {
-    // CHF's narrow symbol is the code itself.
+    // CHF has no distinct symbol, so the code is shown.
     expect(currencySymbol("CHF")).toBe("CHF");
     expect(formatMoney(10, "CHF", { decimals: 0 })).toBe("CHF\u00a010");
     expect(formatMoney(10, "CHF")).toBe("CHF\u00a010.00");

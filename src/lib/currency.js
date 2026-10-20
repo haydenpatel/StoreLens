@@ -4,14 +4,16 @@
 const FALLBACK_SYMBOL = "$";
 
 // One formatter for both uses so the symbol in a label ("Discount $") and the symbol
-// in an amount ("$20.00") always agree: both use the narrow symbol, so NZD, AUD
-// and CAD all show "$".
+// in an amount ("$20.00") always agree. Both use the full symbol, not the narrow
+// one, so currencies that share "$" stay apart (CA$, A$, NZ$) and a CAD price is
+// never read as USD; USD itself stays "$", and a currency with no distinct
+// symbol shows its code (SGD, SEK).
 function currencyFormat(currency, decimals) {
   const digits = decimals === undefined ? {} : { minimumFractionDigits: decimals, maximumFractionDigits: decimals };
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency,
-    currencyDisplay: "narrowSymbol",
+    currencyDisplay: "symbol",
     ...digits,
   });
 }
