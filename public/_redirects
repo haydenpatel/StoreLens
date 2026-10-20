@@ -1,1 +1,4 @@
+# Single-page-app fallback. Cloudflare Pages already serves index.html for unknown
+# paths when there is no 404.html, so this rule is probably redundant; it is kept
+# so the behaviour is explicit and doesn't depend on that default (see #90).
 /*    /index.html   200

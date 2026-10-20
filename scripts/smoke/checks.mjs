@@ -110,6 +110,34 @@ export function validateBigCartelProducts(data) {
   });
 }
 
+// Big Cartel api.bigcartel.com/{shop}/store.json: the adapter reads the currency
+// code and the product count (the cut-off check) from it.
+export function validateBigCartelStore(data) {
+  if (!isObject(data)) return ["response is not an object"];
+  const problems = [];
+  if (!isObject(data.currency) || typeof data.currency.code !== "string" || data.currency.code === "") {
+    problems.push("currency.code missing");
+  }
+  if (!Number.isFinite(data.products_count)) problems.push("products_count is not a number");
+  return problems;
+}
+
+// What the adapters assume about a platform's error responses (#28, #33): whether
+// the browser can read the status depends on CORS headers being on the error.
+// `res` is { status, headers } (or { error } if the request itself failed).
+// `expected` is { status, cors }, cors being whether Access-Control-Allow-Origin
+// should be present. Returns the ways the response differs, empty if as assumed.
+export function checkErrorResponse(res, expected) {
+  if (res.error) return [`request failed: ${res.error}`];
+  const problems = [];
+  if (res.status !== expected.status) problems.push(`status is ${res.status}, expected ${expected.status}`);
+  const hasCors = res.headers.get("access-control-allow-origin") !== null;
+  if (hasCors !== expected.cors) {
+    problems.push(`Access-Control-Allow-Origin is ${hasCors ? "present" : "absent"}, expected ${expected.cors ? "present" : "absent"}`);
+  }
+  return problems;
+}
+
 // Overall status for one store, worst first.
 const ORDER = ["fail", "gone", "warn", "pass"];
 export function worstStatus(statuses) {

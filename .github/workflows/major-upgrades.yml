@@ -2,6 +2,11 @@ name: Major upgrades
 
 # Dependabot ignores major versions (see dependabot.yml); this opens an issue
 # for each one instead, so they get planned rather than arriving as a PR.
+#
+# GitHub disables scheduled workflows in a repository with no activity (commits,
+# PRs, issues) for 60 days, which would silently stop this monthly run. If the
+# repo goes quiet, re-enable it on the Actions tab, or run it by hand with the
+# "Run workflow" button (workflow_dispatch below).
 on:
   schedule:
     - cron: "0 20 1 * *" # 1st of each month, 20:00 UTC

@@ -19,6 +19,9 @@ import { fileURLToPath } from "node:url";
 export const GROUPS = [
   ["vite", "@vitejs/plugin-react"],
   ["eslint", "@eslint/js"],
+  ["react", "react-dom", "@types/react", "@types/react-dom"],
+  ["tailwindcss", "@tailwindcss/vite"],
+  ["@testing-library/react", "@testing-library/dom"],
 ];
 
 // @types/node should follow the Node version the project runs (22), not npm's latest.
@@ -57,7 +60,9 @@ export function rangeMajor(range) {
 // "git+https://github.com/vitejs/vite.git" -> "https://github.com/vitejs/vite/releases".
 // Anything that isn't a GitHub repo falls back to the package's npm page.
 export function releasesUrl(repositoryUrl, name) {
-  const match = /github\.com[/:]([^/]+\/[^/]+?)(?:\.git)?$/.exec(repositoryUrl ?? "");
+  // Only plain owner/repo characters go into the link: the URL comes from the registry
+  // and ends up in markdown, so anything else falls back to the npm page.
+  const match = /github\.com[/:]([\w.-]+\/[\w.-]+?)(?:\.git)?$/.exec(repositoryUrl ?? "");
   return match
     ? `https://github.com/${match[1]}/releases`
     : `https://www.npmjs.com/package/${name}`;
@@ -111,8 +116,11 @@ export function issueBody(upgrades, links) {
   ].join("\n");
 }
 
+// Every npm/gh call gets a timeout so a hung registry can't hold the workflow for hours.
+const RUN_TIMEOUT_MS = 60_000;
+
 function run(command, args) {
-  return execFileSync(command, args, { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+  return execFileSync(command, args, { encoding: "utf8", maxBuffer: 64 * 1024 * 1024, timeout: RUN_TIMEOUT_MS });
 }
 
 // Latest published version of every direct dependency, as { name: { latest } }.
