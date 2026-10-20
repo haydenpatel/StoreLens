@@ -159,13 +159,18 @@ describe("Sidebar price range", () => {
     expect(screen.getAllByRole("slider")).toHaveLength(2);
   });
 
+  it("shows the range with the currency code once", () => {
+    renderSidebar({ filterData: computeFilterData([product(5, { currency: "CAD" }), product(730, { currency: "CAD" })]) });
+    expect(screen.getByText(/Price Range/).textContent).toBe("Price Range: $5 - $730\u00a0CAD");
+  });
+
   it("renders without errors and without a slider when every product costs the same", () => {
     const errors = vi.spyOn(console, "error").mockImplementation(() => {});
     const filterData = computeFilterData([product(20), product(20)]);
     expect(filterData.minPrice).toBe(filterData.maxPrice);
     expect(() => renderSidebar({ filterData })).not.toThrow();
     expect(screen.queryAllByRole("slider")).toHaveLength(0);
-    expect(screen.getByText(/Price Range/).textContent).toContain("$20");
+    expect(screen.getByText(/Price Range/).textContent).toContain("Price Range: $20\u00a0USD");
     expect(errors).not.toHaveBeenCalled();
     errors.mockRestore();
   });
