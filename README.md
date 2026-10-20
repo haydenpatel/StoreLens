@@ -81,7 +81,7 @@ npm install
 npm run dev
 ```
 
-Development needs Node 22.22.2+ (22.x), 24.15+ (24.x) or 26+: that is the range the test tooling (jsdom 30) supports, so Node 23 and 25 are out. CI uses Node 22. There is no `engines` field, since it would only warn.
+Development needs Node 22.22.2+ (22.x), 24.15+ (24.x) or 26+: that is the range the test tooling (jsdom 30) supports, so Node 23 and 25 are out. CI uses Node 22, and `.nvmrc` selects it (`nvm use`). `package.json` declares this range in `engines`, so `npm install` on another Node prints one warning instead of scattered ones from dev packages.
 
 `npm install` also installs the git hooks in `.githooks/` (run it again after changing one). They refuse commits and merges on `main`: work on a branch (one per issue) and merge through a pull request.
 
