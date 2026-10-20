@@ -125,6 +125,19 @@ describe("Sidebar selections missing from the collection", () => {
   });
 });
 
+describe("Sidebar duplicate selections", () => {
+  it("lists a repeated unknown selection once, with no duplicate-key warning, and one click clears it", async () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    const filterData = { ...computeFilterData([product(10), product(20)]), tags: ["a", "b"] };
+    const props = renderSidebar({ filterData, selectedTags: ["x", "x"] });
+    expect(screen.getAllByRole("checkbox", { name: "x" })).toHaveLength(1);
+    await userEvent.click(checkbox("x"));
+    expect(props.setSelectedTags).toHaveBeenCalledWith([]);
+    expect(errors).not.toHaveBeenCalled();
+    errors.mockRestore();
+  });
+});
+
 describe("Sidebar tags", () => {
   it("makes every tag reachable, not just the first 20", async () => {
     const tags = names("tag", 45);

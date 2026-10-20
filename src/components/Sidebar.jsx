@@ -296,7 +296,7 @@ export default function Sidebar({
 function FilterSection({ title, items: collectionItems, selected, onToggle }) {
   // A selection restored from a link can name something this collection doesn't
   // have; list it (last) so it can still be seen and cleared.
-  const items = [...collectionItems, ...selected.filter(item => !collectionItems.includes(item))];
+  const items = [...collectionItems, ...new Set(selected.filter(item => !collectionItems.includes(item)))];
   const [expanded, setExpanded] = React.useState(items.length <= 8);
 
   // A collapsed section still shows what is selected, so no active filter is
