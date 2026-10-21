@@ -405,6 +405,13 @@ describe("filterAndSortProducts", () => {
       expect(run({ sortBy: "discount-amount" }, products)).toEqual(["Mixed", "Forty", "Sold-out deal"]);
     });
 
+    it("sale-only counts a sold-out discount only while In stock only is on (#114)", () => {
+      const v = (price, compareAtPrice, available) => ({ price, compareAtPrice, available, options: [] });
+      const p = { ...catalog()[0], title: "Sold-out deal", variants: [v(50, 100, false), v(100, 100, true)] };
+      expect(run({ saleOnly: true, inStockOnly: false }, [p])).toEqual(["Sold-out deal"]);
+      expect(run({ saleOnly: true, inStockOnly: true }, [p])).toEqual([]);
+    });
+
     it("keeps input order for an unknown sort key", () => {
       expect(run({ sortBy: "bogus" })).toEqual([
         "Acme Blue Tee",

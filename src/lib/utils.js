@@ -33,6 +33,7 @@ export function getDiscountData(variants = []) {
     discountPercent,
     minAmount: Math.min(...amounts),
     minPercent: Math.min(...percents),
-    bestPercentAmount: discounts.find(d => d.percent === discountPercent).amount,
+    // Ties on the percentage take the larger saving, matching the top of the range.
+    bestPercentAmount: Math.max(...discounts.filter(d => d.percent === discountPercent).map(d => d.amount)),
   };
 }
