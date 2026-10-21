@@ -1521,7 +1521,9 @@ describe("the filter drawer across loads (#113)", () => {
 
   it("keeps focus in the page, not on <body>, when a load closes the drawer", async () => {
     vi.stubGlobal("matchMedia", (query) => ({ ...desktopMatchMedia(query), matches: false }));
-    vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: storeA(), [B]: storeB() }));
+    const slow = deferred();
+    const hold = (url) => (url.host === B && url.pathname === "/collections/all/products.json" ? slow.promise : undefined);
+    vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: storeA(), [B]: storeB() }, hold));
     openAt(`/${A}/collections/tees`);
     await waitFor(() => expect(screen.getByRole("button", { name: /^filters/i })).toBeTruthy());
     const user = userEvent.setup();
@@ -1532,8 +1534,13 @@ describe("the filter drawer across loads (#113)", () => {
       window.history.pushState(null, "", `/${B}/collections/all`);
       window.dispatchEvent(new PopStateEvent("popstate"));
     });
+    // The sidebar is gone while the next collection loads; focus must not have
+    // fallen to <body> with it.
+    await waitFor(() => expect(document.querySelector("aside")).toBeNull());
+    expect(document.activeElement).toBe(document.querySelector("main"));
+    await act(async () => {
+      slow.release(jsonResponse({ products: storeB().collections.all }));
+    });
     await heading(2, 2);
-    expect(document.activeElement).not.toBe(document.body);
-    expect(document.querySelector("main").contains(document.activeElement)).toBe(true);
   });
 });
