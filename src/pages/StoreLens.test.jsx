@@ -1478,6 +1478,35 @@ describe("input and filter fixes (#84)", () => {
     expect(screen.getAllByRole("combobox").some((box) => /Title A-Z/.test(box.textContent))).toBe(true);
   });
 
+  it("matches a vendor from a link ignoring case, in the collection's spelling", async () => {
+    vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: pricedStore() }));
+    openAt(`/${A}/collections/all?vendor=ACME`);
+    await heading(3, 3);
+    expect(screen.queryByText(/were ignored/)).toBeNull();
+    await waitFor(() => expect(here()).toBe(`/${A}/collections/all?vendor=Acme`));
+  });
+
+  it("names a vendor and a tag the collection doesn't have in the warning", async () => {
+    vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: pricedStore() }));
+    openAt(`/${A}/collections/all?vendor=Nope&tag=nope`);
+    await heading(3, 3);
+    expect(screen.getByText(/were ignored \(Vendor: Nope, Tag: nope\)/)).not.toBeNull();
+  });
+
+  it("clamps a price range from a link to the collection's prices", async () => {
+    vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: pricedStore() }));
+    openAt(`/${A}/collections/all?minPrice=25&maxPrice=5000`);
+    await heading(1, 3);
+    expect(screen.queryByText(/were ignored/)).toBeNull();
+  });
+
+  it("drops a price range outside the collection's prices and says so", async () => {
+    vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: pricedStore() }));
+    openAt(`/${A}/collections/all?minPrice=1000&maxPrice=2000`);
+    await heading(3, 3);
+    expect(screen.getByText(/were ignored \(Price: 1000 - 2000\)/)).not.toBeNull();
+  });
+
   it("starts with no Recent Stores when the saved history is not an array of strings", async () => {
     window.localStorage.setItem("storelens-url-history", JSON.stringify({ not: "an array" }));
     vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: pricedStore() }));
