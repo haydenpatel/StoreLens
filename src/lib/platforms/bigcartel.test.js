@@ -525,6 +525,83 @@ describe("listCollections", () => {
     expect(products).toHaveLength(2);
   });
 
+  describe("from store.json's category list", () => {
+    const listed = (names) => names.map((name) => category(name));
+    const stubWith = (categories, raw = catalog()) => stubShop(raw, undefined, { stores: { "example-shop": { categories } } });
+
+    it("uses the shop's order and keeps counts from the products, leaving out an empty category", async () => {
+      stubWith(listed(["Tees", "Zines", "Art Prints"]));
+      const { collections } = await bigcartelAdapter.listCollections(ORIGIN);
+      expect(collections).toEqual([
+        { handle: "all", title: "All Products", products_count: 4 },
+        { handle: "tees", title: "Tees", products_count: 3 },
+        { handle: "art-prints", title: "Art Prints", products_count: 1 },
+      ]);
+    });
+
+    it("appends a category in use that the list lacks, and skips clashes and repeats", async () => {
+      stubWith([category("Tees"), category("All", "all"), category("Tees")]);
+      const { collections } = await bigcartelAdapter.listCollections(ORIGIN);
+      expect(collections.map((c) => c.handle)).toEqual(["all", "tees", "art-prints"]);
+    });
+
+    it("matches a listed permalink to the products' category regardless of case", async () => {
+      stubWith([{ ...category("Tees"), permalink: "TEES" }]);
+      const { collections } = await bigcartelAdapter.listCollections(ORIGIN);
+      expect(collections.map((c) => c.handle)).toEqual(["all", "TEES", "art-prints"]);
+      expect(collections[1]).toMatchObject({ title: "Tees", products_count: 3 });
+      // The listed handle still loads the same products.
+      const { products } = await bigcartelAdapter.fetchCollection(bigcartelAdapter.collectionUrl(ORIGIN, "TEES"));
+      expect(products).toHaveLength(3);
+    });
+
+    it("falls back to the categories from the products when the list is missing or empty", async () => {
+      for (const categories of [undefined, [], "nope"]) {
+        clearFeedCache();
+        stubWith(categories);
+        const { collections } = await bigcartelAdapter.listCollections(ORIGIN);
+        expect(collections.map((c) => c.handle)).toEqual(["all", "art-prints", "tees"]);
+      }
+    });
+
+    it("falls back when store.json is unavailable", async () => {
+      stubShop(catalog(), undefined, { stores: { "example-shop": null } });
+      const { collections } = await bigcartelAdapter.listCollections(ORIGIN);
+      expect(collections.map((c) => c.handle)).toEqual(["all", "art-prints", "tees"]);
+    });
+
+    it("uses a list that arrives after the grace on the next read within the cache lifetime", async () => {
+      let release;
+      const slow = new Promise((resolve) => (release = resolve));
+      const body = { products_count: 4, currency: { code: "USD" }, categories: [category("Tees"), category("Art Prints", "art-prints")] };
+      stubShop(catalog(), (u) => (u.pathname.endsWith("/store.json") ? slow.then(() => jsonResponse(body)) : undefined));
+      const first = bigcartelAdapter.listCollections(ORIGIN);
+      await vi.advanceTimersByTimeAsync(800);
+      expect((await first).collections.map((c) => c.handle)).toEqual(["all", "art-prints", "tees"]);
+      release();
+      await vi.advanceTimersByTimeAsync(0);
+      const second = await bigcartelAdapter.listCollections(ORIGIN);
+      expect(second.collections.map((c) => c.handle)).toEqual(["all", "tees", "art-prints"]);
+    });
+
+    it("ignores a listed entry with no permalink and names one without a name from the products", async () => {
+      stubWith([{ id: 1 }, { id: 2, name: "No link" }, { id: 3, permalink: "tees" }]);
+      const { collections } = await bigcartelAdapter.listCollections(ORIGIN);
+      expect(collections.map((c) => [c.handle, c.title])).toEqual([
+        ["all", "All Products"],
+        ["tees", "Tees"],
+        ["art-prints", "Art Prints"],
+      ]);
+    });
+
+    it("does not hold the products up for a store.json that never answers", async () => {
+      stubShop(catalog(), (u) => (u.pathname.endsWith("/store.json") ? new Promise(() => {}) : undefined));
+      const pending = bigcartelAdapter.listCollections(ORIGIN);
+      await vi.advanceTimersByTimeAsync(1000);
+      expect((await pending).collections.map((c) => c.handle)).toEqual(["all", "art-prints", "tees"]);
+    });
+  });
+
   it("throws the failure, so the page can explain it", async () => {
     vi.stubGlobal("fetch", fakeBigCartelFetch({}));
     await expect(bigcartelAdapter.listCollections("https://gone-shop.bigcartel.com")).rejects.toMatchObject({ kind: "store-not-found" });
