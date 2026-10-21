@@ -301,10 +301,13 @@ async function listCollections(origin, signal, { forceRefresh = false } = {}) {
   for (const category of shopCategories) {
     const handle = text(category.permalink);
     const key = handle.toLowerCase();
-    if (!handle || key === ALL_PRODUCTS_HANDLE || sorted.some((c) => c.handle.toLowerCase() === key)) continue;
+    if (!handle || key === ALL_PRODUCTS_HANDLE) continue;
+    // A listed category with no products (an empty one, which the shop's own
+    // pages don't show) would only open an empty page, so it is left out.
     const used = categories.get(key);
+    if (!used) continue;
     categories.delete(key);
-    sorted.push({ handle, title: text(category.name) || used?.title || handle, products_count: used?.products_count ?? 0 });
+    sorted.push({ handle, title: text(category.name) || used.title, products_count: used.products_count });
   }
   sorted.push(...[...categories.values()].sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: "base" })));
   return {

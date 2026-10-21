@@ -529,13 +529,12 @@ describe("listCollections", () => {
     const listed = (names) => names.map((name) => category(name));
     const stubWith = (categories, raw = catalog()) => stubShop(raw, undefined, { stores: { "example-shop": { categories } } });
 
-    it("uses the shop's order and keeps counts from the products", async () => {
+    it("uses the shop's order and keeps counts from the products, leaving out an empty category", async () => {
       stubWith(listed(["Tees", "Zines", "Art Prints"]));
       const { collections } = await bigcartelAdapter.listCollections(ORIGIN);
       expect(collections).toEqual([
         { handle: "all", title: "All Products", products_count: 4 },
         { handle: "tees", title: "Tees", products_count: 3 },
-        { handle: "zines", title: "Zines", products_count: 0 },
         { handle: "art-prints", title: "Art Prints", products_count: 1 },
       ]);
     });
