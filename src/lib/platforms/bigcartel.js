@@ -2,9 +2,10 @@
 // https://api.bigcartel.com/{shop}/products.json, one unpaged array of every
 // product (`page`, `offset` and `per_page` are ignored). It is a legacy,
 // undocumented feed, so parsing is tolerant. Categories are only a field on each
-// product, so the collection list is derived from the fetched products. The shop's
-// currency (the products carry none) and product count come from a second small
-// document, api.bigcartel.com/{shop}/store.json, read alongside. See
+// product, so without a category list the collections are derived from the fetched
+// products. The shop's currency (the products carry none), product count and
+// category list (its own order) come from a second small document,
+// api.bigcartel.com/{shop}/store.json, read alongside. See
 // platforms/types.js for the shape this maps onto.
 import { StoreError, diagnoseFailure, isAbort } from "@/lib/errors";
 import { fetchWithRetry } from "./requests";
@@ -60,9 +61,10 @@ const STORE_INFO_TIMEOUT_MS = 5000;
 const STORE_INFO_GRACE_MS = 750;
 
 // What the shop says about itself, from store.json: the currency its prices are
-// in (the products feed has none) and how many products it has. Both are
-// optional extras, so any failure (or a slow answer) just means they are unknown,
-// and products still load (prices then show with the default "$").
+// in (the products feed has none), how many products it has and its categories
+// in the shop's own order. All are optional extras, so any failure (or a slow
+// answer) just means they are unknown, and products still load (prices then
+// show with the default "$", and the categories come from the products).
 async function readStoreInfo(shop) {
   const timeout = new AbortController();
   const timer = setTimeout(() => timeout.abort(), STORE_INFO_TIMEOUT_MS);
@@ -73,6 +75,7 @@ async function readStoreInfo(shop) {
     const code = data?.currency?.code;
     const count = data?.products_count;
     return {
+      categories: asArray(data?.categories).filter(isObject),
       currency: typeof code === "string" && CURRENCY_CODE.test(code) ? code : undefined,
       productsCount: Number.isInteger(count) && count > 0 ? count : undefined,
     };
@@ -110,8 +113,9 @@ async function readProducts(shop) {
 
 // The two requests run side by side. Only the products can fail the load, and
 // they aren't held for store.json: once they are in, it gets a short grace, and
-// if it is later than that the feed goes ahead without the currency and count
-// (prices show with the default "$") and picks them up when they arrive, for
+// if it is later than that the feed goes ahead without the currency, count and
+// categories (prices show with the default "$", the dropdown comes from the
+// products) and picks them up when they arrive, for
 // whoever reads this cached feed next.
 async function readFeed(shop) {
   const infoRequest = readStoreInfo(shop);
@@ -130,7 +134,7 @@ async function readFeed(shop) {
   return feed;
 }
 
-// The shop's raw products and store info ({ products, currency?, productsCount? }),
+// The shop's raw products and store info ({ products, currency?, productsCount?, categories? }),
 // from the shared copy when it is fresh. The request itself isn't tied to one
 // caller's signal (another may be waiting on it), so a caller that aborts just
 // stops waiting.
@@ -270,12 +274,13 @@ async function fetchCollection(collectionUrl, { signal, onProgress } = {}) {
   return { products, pageError, truncated };
 }
 
-// The categories in use, with how many products each holds, preceded by the
+// The shop's categories (its own order from store.json, else those in use sorted
+// by name), with how many products each holds, preceded by the
 // "all" pseudo-collection so a bare domain auto-loads.
 async function listCollections(origin, signal, { forceRefresh = false } = {}) {
   const shop = shopOf(new URL(origin));
   if (!shop) throw new StoreError("unsupported-platform");
-  const { products: feed } = await loadFeed(shop, { signal, forceRefresh });
+  const { products: feed, categories: shopCategories = [] } = await loadFeed(shop, { signal, forceRefresh });
 
   const categories = new Map();
   for (const raw of feed) {
@@ -291,7 +296,22 @@ async function listCollections(origin, signal, { forceRefresh = false } = {}) {
       categories.set(handle.toLowerCase(), entry);
     }
   }
-  const sorted = [...categories.values()].sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: "base" }));
+  // The shop's own list and order, when store.json gave one. Counts come from
+  // the products, as store.json has none. A category the products use but the
+  // list lacks still follows, so nothing is unreachable.
+  const sorted = [];
+  for (const category of shopCategories) {
+    const handle = text(category.permalink);
+    const key = handle.toLowerCase();
+    if (!handle || key === ALL_PRODUCTS_HANDLE) continue;
+    // A listed category with no products (an empty one, which the shop's own
+    // pages don't show) would only open an empty page, so it is left out.
+    const used = categories.get(key);
+    if (!used) continue;
+    categories.delete(key);
+    sorted.push({ handle, title: text(category.name) || used.title, products_count: used.products_count });
+  }
+  sorted.push(...[...categories.values()].sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: "base" })));
   return {
     collections: [{ handle: ALL_PRODUCTS_HANDLE, title: "All Products", products_count: feed.length }, ...sorted],
     allProductsHandle: ALL_PRODUCTS_HANDLE,
