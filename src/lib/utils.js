@@ -5,6 +5,10 @@ export function cn(...inputs) {
   return twMerge(clsx(inputs));
 }
 
+// The variants a product is shown by while filters narrow them: set by
+// filterAndSortProducts as `matchingVariants`, absent when no filter narrows.
+export const shownVariants = (product) => product.matchingVariants ?? product.variants ?? [];
+
 // A variant is on sale when its compare-at price is above its price (a
 // compare-at price equal to or below the price is not a discount).
 export function isDiscounted(variant) {

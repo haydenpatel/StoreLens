@@ -1,4 +1,4 @@
-import { getDiscountData, isDiscounted } from "@/lib/utils";
+import { getDiscountData, isDiscounted, shownVariants } from "@/lib/utils";
 
 // Pure filter/sort/URL-param logic over the platform-neutral product shape
 // (see platforms/types.js), kept out of the page component so it can be unit
@@ -309,11 +309,7 @@ const createdTime = (product) => {
   return Number.isFinite(time) ? time : 0;
 };
 
-// The variants a product is shown by while filters narrow them: set by
-// filterAndSortProducts as `matchingVariants`, absent when no filter narrows.
-const variantsOf = (product) => product.matchingVariants ?? product.variants ?? [];
-
-const pricesOf = (product) => variantsOf(product).map(v => v.price).filter(Number.isFinite);
+const pricesOf = (product) => shownVariants(product).map(v => v.price).filter(Number.isFinite);
 
 // a - b that treats an unpriced product (+/-Infinity, where the difference
 // would be NaN) as equal to another unpriced one.
@@ -360,8 +356,12 @@ function filterByVariant(products, { selectedOptions, inStockOnly, saleOnly, pri
       }) &&
       (!saleOnly || isDiscounted(v)) &&
       (!Number.isFinite(v.price) || (v.price >= priceRange[0] && v.price <= priceRange[1]));
-    const matching = variants.filter(v => passesNarrowing(v) && (!inStockOnly || v.available));
-    if (matching.length === 0 || (anyPriced && !matching.some(v => Number.isFinite(v.price)))) return;
+    // The no-priced-match rule looks at the variants before the stock test, so
+    // In stock only alone never drops a product it didn't drop before.
+    const narrowed = variants.filter(passesNarrowing);
+    if (narrowed.length === 0 || (anyPriced && !narrowed.some(v => Number.isFinite(v.price)))) return;
+    const matching = inStockOnly ? narrowed.filter(v => v.available) : narrowed;
+    if (matching.length === 0) return;
     result.push(variants.some(v => !passesNarrowing(v)) ? { ...product, matchingVariants: matching } : product);
   });
   return result;
@@ -428,13 +428,13 @@ export function filterAndSortProducts(products, state, capabilities = {}) {
         return createdTime(b) - createdTime(a);
       case "discount-percent":
         return (
-          getDiscountData(variantsOf(b)).discountPercent -
-          getDiscountData(variantsOf(a)).discountPercent
+          getDiscountData(shownVariants(b)).discountPercent -
+          getDiscountData(shownVariants(a)).discountPercent
         );
       case "discount-amount":
         return (
-          getDiscountData(variantsOf(b)).discountAmount -
-          getDiscountData(variantsOf(a)).discountAmount
+          getDiscountData(shownVariants(b)).discountAmount -
+          getDiscountData(shownVariants(a)).discountAmount
         );
       default:
         return 0;

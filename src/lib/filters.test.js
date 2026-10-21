@@ -978,6 +978,15 @@ describe("filtering per variant (#92)", () => {
     expect(names(filter([make("None", [v(["S", "Red"], NaN)])], { priceRange: [0, 10] }))).toEqual(["None"]);
   });
 
+  it("keeps, with In stock only on, what main kept: unpriced, zero-variant and default-variant products", () => {
+    const mixed = make("Mixed", [v(["S", "Red"], NaN), v(["M", "Red"], 50, { available: false })]);
+    const empty = make("Empty", []);
+    const plain = make("Plain", [v([], 10)], []);
+    const result = filter([mixed, empty, plain], { inStockOnly: true });
+    expect(result).toEqual([empty, mixed, plain].sort((a, b) => a.title.localeCompare(b.title)));
+    expect(result.every((p) => p.matchingVariants === undefined)).toBe(true);
+  });
+
   it("matches a price-narrowed product by the price-range ends inclusively", () => {
     const tee = make("Tee", [v(["S", "Red"], 20), v(["M", "Red"], 30)]);
     expect(names(filter([tee], { priceRange: [20, 20] }))).toEqual(["Tee"]);

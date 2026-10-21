@@ -3,14 +3,14 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ExternalLink, Package } from "lucide-react";
-import { getDiscountData } from "@/lib/utils";
+import { getDiscountData, shownVariants } from "@/lib/utils";
 import { formatMoneyRange } from "@/lib/currency";
 
 function ProductCard({ product }) {
   const image = product.images?.[0]?.url || null;
   // While filters narrow a product's variants, the price, badge and stock
   // label describe the matching ones; the variant list below stays complete.
-  const variants = product.matchingVariants ?? product.variants ?? [];
+  const variants = shownVariants(product);
   const prices = variants.map(v => v.price).filter(p => !Number.isNaN(p));
   const minPrice = prices.length > 0 ? Math.min(...prices) : null;
   const maxPrice = prices.length > 0 ? Math.max(...prices) : null;
