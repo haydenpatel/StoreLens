@@ -18,18 +18,30 @@ function ProductCard({ product }) {
   const maxTagDisplayChars = 16; // truncate displayed tag text to this length
 
   // Core discount data using shared helper
-  const { hasDiscount, discountAmount, discountPercent, minAmount, minPercent } = getDiscountData(variants);
+  const { hasDiscount, discountAmount, discountPercent, minAmount, minPercent, bestPercentAmount } = getDiscountData(variants);
   const percentLabel = (n) => (n >= 1 ? n.toFixed(0) : n.toFixed(1));
   // One figure when the discounted variants agree, otherwise a range of both
   // the saving and the percentage (never an amount and a percentage from
   // different variants).
   const lowPct = percentLabel(minPercent ?? 0);
   const highPct = percentLabel(discountPercent);
-  const discountText = hasDiscount
-    ? `Save ${formatMoneyRange(minAmount, discountAmount, product.currency)} (${
-        lowPct === highPct ? highPct : `${lowPct}-${highPct}`
-      }% off)`
-    : "";
+  const isRange = hasDiscount && (lowPct !== highPct || minAmount !== discountAmount);
+  const pctRange = lowPct === highPct ? highPct : `${lowPct}-${highPct}`;
+  const upTo = `Save up to ${formatMoneyRange(bestPercentAmount ?? 0, bestPercentAmount ?? 0, product.currency)} (${highPct}% off)`;
+  // The badge is too narrow for a range on a phone, so there it falls back to
+  // "up to" the best-percentage variant's own saving.
+  const discountText = !hasDiscount
+    ? null
+    : !isRange
+      ? `Save ${formatMoneyRange(discountAmount, discountAmount, product.currency)} (${highPct}% off)`
+      : (
+        <>
+          <span className="hidden sm:inline">
+            {`Save ${formatMoneyRange(minAmount, discountAmount, product.currency)} (${pctRange}% off)`}
+          </span>
+          <span className="sm:hidden">{upTo}</span>
+        </>
+      );
 
   // Prepare variant titles for display (display up to maxChars and use `+N more`)
   const variantTitles = (variants || []).map(v => v.title || '').filter(Boolean);
