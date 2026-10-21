@@ -21,6 +21,25 @@ describe("ProductCard currency", () => {
     expect(text()).toContain(`Save $10.00${NB}CAD (33% off)`);
   });
 
+  it("shows a range when in-stock discounted variants differ (#114)", () => {
+    render(<ProductCard product={product("CAD", [variant(50, 100), variant(300, 400)])} />);
+    expect(text()).toContain(`Save $50.00 - $100.00${NB}CAD (25-50% off)`);
+    // phone-width fallback uses the best-percentage variant's own saving
+    expect(text()).toContain(`Save up to $50.00${NB}CAD (50% off)`);
+  });
+
+  it("shows one percentage when only the saving differs (#114)", () => {
+    render(<ProductCard product={product("CAD", [variant(50, 100), variant(100, 200)])} />);
+    expect(text()).toContain(`Save $50.00 - $100.00${NB}CAD (50% off)`);
+    expect(text()).toContain(`Save up to $100.00${NB}CAD (50% off)`);
+  });
+
+  it("does not badge a sold-out discount on an in-stock product (#114)", () => {
+    const sold = { ...variant(50, 100), available: false };
+    render(<ProductCard product={product("CAD", [sold, variant(20)])} />);
+    expect(text()).not.toContain("Save");
+  });
+
   it("shows a bare $ with no code when the currency is unknown", () => {
     render(<ProductCard product={product(undefined, [variant(20, 30)])} />);
     expect(text()).toContain("Save $10.00 (33% off)");
