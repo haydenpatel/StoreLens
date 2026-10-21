@@ -132,6 +132,14 @@ export default function StoreLensApp() {
   // so async loads (which run right after applyUserInput sets it) see the
   // adapter chosen for the current input, not the previous render's.
   const [adapter, setAdapter] = useState(defaultAdapter);
+  const mainRef = useRef(null);
+  // Close the filter drawer; if focus is inside it, hand focus to the main area
+  // first so a load that unmounts the sidebar doesn't drop focus to <body>.
+  const closeFilterDrawer = () => {
+    const aside = document.querySelector("aside");
+    if (aside?.contains(document.activeElement)) mainRef.current?.focus();
+    setIsFilterDrawerOpen(false);
+  };
   const adapterRef = useRef(defaultAdapter);
   // The adapter that loaded the products on screen. Filters, counts and the
   // sidebar follow this, not `adapter`: pasting another store changes
@@ -226,6 +234,7 @@ export default function StoreLensApp() {
   // Back/Forward) only normalizes in place, since pushing there would trap Back
   // in a loop.
   const showFailedStore = (path, fromAddressBar) => {
+    closeFilterDrawer();
     setProducts([]);
     setCurrentCollectionUrl("");
     if (!path || addressMatches(path, window.location.pathname)) return;
@@ -273,6 +282,7 @@ export default function StoreLensApp() {
     setLoadWarning(null);
     setLinkWarning(null);
     setPlatformNotices([]);
+    closeFilterDrawer();
     setProducts([]);
 
     // Captured once: the user can paste a different store while this load is
@@ -880,7 +890,7 @@ export default function StoreLensApp() {
           />
         )}
 
-        <main className="flex-1 p-4 sm:p-6 bg-background border-sidebar-border border-l">
+        <main ref={mainRef} tabIndex={-1} className="outline-none flex-1 p-4 sm:p-6 bg-background border-sidebar-border border-l">
           {!loading && products.length > 0 && (
             <Button
               variant="outline"
@@ -919,9 +929,9 @@ export default function StoreLensApp() {
 
           {!loading &&
             products.length > 0 &&
-            platformNotices.map((notice) => (
+            platformNotices.map((notice, i) => (
               <Notice
-                key={notice.message}
+                key={`${i}-${notice.message}`}
                 level={notice.level}
                 onDismiss={() => setPlatformNotices((prev) => prev.filter((n) => n !== notice))}
               >

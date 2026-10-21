@@ -37,3 +37,14 @@ describe("ProductGrid sort options", () => {
     expect(screen.getByRole("option", { name: "Discount $: High to Low" })).toBeTruthy();
   });
 });
+
+describe("ProductGrid keys (#113)", () => {
+  it("renders a repeated product id without a duplicate-key warning", () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const p = { id: 1, handle: "p", title: "Tee", images: [], tags: [], variants: [], currency: "USD" };
+    render(<ProductGrid products={[p, p]} totalProducts={2} sortBy="title-asc" setSortBy={vi.fn()} currency="USD" />);
+    expect(screen.getAllByText("Tee")).toHaveLength(2);
+    expect(spy.mock.calls.flat().join(" ")).not.toMatch(/same key/);
+    spy.mockRestore();
+  });
+});

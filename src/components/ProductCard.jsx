@@ -146,19 +146,22 @@ function ProductCard({ product }) {
           )}
 
           {/* Tags */}
-          {product.tags && product.tags.length > 0 && (() => {
-            const shortTags = product.tags.filter(t => (t || '').length <= maxTagChars);
+          {Array.isArray(product.tags) && product.tags.length > 0 && (() => {
+            // A feed can carry a non-string (null) tag; skip those so one bad
+            // entry can't crash the grid.
+            const tags = product.tags.filter(t => typeof t === 'string');
+            const shortTags = tags.filter(t => t.length <= maxTagChars);
             const useTags = shortTags.length > 0
               ? shortTags.slice(0, maxTagsToShow)
-              : product.tags.slice(0, maxTagsToShow).map(t => t); // fallback to first tags if none are short
+              : tags.slice(0, maxTagsToShow); // fallback to first tags if none are short
 
             const displayedCount = useTags.length;
-            const hiddenCount = product.tags.length - displayedCount;
+            const hiddenCount = tags.length - displayedCount;
 
             return (
               <div className="flex flex-wrap gap-1">
-                {useTags.map(tag => (
-                  <Badge key={tag} variant="tags">
+                {useTags.map((tag, i) => (
+                  <Badge key={`${i}-${tag}`} variant="tags">
                     {tag.length > maxTagDisplayChars ? tag.slice(0, maxTagDisplayChars - 1) + '…' : tag}
                   </Badge>
                 ))}

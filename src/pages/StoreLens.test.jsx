@@ -1528,3 +1528,48 @@ describe("input and filter fixes (#84)", () => {
     expect(here()).toBe("/httpie.shop/collections/all");
   });
 });
+
+describe("the filter drawer across loads (#113)", () => {
+  it("stays closed when the next collection finishes loading at mobile width", async () => {
+    vi.stubGlobal("matchMedia", (query) => ({ ...desktopMatchMedia(query), matches: false }));
+    vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: storeA(), [B]: storeB() }));
+    openAt(`/${A}/collections/tees`);
+    await waitFor(() => expect(screen.getByRole("button", { name: /^filters/i })).toBeTruthy());
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /^filters/i }));
+    expect(screen.getByRole("dialog", { name: "Filters" }).hasAttribute("inert")).toBe(false);
+
+    act(() => {
+      window.history.pushState(null, "", `/${B}/collections/all`);
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+    await heading(2, 2);
+
+    expect(document.querySelector("aside").hasAttribute("inert")).toBe(true);
+  });
+
+  it("keeps focus in the page, not on <body>, when a load closes the drawer", async () => {
+    vi.stubGlobal("matchMedia", (query) => ({ ...desktopMatchMedia(query), matches: false }));
+    const slow = deferred();
+    const hold = (url) => (url.host === B && url.pathname === "/collections/all/products.json" ? slow.promise : undefined);
+    vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: storeA(), [B]: storeB() }, hold));
+    openAt(`/${A}/collections/tees`);
+    await waitFor(() => expect(screen.getByRole("button", { name: /^filters/i })).toBeTruthy());
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /^filters/i }));
+    expect(document.querySelector("aside").contains(document.activeElement)).toBe(true);
+
+    act(() => {
+      window.history.pushState(null, "", `/${B}/collections/all`);
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+    // The sidebar is gone while the next collection loads; focus must not have
+    // fallen to <body> with it.
+    await waitFor(() => expect(document.querySelector("aside")).toBeNull());
+    expect(document.activeElement).toBe(document.querySelector("main"));
+    await act(async () => {
+      slow.release(jsonResponse({ products: storeB().collections.all }));
+    });
+    await heading(2, 2);
+  });
+});

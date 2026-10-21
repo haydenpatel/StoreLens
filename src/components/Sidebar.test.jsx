@@ -86,9 +86,8 @@ describe("Sidebar collapsed sections", () => {
       filterData: { ...computeFilterData([product(10), product(20)]), vendors },
       selectedVendors: ["Vendor12", "Vendor08"],
     });
-    const labels = screen.getAllByRole("checkbox").map((c) => c.id);
-    const shown = labels.filter((id) => id.startsWith("Vendor-"));
-    expect(shown).toEqual(["Vendor-Vendor01", "Vendor-Vendor02", "Vendor-Vendor03", "Vendor-Vendor04", "Vendor-Vendor05", "Vendor-Vendor08", "Vendor-Vendor12"]);
+    const shown = screen.getAllByRole("checkbox").map((c) => c.parentElement.textContent).filter((t) => t.startsWith("Vendor"));
+    expect(shown).toEqual(["Vendor01", "Vendor02", "Vendor03", "Vendor04", "Vendor05", "Vendor08", "Vendor12"]);
     await userEvent.click(screen.getByRole("button", { name: "Show 5 more" }));
     expect(checkbox("Vendor06")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Show less" })).toBeTruthy();
@@ -173,5 +172,55 @@ describe("Sidebar price range", () => {
     expect(screen.getByText(/Price Range/).textContent).toContain("Price Range: $20\u00a0USD");
     expect(errors).not.toHaveBeenCalled();
     errors.mockRestore();
+  });
+});
+
+describe("Sidebar dialog semantics and robustness (#113)", () => {
+  const mobile = () => {
+    window.matchMedia = (query) => ({ matches: false, media: query, addEventListener() {}, removeEventListener() {} });
+  };
+  const desktop = () => {
+    window.matchMedia = (query) => ({ matches: true, media: query, addEventListener() {}, removeEventListener() {} });
+  };
+  afterEach(desktop);
+
+  it("is a modal dialog named Filters below xl", () => {
+    mobile();
+    renderSidebar({ isOpen: true });
+    const dialog = screen.getByRole("dialog", { name: "Filters" });
+    expect(dialog.getAttribute("aria-modal")).toBe("true");
+  });
+
+  it("stays a plain landmark when docked at xl", () => {
+    renderSidebar();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.querySelector("aside").hasAttribute("aria-modal")).toBe(false);
+  });
+
+  it("renders the inactive Reset as a disabled button", () => {
+    renderSidebar();
+    const reset = screen.getByRole("button", { name: /reset/i });
+    expect(reset.disabled).toBe(true);
+  });
+
+  it("gives every checkbox a unique id, even when sections share a title or value", () => {
+    const filterData = {
+      ...computeFilterData([product(10), product(20)]),
+      vendors: ["Same Value", "a b"],
+      types: ["Same Value"],
+      tags: ["Same Value"],
+    };
+    renderSidebar({ filterData });
+    const ids = screen.getAllByRole("checkbox").map((c) => c.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const id of ids) expect(id).not.toMatch(/\s/);
+  });
+
+  it("keeps focus on the Filters heading after Reset is clicked", async () => {
+    mobile();
+    const props = renderSidebar({ isOpen: true, activeFilterCount: 1 });
+    await userEvent.click(screen.getByRole("button", { name: /reset/i }));
+    expect(props.onReset).toHaveBeenCalled();
+    expect(document.activeElement).toBe(screen.getByRole("heading", { name: "Filters" }));
   });
 });
