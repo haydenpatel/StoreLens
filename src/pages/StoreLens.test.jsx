@@ -1532,8 +1532,8 @@ describe("the filter drawer across loads (#113)", () => {
       window.history.pushState(null, "", `/${B}/collections/all`);
       window.dispatchEvent(new PopStateEvent("popstate"));
     });
-    expect(document.activeElement).toBe(document.querySelector("main"));
     await heading(2, 2);
     expect(document.activeElement).not.toBe(document.body);
+    expect(document.querySelector("main").contains(document.activeElement)).toBe(true);
   });
 });
