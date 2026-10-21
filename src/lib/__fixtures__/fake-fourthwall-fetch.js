@@ -10,7 +10,7 @@ export const PAGE_SIZE = 20;
 //     real feed does for a browser: fetch throws (Fourthwall's 404 carries no CORS).
 //   - A locale prefix (/en-nzd) is ignored, as on the real feed.
 // override(url) and `honorAbort` work as in fakeShopifyFetch.
-export function fakeFourthwallFetch(shops, override, { honorAbort = false } = {}) {
+export function fakeFourthwallFetch(shops, override, { honorAbort = true } = {}) {
   const calls = [];
   const respond = async (input) => {
     const url = new URL(String(input));

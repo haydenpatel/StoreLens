@@ -4,6 +4,7 @@ import { act, cleanup, render, screen, waitFor, within } from "@testing-library/
 import userEvent from "@testing-library/user-event";
 import StoreLensApp from "./StoreLens";
 import { detectAdapter } from "@/lib/platforms";
+import { shopifyAdapter } from "@/lib/platforms/shopify";
 import { product, variant } from "../lib/__fixtures__/shopify";
 import { fakeShopifyFetch } from "../lib/__fixtures__/fake-shopify-fetch";
 import { fakeStoresFetch } from "../lib/__fixtures__/fake-stores-fetch";
@@ -97,6 +98,15 @@ function deferred() {
   return { promise, release };
 }
 
+// Lets everything already in flight finish: after a macrotask turn every promise
+// chain that isn't waiting on a timer has settled, and act() has rendered the
+// result. Use it instead of a fixed sleep before asserting that something did NOT
+// happen, so the assertion runs after the late work has landed, not after a guess
+// at how long it takes. (Run twice: a settled chain can start another.)
+const drain = async () => {
+  for (let i = 0; i < 2; i++) await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+};
+
 // Radix's Select needs these pointer/scroll methods to open in jsdom.
 const radixPolyfills = {
   hasPointerCapture: () => false,
@@ -112,10 +122,15 @@ beforeEach(() => {
   vi.stubGlobal("matchMedia", desktopMatchMedia);
   window.localStorage.clear();
   window.history.replaceState(null, "", "/");
+  // Module-level state that would otherwise carry over from the previous test: the
+  // Big Cartel feed cache and the price counter the catalogs draw from.
+  clearFeedCache();
+  nextPrice = 10;
 });
 
 afterEach(() => {
   slowResolve.override = null;
+  vi.useRealTimers();
   cleanup();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -236,10 +251,13 @@ describe("Back and Forward", () => {
       if (url.host === A && url.pathname === "/collections/tees/products.json" && ++teesLoads > 1) return slowTees.promise;
     };
     vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: storeA() }, hold));
+    // Fake timers that also follow the real clock (the testing library's waits need
+    // that), so the debounce window passes by advancing the clock, not by sleeping.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     openAt(`/${A}/collections/tees?vendor=Acme`);
     await heading(2, 3);
 
-    const user = userEvent.setup();
+    const user = userEvent.setup({ advanceTimers: (ms) => vi.advanceTimersByTime(ms) });
     await user.click(input());
     await user.clear(input());
     await user.paste(`${A}/collections/mugs`);
@@ -247,7 +265,7 @@ describe("Back and Forward", () => {
 
     act(() => window.history.back());
     await waitFor(() => expect(teesLoads).toBe(2));
-    await new Promise((resolve) => setTimeout(resolve, 450));
+    await act(async () => void (await vi.advanceTimersByTimeAsync(450)));
     expect(here()).toBe(`/${A}/collections/tees?vendor=Acme`);
 
     await act(async () => slowTees.release(await fakeShopifyFetch({ [A]: storeA() })(`https://${A}/collections/tees/products.json`)));
@@ -309,7 +327,8 @@ describe("switching stores while one is still resolving", () => {
   it("shows the second store when the first one's discovery answers late", async () => {
     const slowListing = deferred();
     const hold = (url) => (url.host === A && url.pathname === "/collections.json" ? slowListing.promise : undefined);
-    vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: storeA(), [B]: storeB() }, hold));
+    // A fetch that ignores its signal, so the answer really does arrive late.
+    vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: storeA(), [B]: storeB() }, hold, { honorAbort: false }));
     openAt("/");
     const user = userEvent.setup();
 
@@ -324,7 +343,7 @@ describe("switching stores while one is still resolving", () => {
     await act(async () => {
       slowListing.release(jsonResponse({ collections: [{ handle: "all", title: "All", products_count: 3 }] }));
     });
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await drain();
 
     expect(titleShown("Echo Hat")).not.toBeNull();
     expect(titleShown("Alpha Tee")).toBeNull();
@@ -337,7 +356,8 @@ describe("switching stores while one is still resolving", () => {
     const slowCollection = deferred();
     const hold = (url) =>
       url.host === A && url.pathname === "/collections/tees/products.json" ? slowCollection.promise : undefined;
-    vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: storeA(), [B]: storeB() }, hold));
+    // A fetch that ignores its signal, so the answer really does arrive late.
+    vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: storeA(), [B]: storeB() }, hold, { honorAbort: false }));
     openAt(`/${A}/collections/tees`);
     // The header disables the store box while a collection is loading.
     await waitFor(() => expect(input().disabled).toBe(true));
@@ -351,7 +371,7 @@ describe("switching stores while one is still resolving", () => {
     await act(async () => {
       slowCollection.release(jsonResponse({ products: storeA().collections.tees }));
     });
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await drain();
 
     expect(titleShown("Echo Hat")).not.toBeNull();
     expect(titleShown("Bravo Tee")).toBeNull();
@@ -375,7 +395,7 @@ describe("switching stores when the abandoned request is aborted (rejects)", () 
     await user.clear(input());
     await user.paste(B);
     await heading(2, 2);
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await drain();
 
     expect(titleShown("Echo Hat")).not.toBeNull();
     expect(screen.queryByRole("alert")).toBeNull();
@@ -394,7 +414,7 @@ describe("switching stores when the abandoned request is aborted (rejects)", () 
       window.dispatchEvent(new PopStateEvent("popstate"));
     });
     await heading(2, 2);
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await drain();
 
     expect(titleShown("Echo Hat")).not.toBeNull();
     expect(screen.queryByRole("alert")).toBeNull();
@@ -424,7 +444,7 @@ describe("store resolution that takes a while", () => {
     await heading(2, 2);
 
     await act(async () => slowA.release());
-    await sleep(50);
+    await drain();
 
     expect(titleShown("Echo Hat")).not.toBeNull();
     expect(titleShown("Alpha Tee")).toBeNull();
@@ -448,7 +468,7 @@ describe("store resolution that takes a while", () => {
     await user.clear(input());
     await user.paste(B);
     await heading(2, 2);
-    await sleep(50);
+    await drain();
 
     expect(screen.queryByRole("alert")).toBeNull();
     expect(window.location.pathname).toBe(`/${B}/collections/all`);
@@ -620,6 +640,9 @@ describe("a Fourthwall shop", () => {
     expect(pushedPaths()).toEqual([`/${F}/collections/all`]);
     // The collection dropdown stays (offering All Products), beside the sort control,
     // and none of the filters Fourthwall has no data for are shown.
+    // (Fourthwall's products never carry vendors or tags, so this alone can't show
+    // the capability check works; "sections the platform has no data for", below,
+    // does, with products that do have them.)
     const [collectionSelect] = screen.getAllByRole("combobox");
     expect(screen.getAllByRole("combobox")).toHaveLength(2);
     expect(collectionSelect.textContent).toBe("All Products");
@@ -903,7 +926,6 @@ describe("a Big Cartel shop", () => {
     return fetchMock;
   };
 
-  beforeEach(clearFeedCache);
 
   it("is recognised from its address with no network check, and a bare domain loads all products", async () => {
     const fetchMock = stub({ "example-shop": feed() });
@@ -1233,7 +1255,6 @@ describe("history writes and load cancellation (#82)", () => {
   });
 
   describe("a load that is still running when the address moves on (B1, H3)", () => {
-    const sleepFor = (ms) => settle(ms);
     // Starts with tees held in flight; the test then navigates and releases it.
     function holdTees(extraStores = {}, override) {
       const store = storeA();
@@ -1257,7 +1278,7 @@ describe("history writes and load cancellation (#82)", () => {
 
       await goTo(`/${B}`);
       await release();
-      await sleepFor(50);
+      await settle(50);
       expect(titleShown("Bravo Tee")).toBeNull();
       expect(here()).toBe(`/${B}`);
 
@@ -1273,7 +1294,7 @@ describe("history writes and load cancellation (#82)", () => {
 
       await goTo("/not%20a%20url");
       await release();
-      await sleepFor(50);
+      await settle(50);
       expect(titleShown("Bravo Tee")).toBeNull();
       expect(screen.getByText("Please enter a valid store or collection URL")).not.toBeNull();
       expect(pushedPaths()).toEqual(["/not%20a%20url"]);
@@ -1286,7 +1307,7 @@ describe("history writes and load cancellation (#82)", () => {
 
       await goTo("/");
       await release();
-      await sleepFor(50);
+      await settle(50);
       expect(titleShown("Bravo Tee")).toBeNull();
       expect(here()).toBe("/");
       expect(pushedPaths()).toEqual(["/"]);
@@ -1300,7 +1321,7 @@ describe("history writes and load cancellation (#82)", () => {
 
       await goTo(`/${B}/collections/all?vendor=Zed`);
       await release();
-      await sleepFor(50);
+      await settle(50);
       expect(titleShown("Bravo Tee")).toBeNull();
       expect(here()).toBe(`/${B}/collections/all?vendor=Zed`);
 
@@ -1658,5 +1679,165 @@ describe("the page while a store resolves and after a collection fails (#112)", 
 
     await screen.findByText(/password protected or blocking access/);
     await waitFor(() => expect(dropdown().hasAttribute("data-placeholder")).toBe(true));
+  });
+});
+
+// The sidebar controls, the sort, and Recent Stores, driven through the whole page.
+describe("sidebar controls, sort and Recent Stores", () => {
+  // Loading a collection starts with "In stock only" on, so the sold-out Delta Scarf
+  // is the one product not shown at first: 3 of 4.
+  const shop = () => ({
+    collections: {
+      all: [
+        product({
+          title: "Alpha Tee",
+          handle: "alpha-tee",
+          vendor: "Acme",
+          product_type: "Shirts",
+          tags: ["summer"],
+          options: [{ name: "Size" }],
+          variants: [variant({ price: "30.00", compare_at_price: "40.00", option1: "S" }), variant({ price: "35.00", option1: "M" })],
+        }),
+        product({ title: "Bravo Mug", handle: "bravo-mug", vendor: "Beta Co", product_type: "Mugs", tags: ["kitchen"], variants: [variant({ price: "10.00" })] }),
+        product({ title: "Charlie Cap", handle: "charlie-cap", vendor: "Acme", product_type: "Hats", variants: [variant({ price: "20.00" })] }),
+        product({ title: "Delta Scarf", handle: "delta-scarf", vendor: "Acme", product_type: "Scarves", variants: [variant({ price: "15.00", available: false })] }),
+      ],
+    },
+  });
+  const open = async (shown = 3) => {
+    vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: shop() }));
+    openAt(`/${A}/collections/all`);
+    await heading(shown, 4);
+    return userEvent.setup();
+  };
+  // The cards, in the order the grid shows them.
+  const cardTitles = () => screen.getAllByRole("heading", { level: 3 }).map((h) => h.textContent);
+  const checkbox = (name) => screen.getByRole("checkbox", { name });
+  const sortSelect = () => screen.getAllByRole("combobox").at(-1);
+
+  it("narrows the grid with a vendor checkbox and widens it again when cleared", async () => {
+    const user = await open();
+    await user.click(checkbox("Beta Co"));
+    await heading(1, 4);
+    expect(cardTitles()).toEqual(["Bravo Mug"]);
+    await user.click(checkbox("Beta Co"));
+    await heading(3, 4);
+    expect(cardTitles()).toEqual(["Alpha Tee", "Bravo Mug", "Charlie Cap"]);
+  });
+
+  it("filters by category, tag and option value too", async () => {
+    const user = await open();
+    await user.click(checkbox("Hats"));
+    await heading(1, 4);
+    expect(cardTitles()).toEqual(["Charlie Cap"]);
+    await user.click(checkbox("Hats"));
+    await heading(3, 4);
+    await user.click(checkbox("kitchen"));
+    await heading(1, 4);
+    expect(cardTitles()).toEqual(["Bravo Mug"]);
+    await user.click(checkbox("kitchen"));
+    await heading(3, 4);
+    await user.click(checkbox("M"));
+    await heading(1, 4);
+    expect(cardTitles()).toEqual(["Alpha Tee"]);
+  });
+
+  it("'In stock only' starts on, hiding the sold-out product, and unticking brings it back", async () => {
+    const user = await open();
+    expect(checkbox("In stock only").getAttribute("aria-checked")).toBe("true");
+    expect(titleShown("Delta Scarf")).toBeNull();
+    await user.click(checkbox("In stock only"));
+    await heading(4, 4);
+    expect(titleShown("Delta Scarf")).not.toBeNull();
+    await user.click(checkbox("In stock only"));
+    await heading(3, 4);
+    expect(titleShown("Delta Scarf")).toBeNull();
+  });
+
+  it("'On sale only' keeps just the discounted product", async () => {
+    const user = await open();
+    await user.click(checkbox("On sale only"));
+    await heading(1, 4);
+    expect(cardTitles()).toEqual(["Alpha Tee"]);
+  });
+
+  it("searches titles as you type, and clears from the clear button", async () => {
+    const user = await open();
+    await user.type(screen.getByPlaceholderText("Search products..."), "mug");
+    await heading(1, 4);
+    expect(cardTitles()).toEqual(["Bravo Mug"]);
+    await user.click(screen.getByRole("button", { name: "Clear search" }));
+    await heading(3, 4);
+  });
+
+  it("narrows by price from the slider's keyboard", async () => {
+    const user = await open();
+    const [low] = screen.getAllByRole("slider");
+    low.focus();
+    await user.keyboard("{ArrowRight}");
+    await heading(2, 4);
+    expect(titleShown("Bravo Mug")).toBeNull();
+  });
+
+  it("sorts the grid from the sort dropdown", async () => {
+    const user = await open();
+    expect(cardTitles()).toEqual(["Alpha Tee", "Bravo Mug", "Charlie Cap"]);
+    for (const [label, expected] of [
+      ["Price: Low to High", ["Bravo Mug", "Charlie Cap", "Alpha Tee"]],
+      ["Price: High to Low", ["Alpha Tee", "Charlie Cap", "Bravo Mug"]],
+      ["Title Z-A", ["Charlie Cap", "Bravo Mug", "Alpha Tee"]],
+    ]) {
+      await user.click(sortSelect());
+      await user.click(await screen.findByRole("option", { name: label }));
+      await waitFor(() => expect(cardTitles()).toEqual(expected));
+    }
+  });
+
+  it("opens a store from Recent Stores", async () => {
+    vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: shop(), [B]: storeB() }));
+    openAt(`/${A}/collections/all`);
+    await heading(3, 4);
+    const user = userEvent.setup();
+    await user.click(input());
+    await user.clear(input());
+    await user.paste(B);
+    await heading(2, 2);
+
+    await user.click(screen.getByTitle("Recent Stores"));
+    await user.click(await screen.findByRole("menuitem", { name: A }));
+
+    await heading(3, 4);
+    expect(titleShown("Alpha Tee")).not.toBeNull();
+    expect(window.location.pathname).toBe(`/${A}/collections/all`);
+  });
+
+  describe("sections the platform has no data for", () => {
+    // These products do carry vendors, types, tags and options, so the sections
+    // are absent only because the adapter says it can't supply them.
+    const without = (capability) => {
+      slowResolve.override = () => ({ ...shopifyAdapter, capabilities: { ...shopifyAdapter.capabilities, [capability]: false } });
+    };
+
+    it("shows them all for the real Shopify adapter", async () => {
+      await open();
+      for (const name of ["Acme", "Shirts", "summer", "S", "In stock only"]) expect(checkbox(name)).toBeTruthy();
+    });
+
+    it.each([
+      ["vendors", "Acme"],
+      ["categories", "Shirts"],
+      ["tags", "summer"],
+      ["variantOptions", "S"],
+      ["variantStock", "In stock only"],
+    ])("hides what depends on %s", async (capability, name) => {
+      without(capability);
+      // A platform that doesn't report stock has no in-stock filter, so the sold-out scarf shows too.
+      await open(capability === "variantStock" ? 4 : 3);
+      expect(screen.queryByRole("checkbox", { name })).toBeNull();
+      // Everything else is still offered.
+      for (const other of ["Acme", "Shirts", "summer", "S", "In stock only"].filter((n) => n !== name)) {
+        expect(checkbox(other)).toBeTruthy();
+      }
+    });
   });
 });

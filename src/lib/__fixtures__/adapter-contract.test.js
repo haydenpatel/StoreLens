@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CAPABILITY_KEYS, expectAdapterShape, expectNeutralProduct } from "./adapter-contract";
+import { CAPABILITY_KEYS, expectAdapterShape, expectNeutralProduct, expectParseUrl } from "./adapter-contract";
 
 // A minimal adapter and product that satisfy the contract; each test breaks one thing.
 const adapter = (overrides = {}) => ({
@@ -182,5 +182,47 @@ describe("expectNeutralProduct", () => {
     it("doesn't apply a check for a capability that is true", () => {
       ok(product({ vendors: [], categories: [], tags: [] }));
     });
+  });
+});
+
+describe("expectParseUrl", () => {
+  const ORIGIN = "https://shop.example.com";
+  const samples = {
+    origin: ORIGIN,
+    root: ORIGIN,
+    collection: { url: `${ORIGIN}/c/tees`, handle: "tees" },
+    product: `${ORIGIN}/p/tee`,
+  };
+  // A parseUrl that reads /c/<handle> and an optional /xx-yy locale prefix.
+  const parseUrl = (url) => {
+    const [, locale, rest] = url.pathname.match(/^(\/[a-z]{2}-[a-z]{2})?(\/.*)?$/) ?? [];
+    const match = (rest ?? "").match(/^\/c\/([^/]+)/);
+    return { origin: url.origin + (locale ?? ""), collection: match ? match[1] : null };
+  };
+  const good = () => adapter({ parseUrl });
+
+  it("accepts an adapter that reads the samples as expected", () => {
+    expect(() => expectParseUrl(good(), samples)).not.toThrow();
+    expect(() =>
+      expectParseUrl(good(), { ...samples, locale: { url: `${ORIGIN}/en-nz/c/tees`, origin: `${ORIGIN}/en-nz`, handle: "tees" } })
+    ).not.toThrow();
+  });
+
+  it("rejects a wrong origin, collection or product reading", () => {
+    expect(() => expectParseUrl(adapter({ parseUrl: (u) => ({ ...parseUrl(u), origin: "https://other.example.com" }) }), samples)).toThrow(/the root/);
+    expect(() => expectParseUrl(adapter({ parseUrl: (u) => ({ ...parseUrl(u), collection: u.pathname.includes("/c/") ? "x" : null }) }), samples)).toThrow(/a collection page/);
+    expect(() => expectParseUrl(adapter({ parseUrl: (u) => ({ ...parseUrl(u), collection: "all" }) }), samples)).toThrow(/the root/);
+    expect(() => expectParseUrl(good(), { ...samples, product: `${ORIGIN}/c/tees` })).toThrow(/product page/);
+  });
+
+  it("rejects a locale prefix that isn't kept in the origin", () => {
+    const locale = { url: `${ORIGIN}/en-nz/c/tees`, origin: `${ORIGIN}/en-nz`, handle: "tees" };
+    const dropsLocale = adapter({ parseUrl: (u) => ({ ...parseUrl(u), origin: u.origin }) });
+    expect(() => expectParseUrl(dropsLocale, { ...samples, locale })).toThrow(/locale prefix/);
+  });
+
+  it("rejects a collectionUrl that doesn't parse back", () => {
+    const wrongLink = adapter({ parseUrl, collectionUrl: (origin, handle) => `${origin}/collection/${handle}` });
+    expect(() => expectParseUrl(wrongLink, samples)).toThrow(/round trip/);
   });
 });

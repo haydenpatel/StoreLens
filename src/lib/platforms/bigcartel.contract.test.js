@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { bigcartelAdapter, clearFeedCache } from "./bigcartel";
-import { expectAdapterShape, expectNeutralProduct } from "../__fixtures__/adapter-contract";
+import { expectAdapterShape, expectNeutralProduct, expectParseUrl } from "../__fixtures__/adapter-contract";
 import { catalog, option, product, sized } from "../__fixtures__/bigcartel";
 import { fakeBigCartelFetch } from "../__fixtures__/fake-bigcartel-fetch";
 
@@ -20,6 +20,15 @@ async function load(raw, url = SHOP_URL, stores) {
 describe("the Big Cartel adapter follows the adapter contract", () => {
   it("has the adapter shape", () => {
     expectAdapterShape(bigcartelAdapter);
+  });
+
+  it("reads store, collection and product URLs like every other adapter", () => {
+    expectParseUrl(bigcartelAdapter, {
+      origin: "https://example-shop.bigcartel.com",
+      root: "https://example-shop.bigcartel.com/",
+      collection: { url: "https://example-shop.bigcartel.com/category/tees", handle: "tees" },
+      product: "https://example-shop.bigcartel.com/product/example-tee",
+    });
   });
 
   it("returns neutral products for the catalog", async () => {
