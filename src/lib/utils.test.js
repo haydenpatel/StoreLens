@@ -33,4 +33,36 @@ describe("getDiscountData", () => {
     expect(result.discountAmount).toBe(30);
     expect(result.discountPercent).toBe(37.5);
   });
+
+  it("ignores sold-out variants when another variant is in stock (#114)", () => {
+    const result = getDiscountData([
+      { price: 50, compareAtPrice: 100, available: false },
+      { price: 95, compareAtPrice: 100, available: true },
+    ]);
+    expect(result.discountAmount).toBe(5);
+    expect(result.discountPercent).toBe(5);
+    const none = getDiscountData([
+      { price: 50, compareAtPrice: 100, available: false },
+      { price: 20, compareAtPrice: null, available: true },
+    ]);
+    expect(none.hasDiscount).toBe(false);
+  });
+
+  it("keeps the discount of a product that is entirely sold out", () => {
+    const result = getDiscountData([{ price: 50, compareAtPrice: 100, available: false }]);
+    expect(result.hasDiscount).toBe(true);
+    expect(result.discountAmount).toBe(50);
+  });
+
+  it("reports the best percentage separately from the biggest saving", () => {
+    const result = getDiscountData([
+      { price: 50, compareAtPrice: 100, available: true },
+      { price: 300, compareAtPrice: 400, available: true },
+    ]);
+    expect(result.discountAmount).toBe(100);
+    expect(result.discountPercent).toBe(50);
+    expect(result.minAmount).toBe(50);
+    expect(result.minPercent).toBe(25);
+    expect(result.bestPercentAmount).toBe(50);
+  });
 });

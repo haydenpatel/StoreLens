@@ -393,6 +393,18 @@ describe("filterAndSortProducts", () => {
       ]);
     });
 
+    it("discount-percent ranks by each product's best percentage, ignoring sold-out variants (#114)", () => {
+      const v = (price, compareAtPrice, available = true) => ({ price, compareAtPrice, available, options: [] });
+      const mk = (title, variants) => ({ ...catalog()[0], title, variants });
+      const products = [
+        mk("Forty", [v(60, 100)]),
+        mk("Mixed", [v(50, 100), v(300, 400)]), // best is 50%, not the 25% of the biggest saving
+        mk("Sold-out deal", [v(50, 100, false), v(95, 100)]), // only 5% is buyable
+      ];
+      expect(run({ sortBy: "discount-percent" }, products)).toEqual(["Mixed", "Forty", "Sold-out deal"]);
+      expect(run({ sortBy: "discount-amount" }, products)).toEqual(["Mixed", "Forty", "Sold-out deal"]);
+    });
+
     it("keeps input order for an unknown sort key", () => {
       expect(run({ sortBy: "bogus" })).toEqual([
         "Acme Blue Tee",
