@@ -134,6 +134,29 @@ describe("fetchWithRetry", () => {
   });
 });
 
+describe("fetchWithRetry body cleanup", () => {
+  it("cancels the body of a response it retries past, but not the one it returns", async () => {
+    const bad = { ...response(503), body: { cancel: vi.fn(async () => {}) } };
+    const good = { ...response(200), body: { cancel: vi.fn(async () => {}) } };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(bad).mockResolvedValueOnce(good));
+    const result = fetchWithRetry("https://x.example/a", { baseDelayMs: 10 });
+    await vi.runAllTimersAsync();
+    expect(await result).toBe(good);
+    expect(bad.body.cancel).toHaveBeenCalledOnce();
+    expect(good.body.cancel).not.toHaveBeenCalled();
+  });
+
+  it("still retries when there is no body or cancelling rejects", async () => {
+    const noBody = response(500);
+    const failing = { ...response(502), body: { cancel: vi.fn(async () => Promise.reject(new Error("locked"))) } };
+    const good = response(200);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(noBody).mockResolvedValueOnce(failing).mockResolvedValueOnce(good));
+    const result = fetchWithRetry("https://x.example/a", { baseDelayMs: 10 });
+    await vi.runAllTimersAsync();
+    expect(await result).toBe(good);
+  });
+});
+
 describe("fetchPages", () => {
   // Pages 1..total hold `size` items each; the last holds `lastSize`.
   const listing = ({ total, size = 3, lastSize = size, fail = {} }) =>

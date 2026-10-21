@@ -112,11 +112,19 @@ describe("collections cache", () => {
     ["malformed JSON", "{oops"],
     ["a non-object", "5"],
     ["missing cachedAt", JSON.stringify({ ttlMs: 1, collections: [] })],
-    ["missing ttlMs", JSON.stringify({ cachedAt: Date.now(), collections: [] })],
+    ["a non-numeric cachedAt", JSON.stringify({ cachedAt: "x", ttlMs: TTL_MS, collections: [] })],
+    ["a future cachedAt", JSON.stringify({ cachedAt: Date.now() + 60_000, ttlMs: TTL_MS, collections: [] })],
     ["collections not an array", JSON.stringify({ cachedAt: Date.now(), ttlMs: TTL_MS, collections: {} })],
   ])("treats %s as a cache miss", (_label, raw) => {
     localStorage.setItem(cacheKey, raw);
     expect(loadCollectionsCache("shopify", ORIGIN)).toBeNull();
+  });
+
+  it("uses its own TTL, ignoring one stored with the entry", () => {
+    localStorage.setItem(cacheKey, JSON.stringify({ cachedAt: Date.now() - TTL_MS - 1, ttlMs: 1e12, collections: [] }));
+    expect(loadCollectionsCache("shopify", ORIGIN)).toBeNull();
+    localStorage.setItem(cacheKey, JSON.stringify({ cachedAt: Date.now() - 1000, collections: [] }));
+    expect(loadCollectionsCache("shopify", ORIGIN)).not.toBeNull();
   });
 
   it("never throws when localStorage is unavailable", () => {
@@ -189,6 +197,15 @@ describe("the platform cache", () => {
     expect(loadPlatformCache(ORIGIN)).toBe("fourthwall");
     expect(loadPlatformCache("https://other.example.com")).toBe("shopify");
     expect(loadPlatformCache("https://third.example.com")).toBeNull();
+  });
+
+  it.each([
+    ["a non-numeric cachedAt", '{"platformId":"shopify","cachedAt":"x"}'],
+    ["a future cachedAt", `{"platformId":"shopify","cachedAt":${Date.now() + 3_600_000}}`],
+    ["a null cachedAt", '{"platformId":"shopify","cachedAt":null}'],
+  ])("treats %s as a miss", (_label, raw) => {
+    localStorage.setItem(`storelens:platform:v1:${ORIGIN}`, raw);
+    expect(loadPlatformCache(ORIGIN)).toBeNull();
   });
 
   it("overwrites an earlier answer", () => {
