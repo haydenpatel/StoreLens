@@ -57,6 +57,14 @@ function ProductGrid({ products, totalProducts, sortBy, setSortBy, currency }) {
   }, [hasProducts]);
 
   const visibleProducts = products.slice(0, visibleCount);
+  // The same id can appear twice (a product repeated across pages); only the
+  // repeats get a suffix, so a normal card keeps a stable key across re-sorts.
+  const seenIds = new Map();
+  const cardKeys = visibleProducts.map((product) => {
+    const n = seenIds.get(product.id) ?? 0;
+    seenIds.set(product.id, n + 1);
+    return n === 0 ? String(product.id) : `${product.id}-dup${n}`;
+  });
   const hasMoreToShow = visibleCount < products.length;
 
   return (
@@ -91,8 +99,8 @@ function ProductGrid({ products, totalProducts, sortBy, setSortBy, currency }) {
       {products.length > 0 ? (
         <>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4">
-            {visibleProducts.map(product => (
-              <ProductCard key={product.id} product={product} />
+            {visibleProducts.map((product, i) => (
+              <ProductCard key={cardKeys[i]} product={product} />
             ))}
           </div>
           <div ref={sentinelRef} aria-hidden="true" className="h-px" />
