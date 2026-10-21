@@ -13,7 +13,7 @@ export const FEED_HOST = "api.bigcartel.com";
 //     over those defaults (`{ currency: "EUR", products_count: 99 }`), and null
 //     makes store.json answer 404.
 // override(url) and `honorAbort` work as in fakeShopifyFetch.
-export function fakeBigCartelFetch(shops, override, { honorAbort = false, locked = [], stores = {} } = {}) {
+export function fakeBigCartelFetch(shops, override, { honorAbort = true, locked = [], stores = {} } = {}) {
   const calls = [];
   const respond = async (input) => {
     const url = new URL(String(input));

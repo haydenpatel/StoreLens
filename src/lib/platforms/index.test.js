@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import {
   createRegistry,
   defaultAdapter,
@@ -11,6 +11,20 @@ import {
 import { shopifyAdapter } from "./shopify";
 import { fourthwallAdapter } from "./fourthwall";
 import { bigcartelAdapter } from "./bigcartel";
+import { fakeShopifyFetch } from "../__fixtures__/fake-shopify-fetch";
+import { memoryStorage } from "../__fixtures__/test-helpers";
+
+// The default registry's Fourthwall check makes a real request and reads the
+// platform cache, so every test here runs against a stubbed fetch (a store that
+// isn't Fourthwall) and an in-memory localStorage, never the network or a shared
+// browser store. The setup file fails any test that calls an unstubbed fetch.
+let fetchMock;
+beforeEach(() => {
+  fetchMock = fakeShopifyFetch({ "shop.example.com": { collections: { tees: [] } } }, undefined, { honorAbort: true });
+  vi.stubGlobal("fetch", fetchMock);
+  vi.stubGlobal("localStorage", memoryStorage());
+});
+afterEach(() => vi.unstubAllGlobals());
 
 const fake = (id, name, matches) => ({ id, name, matchesUrl: (url) => matches(url) });
 const url = (u) => new URL(u);
@@ -33,11 +47,8 @@ describe("default registry", () => {
     expect(detectAdapter(url("https://shop-name.bigcartel.com/category/tees"))).toBe(bigcartelAdapter);
     expect(detectAdapter(url("https://www.bigcartel.com"))).toBe(shopifyAdapter);
     expect(detectAdapter(url("https://shop.example.com"))).toBe(shopifyAdapter);
-    const fetchMock = vi.fn();
-    vi.stubGlobal("fetch", fetchMock);
     expect(await resolveAdapter(url("https://shop-name.bigcartel.com"))).toBe(bigcartelAdapter);
-    expect(fetchMock).not.toHaveBeenCalled();
-    vi.unstubAllGlobals();
+    expect(fetchMock.calls).toEqual([]);
   });
 
   it("finds a registered adapter by id and returns null for an unknown one", () => {
@@ -64,6 +75,8 @@ describe("resolveAdapter", () => {
     expect(pending).toBeInstanceOf(Promise);
     expect(await pending).toBe(detectAdapter(target));
     expect(await pending).toBe(shopifyAdapter);
+    // It got there by asking the (stubbed) store whether it is Fourthwall.
+    expect(fetchMock.calls.map((u) => u.pathname)).toContain("/collections/all.json");
   });
 
   it("uses the registry's own order and fallback", async () => {

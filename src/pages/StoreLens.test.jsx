@@ -97,6 +97,15 @@ function deferred() {
   return { promise, release };
 }
 
+// Lets everything already in flight finish: after a macrotask turn every promise
+// chain that isn't waiting on a timer has settled, and act() has rendered the
+// result. Use it instead of a fixed sleep before asserting that something did NOT
+// happen, so the assertion runs after the late work has landed, not after a guess
+// at how long it takes. (Run twice: a settled chain can start another.)
+const drain = async () => {
+  for (let i = 0; i < 2; i++) await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+};
+
 // Radix's Select needs these pointer/scroll methods to open in jsdom.
 const radixPolyfills = {
   hasPointerCapture: () => false,
@@ -112,10 +121,15 @@ beforeEach(() => {
   vi.stubGlobal("matchMedia", desktopMatchMedia);
   window.localStorage.clear();
   window.history.replaceState(null, "", "/");
+  // Module-level state that would otherwise carry over from the previous test: the
+  // Big Cartel feed cache and the price counter the catalogs draw from.
+  clearFeedCache();
+  nextPrice = 10;
 });
 
 afterEach(() => {
   slowResolve.override = null;
+  vi.useRealTimers();
   cleanup();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -236,10 +250,13 @@ describe("Back and Forward", () => {
       if (url.host === A && url.pathname === "/collections/tees/products.json" && ++teesLoads > 1) return slowTees.promise;
     };
     vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: storeA() }, hold));
+    // Fake timers that also follow the real clock (the testing library's waits need
+    // that), so the debounce window passes by advancing the clock, not by sleeping.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     openAt(`/${A}/collections/tees?vendor=Acme`);
     await heading(2, 3);
 
-    const user = userEvent.setup();
+    const user = userEvent.setup({ advanceTimers: (ms) => vi.advanceTimersByTime(ms) });
     await user.click(input());
     await user.clear(input());
     await user.paste(`${A}/collections/mugs`);
@@ -247,7 +264,7 @@ describe("Back and Forward", () => {
 
     act(() => window.history.back());
     await waitFor(() => expect(teesLoads).toBe(2));
-    await new Promise((resolve) => setTimeout(resolve, 450));
+    await act(async () => void (await vi.advanceTimersByTimeAsync(450)));
     expect(here()).toBe(`/${A}/collections/tees?vendor=Acme`);
 
     await act(async () => slowTees.release(await fakeShopifyFetch({ [A]: storeA() })(`https://${A}/collections/tees/products.json`)));
@@ -309,7 +326,8 @@ describe("switching stores while one is still resolving", () => {
   it("shows the second store when the first one's discovery answers late", async () => {
     const slowListing = deferred();
     const hold = (url) => (url.host === A && url.pathname === "/collections.json" ? slowListing.promise : undefined);
-    vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: storeA(), [B]: storeB() }, hold));
+    // A fetch that ignores its signal, so the answer really does arrive late.
+    vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: storeA(), [B]: storeB() }, hold, { honorAbort: false }));
     openAt("/");
     const user = userEvent.setup();
 
@@ -324,7 +342,7 @@ describe("switching stores while one is still resolving", () => {
     await act(async () => {
       slowListing.release(jsonResponse({ collections: [{ handle: "all", title: "All", products_count: 3 }] }));
     });
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await drain();
 
     expect(titleShown("Echo Hat")).not.toBeNull();
     expect(titleShown("Alpha Tee")).toBeNull();
@@ -337,7 +355,8 @@ describe("switching stores while one is still resolving", () => {
     const slowCollection = deferred();
     const hold = (url) =>
       url.host === A && url.pathname === "/collections/tees/products.json" ? slowCollection.promise : undefined;
-    vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: storeA(), [B]: storeB() }, hold));
+    // A fetch that ignores its signal, so the answer really does arrive late.
+    vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: storeA(), [B]: storeB() }, hold, { honorAbort: false }));
     openAt(`/${A}/collections/tees`);
     // The header disables the store box while a collection is loading.
     await waitFor(() => expect(input().disabled).toBe(true));
@@ -351,7 +370,7 @@ describe("switching stores while one is still resolving", () => {
     await act(async () => {
       slowCollection.release(jsonResponse({ products: storeA().collections.tees }));
     });
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await drain();
 
     expect(titleShown("Echo Hat")).not.toBeNull();
     expect(titleShown("Bravo Tee")).toBeNull();
@@ -375,7 +394,7 @@ describe("switching stores when the abandoned request is aborted (rejects)", () 
     await user.clear(input());
     await user.paste(B);
     await heading(2, 2);
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await drain();
 
     expect(titleShown("Echo Hat")).not.toBeNull();
     expect(screen.queryByRole("alert")).toBeNull();
@@ -394,7 +413,7 @@ describe("switching stores when the abandoned request is aborted (rejects)", () 
       window.dispatchEvent(new PopStateEvent("popstate"));
     });
     await heading(2, 2);
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await drain();
 
     expect(titleShown("Echo Hat")).not.toBeNull();
     expect(screen.queryByRole("alert")).toBeNull();
@@ -424,7 +443,7 @@ describe("store resolution that takes a while", () => {
     await heading(2, 2);
 
     await act(async () => slowA.release());
-    await sleep(50);
+    await drain();
 
     expect(titleShown("Echo Hat")).not.toBeNull();
     expect(titleShown("Alpha Tee")).toBeNull();
@@ -448,7 +467,7 @@ describe("store resolution that takes a while", () => {
     await user.clear(input());
     await user.paste(B);
     await heading(2, 2);
-    await sleep(50);
+    await drain();
 
     expect(screen.queryByRole("alert")).toBeNull();
     expect(window.location.pathname).toBe(`/${B}/collections/all`);
@@ -903,7 +922,6 @@ describe("a Big Cartel shop", () => {
     return fetchMock;
   };
 
-  beforeEach(clearFeedCache);
 
   it("is recognised from its address with no network check, and a bare domain loads all products", async () => {
     const fetchMock = stub({ "example-shop": feed() });
@@ -1233,7 +1251,6 @@ describe("history writes and load cancellation (#82)", () => {
   });
 
   describe("a load that is still running when the address moves on (B1, H3)", () => {
-    const sleepFor = (ms) => settle(ms);
     // Starts with tees held in flight; the test then navigates and releases it.
     function holdTees(extraStores = {}, override) {
       const store = storeA();
@@ -1257,7 +1274,7 @@ describe("history writes and load cancellation (#82)", () => {
 
       await goTo(`/${B}`);
       await release();
-      await sleepFor(50);
+      await settle(50);
       expect(titleShown("Bravo Tee")).toBeNull();
       expect(here()).toBe(`/${B}`);
 
@@ -1273,7 +1290,7 @@ describe("history writes and load cancellation (#82)", () => {
 
       await goTo("/not%20a%20url");
       await release();
-      await sleepFor(50);
+      await settle(50);
       expect(titleShown("Bravo Tee")).toBeNull();
       expect(screen.getByText("Please enter a valid store or collection URL")).not.toBeNull();
       expect(pushedPaths()).toEqual(["/not%20a%20url"]);
@@ -1286,7 +1303,7 @@ describe("history writes and load cancellation (#82)", () => {
 
       await goTo("/");
       await release();
-      await sleepFor(50);
+      await settle(50);
       expect(titleShown("Bravo Tee")).toBeNull();
       expect(here()).toBe("/");
       expect(pushedPaths()).toEqual(["/"]);
@@ -1300,7 +1317,7 @@ describe("history writes and load cancellation (#82)", () => {
 
       await goTo(`/${B}/collections/all?vendor=Zed`);
       await release();
-      await sleepFor(50);
+      await settle(50);
       expect(titleShown("Bravo Tee")).toBeNull();
       expect(here()).toBe(`/${B}/collections/all?vendor=Zed`);
 

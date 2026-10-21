@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { shopifyAdapter } from "./shopify";
-import { expectAdapterShape, expectNeutralProduct } from "../__fixtures__/adapter-contract";
+import { expectAdapterShape, expectNeutralProduct, expectParseUrl } from "../__fixtures__/adapter-contract";
 import { catalog, product, scatteredOptionsCatalog, variant } from "../__fixtures__/shopify";
 import { jsonResponse, memoryStorage } from "../__fixtures__/test-helpers";
 
@@ -20,6 +20,16 @@ async function load(raw) {
 describe("the Shopify adapter follows the adapter contract", () => {
   it("has the adapter shape", () => {
     expectAdapterShape(shopifyAdapter);
+  });
+
+  it("reads store, collection, locale and product URLs like every other adapter", () => {
+    expectParseUrl(shopifyAdapter, {
+      origin: "https://shop.example.com",
+      root: "https://shop.example.com/",
+      collection: { url: "https://shop.example.com/collections/tees", handle: "tees" },
+      product: "https://shop.example.com/products/example-tee",
+      locale: { url: "https://shop.example.com/en-nz/collections/tees", origin: "https://shop.example.com/en-nz", handle: "tees" },
+    });
   });
 
   it.each([

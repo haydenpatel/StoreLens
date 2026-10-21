@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { fourthwallAdapter } from "./fourthwall";
-import { expectAdapterShape, expectNeutralProduct } from "../__fixtures__/adapter-contract";
+import { expectAdapterShape, expectNeutralProduct, expectParseUrl } from "../__fixtures__/adapter-contract";
 import { catalog, product, variant } from "../__fixtures__/fourthwall";
 import { fakeFourthwallFetch } from "../__fixtures__/fake-fourthwall-fetch";
 
@@ -19,6 +19,16 @@ async function load(raw, url = COLLECTION) {
 describe("the Fourthwall adapter follows the adapter contract", () => {
   it("has the adapter shape", () => {
     expectAdapterShape(fourthwallAdapter);
+  });
+
+  it("reads store, collection, locale and product URLs like every other adapter", () => {
+    expectParseUrl(fourthwallAdapter, {
+      origin: "https://shop.example.com",
+      root: "https://shop.example.com/",
+      collection: { url: "https://shop.example.com/collections/tees", handle: "tees" },
+      product: "https://shop.example.com/products/example-tee",
+      locale: { url: "https://shop.example.com/en-nzd/collections/tees", origin: "https://shop.example.com/en-nzd", handle: "tees" },
+    });
   });
 
   it("returns neutral products for the catalog", async () => {
