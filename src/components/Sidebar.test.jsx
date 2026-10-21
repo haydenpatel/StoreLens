@@ -224,3 +224,118 @@ describe("Sidebar dialog semantics and robustness (#113)", () => {
     expect(document.activeElement).toBe(screen.getByRole("heading", { name: "Filters" }));
   });
 });
+
+// Filter data that has something for every section, so a section that is missing
+// is missing because of the platform's capabilities, not because it had no data.
+// (A test over data with no vendors or tags would pass with the check removed.)
+const richFilterData = () => ({
+  ...computeFilterData([product(10), product(20)]),
+  vendors: ["Acme", "Beta Co"],
+  types: ["Shirts", "Mugs"],
+  tags: ["summer", "cotton"],
+  options: [{ name: "Size", key: "size", values: ["S", "M"] }],
+});
+
+describe("Sidebar sections follow the platform's capabilities", () => {
+  const ALL = { vendors: true, categories: true, tags: true, variantOptions: true, variantStock: true };
+  const sectionCheckbox = { Acme: "vendors", Shirts: "categories", summer: "tags", S: "variantOptions" };
+
+  it("shows every section when the platform supports everything", () => {
+    renderSidebar({ filterData: richFilterData(), capabilities: ALL });
+    for (const name of [...Object.keys(sectionCheckbox), "In stock only"]) expect(checkbox(name)).toBeTruthy();
+    expect(screen.getByText("Vendor")).toBeTruthy();
+    expect(screen.getByText("Category")).toBeTruthy();
+    expect(screen.getByText("Tags")).toBeTruthy();
+    expect(screen.getByText("Size")).toBeTruthy();
+  });
+
+  it("treats a capability the adapter doesn't mention as supported", () => {
+    renderSidebar({ filterData: richFilterData() });
+    for (const name of [...Object.keys(sectionCheckbox), "In stock only"]) expect(checkbox(name)).toBeTruthy();
+  });
+
+  it.each([
+    ["vendors", "Vendor", "Acme"],
+    ["categories", "Category", "Shirts"],
+    ["tags", "Tags", "summer"],
+    ["variantOptions", "Size", "S"],
+  ])("hides the %s section when the platform lacks it, even though the data has values", (capability, title, value) => {
+    renderSidebar({ filterData: richFilterData(), capabilities: { ...ALL, [capability]: false } });
+    expect(screen.queryByText(title)).toBeNull();
+    expect(checkbox(value)).toBeNull();
+    // The other sections are untouched.
+    for (const [other, key] of Object.entries(sectionCheckbox)) if (key !== capability) expect(checkbox(other)).toBeTruthy();
+  });
+
+  it("hides 'In stock only' when the platform doesn't report stock, and keeps 'On sale only'", () => {
+    renderSidebar({ filterData: richFilterData(), capabilities: { ...ALL, variantStock: false } });
+    expect(checkbox("In stock only")).toBeNull();
+    expect(checkbox("On sale only")).toBeTruthy();
+  });
+
+  it("names the vendor and category sections from the platform's labels", () => {
+    renderSidebar({ filterData: richFilterData(), labels: { vendors: "Artists", categories: "Collections" } });
+    expect(screen.getByText("Artists")).toBeTruthy();
+    expect(screen.getByText("Collections")).toBeTruthy();
+    expect(screen.queryByText("Vendor")).toBeNull();
+    expect(screen.queryByText("Category")).toBeNull();
+  });
+
+  it("leaves out a supported section that has no values", () => {
+    renderSidebar({ filterData: { ...richFilterData(), vendors: [], types: [], tags: [], options: [] }, capabilities: ALL });
+    for (const title of ["Vendor", "Category", "Tags", "Size"]) expect(screen.queryByText(title)).toBeNull();
+  });
+});
+
+describe("Sidebar controls", () => {
+  it("passes each toggled selection to its setter, adding to what is selected", async () => {
+    const props = renderSidebar({ filterData: richFilterData(), selectedVendors: ["Acme"], selectedTypes: [], selectedTags: [], selectedOptions: {} });
+    await userEvent.click(checkbox("Beta Co"));
+    expect(props.setSelectedVendors).toHaveBeenLastCalledWith(["Acme", "Beta Co"]);
+    await userEvent.click(checkbox("Acme"));
+    expect(props.setSelectedVendors).toHaveBeenLastCalledWith([]);
+    await userEvent.click(checkbox("Mugs"));
+    expect(props.setSelectedTypes).toHaveBeenLastCalledWith(["Mugs"]);
+    await userEvent.click(checkbox("cotton"));
+    expect(props.setSelectedTags).toHaveBeenLastCalledWith(["cotton"]);
+    await userEvent.click(checkbox("M"));
+    expect(props.setSelectedOptions).toHaveBeenLastCalledWith({ size: ["M"] });
+  });
+
+  it("toggles 'In stock only' and 'On sale only'", async () => {
+    const props = renderSidebar({ filterData: richFilterData(), inStockOnly: false, saleOnly: true });
+    await userEvent.click(checkbox("In stock only"));
+    expect(props.setInStockOnly).toHaveBeenCalledWith(true);
+    await userEvent.click(checkbox("On sale only"));
+    expect(props.setSaleOnly).toHaveBeenCalledWith(false);
+  });
+
+  it("sends typed search text to its setter and clears it from the clear button", async () => {
+    const props = renderSidebar({ searchQuery: "" });
+    await userEvent.type(screen.getByPlaceholderText("Search products..."), "x");
+    expect(props.setSearchQuery).toHaveBeenLastCalledWith("x");
+    cleanup();
+    const withText = renderSidebar({ searchQuery: "tee" });
+    await userEvent.click(screen.getByRole("button", { name: "Clear search" }));
+    expect(withText.setSearchQuery).toHaveBeenCalledWith("");
+  });
+
+  it("moves a price thumb from the keyboard, within the collection's prices", async () => {
+    const props = renderSidebar();
+    const [low, high] = screen.getAllByRole("slider");
+    low.focus();
+    await userEvent.keyboard("{ArrowRight}");
+    expect(props.setPriceRange).toHaveBeenLastCalledWith([11, 20]);
+    high.focus();
+    await userEvent.keyboard("{ArrowLeft}");
+    expect(props.setPriceRange).toHaveBeenLastCalledWith([10, 19]);
+  });
+
+  it("enables Reset only while a filter is active, and calls onReset", async () => {
+    const props = renderSidebar({ activeFilterCount: 2 });
+    const reset = screen.getByRole("button", { name: /reset/i });
+    expect(reset.disabled).toBe(false);
+    await userEvent.click(reset);
+    expect(props.onReset).toHaveBeenCalledTimes(1);
+  });
+});
