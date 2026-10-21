@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render } from "@testing-library/react";
 import ProductCard from "./ProductCard";
 
@@ -32,7 +32,10 @@ describe("ProductCard currency", () => {
 describe("ProductCard tags (#113)", () => {
   it("renders repeated tags and skips non-string ones instead of crashing", () => {
     const p = { ...product("USD", [variant(5)]), tags: ["new", "new", null, 7, "sale"] };
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     expect(() => render(<ProductCard product={p} />)).not.toThrow();
     expect(text()).toContain("sale");
+    expect(spy.mock.calls.flat().join(" ")).not.toMatch(/same key/);
+    spy.mockRestore();
   });
 });

@@ -1518,4 +1518,22 @@ describe("the filter drawer across loads (#113)", () => {
 
     expect(document.querySelector("aside").hasAttribute("inert")).toBe(true);
   });
+
+  it("keeps focus in the page, not on <body>, when a load closes the drawer", async () => {
+    vi.stubGlobal("matchMedia", (query) => ({ ...desktopMatchMedia(query), matches: false }));
+    vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: storeA(), [B]: storeB() }));
+    openAt(`/${A}/collections/tees`);
+    await waitFor(() => expect(screen.getByRole("button", { name: /^filters/i })).toBeTruthy());
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /^filters/i }));
+    expect(document.querySelector("aside").contains(document.activeElement)).toBe(true);
+
+    act(() => {
+      window.history.pushState(null, "", `/${B}/collections/all`);
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+    expect(document.activeElement).toBe(document.querySelector("main"));
+    await heading(2, 2);
+    expect(document.activeElement).not.toBe(document.body);
+  });
 });

@@ -68,6 +68,7 @@ export default function Sidebar({
     () => typeof window !== "undefined" && window.matchMedia("(min-width: 1280px)").matches
   );
   const headingId = useId();
+  const headingRef = useRef(null);
   const closeButtonRef = useRef(null);
   const asideRef = useRef(null);
 
@@ -169,13 +170,18 @@ export default function Sidebar({
 
           {/* Header */}
           <div className="flex items-center justify-between gap-2">
-            <h2 id={headingId} className="font-semibold text-sidebar-primary">Filters</h2>
+            <h2 id={headingId} ref={headingRef} tabIndex={-1} className="font-semibold text-sidebar-primary outline-none">Filters</h2>
             <div className="flex items-center gap-2">
             {hasActiveFilters && (
               <Button
                 variant="default"
                 size="sm"
-                onClick={onReset}
+                onClick={() => {
+                  onReset();
+                  // Reset turns into a disabled button; keep focus on the heading
+                  // rather than letting it fall to <body>.
+                  headingRef.current?.focus();
+                }}
               >
                 <X className="w-3 h-3 mr-1" />
                 Reset

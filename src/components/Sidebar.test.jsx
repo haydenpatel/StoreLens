@@ -215,4 +215,12 @@ describe("Sidebar dialog semantics and robustness (#113)", () => {
     expect(new Set(ids).size).toBe(ids.length);
     for (const id of ids) expect(id).not.toMatch(/\s/);
   });
+
+  it("keeps focus on the Filters heading after Reset is clicked", async () => {
+    mobile();
+    const props = renderSidebar({ isOpen: true, activeFilterCount: 1 });
+    await userEvent.click(screen.getByRole("button", { name: /reset/i }));
+    expect(props.onReset).toHaveBeenCalled();
+    expect(document.activeElement).toBe(screen.getByRole("heading", { name: "Filters" }));
+  });
 });
