@@ -348,9 +348,10 @@ function filterByVariant(products, { selectedOptions, inStockOnly, saleOnly, pri
       wanted,
     }));
     if (checks.some(({ index }) => index < 0)) return;
-    // A variant with no usable price has nothing to compare, so it passes the
-    // range only when none of the product's variants has one (the card then
-    // shows "Price unavailable").
+    // A variant with no usable price has nothing to compare, so the range
+    // never excludes it; but it can't make a product match on its own when
+    // other variants are priced (a product with no priced variant at all stays,
+    // and the card shows "Price unavailable").
     const anyPriced = variants.some(v => Number.isFinite(v.price));
     const passesNarrowing = (v) =>
       checks.every(({ index, wanted }) => {
@@ -358,9 +359,9 @@ function filterByVariant(products, { selectedOptions, inStockOnly, saleOnly, pri
         return value != null && wanted.has(normalizeOptionValue(value));
       }) &&
       (!saleOnly || isDiscounted(v)) &&
-      (Number.isFinite(v.price) ? v.price >= priceRange[0] && v.price <= priceRange[1] : !anyPriced);
+      (!Number.isFinite(v.price) || (v.price >= priceRange[0] && v.price <= priceRange[1]));
     const matching = variants.filter(v => passesNarrowing(v) && (!inStockOnly || v.available));
-    if (matching.length === 0) return;
+    if (matching.length === 0 || (anyPriced && !matching.some(v => Number.isFinite(v.price)))) return;
     result.push(variants.some(v => !passesNarrowing(v)) ? { ...product, matchingVariants: matching } : product);
   });
   return result;

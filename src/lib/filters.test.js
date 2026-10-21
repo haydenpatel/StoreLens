@@ -970,6 +970,14 @@ describe("filtering per variant (#92)", () => {
     expect(names(filter([a, b], { sortBy: "price-asc" }))).toEqual(["A", "B"]);
   });
 
+  it("doesn't narrow, or match on, a variant with no usable price when the others are priced", () => {
+    const tee = make("Tee", [v(["S", "Red"], NaN), v(["M", "Red"], 50)]);
+    const [kept] = filter([tee], { priceRange: [0, 100] });
+    expect(kept).toBe(tee);
+    expect(names(filter([tee], { priceRange: [0, 10] }))).toEqual([]);
+    expect(names(filter([make("None", [v(["S", "Red"], NaN)])], { priceRange: [0, 10] }))).toEqual(["None"]);
+  });
+
   it("matches a price-narrowed product by the price-range ends inclusively", () => {
     const tee = make("Tee", [v(["S", "Red"], 20), v(["M", "Red"], 30)]);
     expect(names(filter([tee], { priceRange: [20, 20] }))).toEqual(["Tee"]);
