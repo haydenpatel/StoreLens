@@ -113,8 +113,9 @@ async function readProducts(shop) {
 
 // The two requests run side by side. Only the products can fail the load, and
 // they aren't held for store.json: once they are in, it gets a short grace, and
-// if it is later than that the feed goes ahead without the currency and count
-// (prices show with the default "$") and picks them up when they arrive, for
+// if it is later than that the feed goes ahead without the currency, count and
+// categories (prices show with the default "$", the dropdown comes from the
+// products) and picks them up when they arrive, for
 // whoever reads this cached feed next.
 async function readFeed(shop) {
   const infoRequest = readStoreInfo(shop);
@@ -133,7 +134,7 @@ async function readFeed(shop) {
   return feed;
 }
 
-// The shop's raw products and store info ({ products, currency?, productsCount? }),
+// The shop's raw products and store info ({ products, currency?, productsCount?, categories? }),
 // from the shared copy when it is fresh. The request itself isn't tied to one
 // caller's signal (another may be waiting on it), so a caller that aborts just
 // stops waiting.

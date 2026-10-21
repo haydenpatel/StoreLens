@@ -545,6 +545,16 @@ describe("listCollections", () => {
       expect(collections.map((c) => c.handle)).toEqual(["all", "tees", "art-prints"]);
     });
 
+    it("matches a listed permalink to the products' category regardless of case", async () => {
+      stubWith([{ ...category("Tees"), permalink: "TEES" }]);
+      const { collections } = await bigcartelAdapter.listCollections(ORIGIN);
+      expect(collections.map((c) => c.handle)).toEqual(["all", "TEES", "art-prints"]);
+      expect(collections[1]).toMatchObject({ title: "Tees", products_count: 3 });
+      // The listed handle still loads the same products.
+      const { products } = await bigcartelAdapter.fetchCollection(bigcartelAdapter.collectionUrl(ORIGIN, "TEES"));
+      expect(products).toHaveLength(3);
+    });
+
     it("falls back to the categories from the products when the list is missing or empty", async () => {
       for (const categories of [undefined, [], "nope"]) {
         clearFeedCache();
