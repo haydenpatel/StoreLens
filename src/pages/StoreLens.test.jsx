@@ -1841,3 +1841,70 @@ describe("sidebar controls, sort and Recent Stores", () => {
     });
   });
 });
+
+describe("filters match per variant (#92)", () => {
+  // Tee: S is on sale and cheap, M is full price and dearer, L is sold out.
+  // Cap: a single variant, unaffected by any option.
+  const shop = () => ({
+    collections: {
+      all: [
+        product({
+          title: "Alpha Tee",
+          handle: "alpha-tee",
+          options: [{ name: "Size" }],
+          variants: [
+            variant({ price: "20.00", compare_at_price: "40.00", option1: "S" }),
+            variant({ price: "50.00", option1: "M" }),
+            variant({ price: "60.00", option1: "L", available: false }),
+          ],
+        }),
+        product({ title: "Bravo Cap", handle: "bravo-cap", variants: [variant({ price: "15.00" })] }),
+      ],
+    },
+  });
+  const open = async (path = `/${A}/collections/all`, shown = 2) => {
+    vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: shop() }));
+    openAt(path);
+    await heading(shown, 2);
+    return userEvent.setup();
+  };
+  const card = (title) => screen.getByRole("heading", { level: 3, name: title }).closest("[data-slot='card']");
+  const checkbox = (name) => screen.getByRole("checkbox", { name });
+
+  it("shows the whole range and badge until a size is selected, then the matching variants' (and back)", async () => {
+    const user = await open();
+    // In stock only is on: sold-out L is dropped from the badge, but the card still spans every variant.
+    expect(within(card("Alpha Tee")).getByText(/\$20(\.00)? - \$60(\.00)?/)).toBeTruthy();
+
+    await user.click(checkbox("S"));
+    await heading(1, 2);
+    const tee = within(card("Alpha Tee"));
+    expect(tee.getByText(/^\$20(\.00)?$/)).toBeTruthy();
+    expect(tee.queryByText(/\$60/)).toBeNull();
+    expect(tee.getAllByText(/Save \$20(\.00)? \(50% off\)/).length).toBeGreaterThan(0);
+
+    await user.click(checkbox("S"));
+    await heading(2, 2);
+    expect(within(card("Alpha Tee")).getByText(/\$20(\.00)? - \$60(\.00)?/)).toBeTruthy();
+  });
+
+  it("shows the matching price for a size link, and the plain range without one", async () => {
+    await open(`/${A}/collections/all?options=${encodeURIComponent('{"Size":["M"]}')}`, 1);
+    expect(within(card("Alpha Tee")).getByText(/^\$50(\.00)?$/)).toBeTruthy();
+    expect(within(card("Alpha Tee")).queryByText(/Save/)).toBeNull();
+  });
+
+  it("does not say In stock for a sold-out selection when In stock only is off", async () => {
+    const user = await open(`/${A}/collections/all?inStock=0&options=${encodeURIComponent('{"Size":["L"]}')}`, 1);
+    expect(within(card("Alpha Tee")).getByText("Out of Stock")).toBeTruthy();
+    await user.click(checkbox("L"));
+    await heading(2, 2);
+    expect(within(card("Alpha Tee")).queryByText("Out of Stock")).toBeNull();
+  });
+
+  it("leaves the card unchanged by the default 'In stock only' alone", async () => {
+    await open();
+    expect(checkbox("In stock only").getAttribute("aria-checked")).toBe("true");
+    expect(within(card("Alpha Tee")).getByText(/\$20(\.00)? - \$60(\.00)?/)).toBeTruthy();
+  });
+});

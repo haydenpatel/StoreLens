@@ -1,4 +1,4 @@
-import { getDiscountData } from "@/lib/utils";
+import { getDiscountData, isDiscounted } from "@/lib/utils";
 
 // Pure filter/sort/URL-param logic over the platform-neutral product shape
 // (see platforms/types.js), kept out of the page component so it can be unit
@@ -309,11 +309,62 @@ const createdTime = (product) => {
   return Number.isFinite(time) ? time : 0;
 };
 
-const pricesOf = (product) => (product.variants || []).map(v => v.price).filter(Number.isFinite);
+// The variants a product is shown by while filters narrow them: set by
+// filterAndSortProducts as `matchingVariants`, absent when no filter narrows.
+const variantsOf = (product) => product.matchingVariants ?? product.variants ?? [];
+
+const pricesOf = (product) => variantsOf(product).map(v => v.price).filter(Number.isFinite);
 
 // a - b that treats an unpriced product (+/-Infinity, where the difference
 // would be NaN) as equal to another unpriced one.
 const comparePrices = (a, b) => (a === b ? 0 : a - b);
+
+// Keeps the products with at least one variant passing every variant-level
+// filter. Option selections are OR within an option's values and AND across
+// options, matched by normalised option name (wherever it sits in the
+// product's options) and value; a variant with no value for a selected option
+// (a missing or empty entry) doesn't match it. A product without a selected
+// option, or without variants while options or "On sale only" apply, can't
+// match; with only the stock or price filters it stays (no data to say no).
+//
+// A product whose variants are narrowed by options, sale or price (not by
+// stock alone, which is on by default) comes back as a copy carrying
+// `matchingVariants`, which the card and the sorts use in place of all its
+// variants. Other products are returned as they are.
+function filterByVariant(products, { selectedOptions, inStockOnly, saleOnly, priceRange }) {
+  const selections = Object.entries(selectedOptions)
+    .filter(([, values]) => values.length > 0)
+    .map(([name, values]) => ({ target: normalizeOptionName(name), wanted: new Set(values.map(normalizeOptionValue)) }));
+
+  const result = [];
+  products.forEach(product => {
+    const variants = product.variants || [];
+    if (variants.length === 0) {
+      if (selections.length === 0 && !saleOnly) result.push(product);
+      return;
+    }
+    const checks = selections.map(({ target, wanted }) => ({
+      index: product.options?.findIndex(o => normalizeOptionName(o.name) === target) ?? -1,
+      wanted,
+    }));
+    if (checks.some(({ index }) => index < 0)) return;
+    // A variant with no usable price has nothing to compare, so it passes the
+    // range only when none of the product's variants has one (the card then
+    // shows "Price unavailable").
+    const anyPriced = variants.some(v => Number.isFinite(v.price));
+    const passesNarrowing = (v) =>
+      checks.every(({ index, wanted }) => {
+        const value = v.options?.[index];
+        return value != null && wanted.has(normalizeOptionValue(value));
+      }) &&
+      (!saleOnly || isDiscounted(v)) &&
+      (Number.isFinite(v.price) ? v.price >= priceRange[0] && v.price <= priceRange[1] : !anyPriced);
+    const matching = variants.filter(v => passesNarrowing(v) && (!inStockOnly || v.available));
+    if (matching.length === 0) return;
+    result.push(variants.some(v => !passesNarrowing(v)) ? { ...product, matchingVariants: matching } : product);
+  });
+  return result;
+}
 
 export function filterAndSortProducts(products, state, capabilities = {}) {
   const {
@@ -349,51 +400,11 @@ export function filterAndSortProducts(products, state, capabilities = {}) {
     );
   }
 
-  // Options (sizes, colors, etc), matched by option name
-  Object.entries(selectedOptions).forEach(([optionName, values]) => {
-    if (values.length > 0) {
-      const target = normalizeOptionName(optionName);
-      const wanted = new Set(values.map(normalizeOptionValue));
-      filtered = filtered.filter(p => {
-        // A product without this option can't match it.
-        const index = p.options?.findIndex(o => normalizeOptionName(o.name) === target) ?? -1;
-        return index >= 0 && p.variants?.some(v => {
-          const value = v.options?.[index];
-          return value != null && wanted.has(normalizeOptionValue(value));
-        });
-      });
-    }
-  });
-
-  // Price range
-  filtered = filtered.filter(p => {
-    const prices = (p.variants || []).map(v => v.price).filter(Number.isFinite);
-    // No usable price: nothing to compare, so it stays (ProductCard shows
-    // "Price unavailable") instead of vanishing while still being counted.
-    if (prices.length === 0) return true;
-    const minProductPrice = Math.min(...prices);
-    const maxProductPrice = Math.max(...prices);
-    return maxProductPrice >= priceRange[0] && minProductPrice <= priceRange[1];
-  });
-
-  // In stock only
-  if (inStockOnly) {
-    // A product with no variants has no stock data to say it is sold out.
-    filtered = filtered.filter(p =>
-      !p.variants?.length || p.variants.some(v => v.available)
-    );
-  }
-
-  // Sale only
-  if (saleOnly) {
-    filtered = filtered.filter(p => {
-      const variants = p.variants || [];
-      // With "In stock only" on, only buyable variants count (as on the badge);
-      // with it off, any discounted variant matches, sold out or not.
-      if (!inStockOnly) return variants.some(v => v.compareAtPrice && v.compareAtPrice > v.price);
-      return getDiscountData(variants).hasDiscount;
-    });
-  }
+  // Variant-level filters (options, in stock, price, on sale) are ANDed into
+  // one test per variant, so a product matches only when a single variant
+  // passes all of them together (Size S and Color Blue means an S/Blue variant,
+  // not an S one and a Blue one).
+  filtered = filterByVariant(filtered, { selectedOptions, inStockOnly, saleOnly, priceRange });
 
   // Sort
   filtered.sort((a, b) => {
@@ -416,13 +427,13 @@ export function filterAndSortProducts(products, state, capabilities = {}) {
         return createdTime(b) - createdTime(a);
       case "discount-percent":
         return (
-          getDiscountData(b.variants || []).discountPercent -
-          getDiscountData(a.variants || []).discountPercent
+          getDiscountData(variantsOf(b)).discountPercent -
+          getDiscountData(variantsOf(a)).discountPercent
         );
       case "discount-amount":
         return (
-          getDiscountData(b.variants || []).discountAmount -
-          getDiscountData(a.variants || []).discountAmount
+          getDiscountData(variantsOf(b)).discountAmount -
+          getDiscountData(variantsOf(a)).discountAmount
         );
       default:
         return 0;

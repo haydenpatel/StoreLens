@@ -5,6 +5,12 @@ export function cn(...inputs) {
   return twMerge(clsx(inputs));
 }
 
+// A variant is on sale when its compare-at price is above its price (a
+// compare-at price equal to or below the price is not a discount).
+export function isDiscounted(variant) {
+  return Boolean(variant.compareAtPrice) && variant.compareAtPrice > variant.price;
+}
+
 // Discount over the variants a shopper can buy: in-stock ones when any exist,
 // otherwise all (an all-sold-out product keeps its badge). discountAmount and
 // discountPercent are the biggest saving and the best percentage, each taken
@@ -14,7 +20,7 @@ export function cn(...inputs) {
 export function getDiscountData(variants = []) {
   const pool = variants.some(v => v.available) ? variants.filter(v => v.available) : variants;
   const discounts = pool
-    .filter(v => v.compareAtPrice && v.compareAtPrice > v.price)
+    .filter(isDiscounted)
     .map(v => {
       const amount = v.compareAtPrice - v.price;
       return { amount, percent: (amount / v.compareAtPrice) * 100 };

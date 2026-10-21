@@ -12,6 +12,10 @@ import {
   restorePriceRange,
 } from "./filters";
 import { normalizeShopifyProduct } from "./platforms/shopify";
+import { normalizeFourthwallProduct } from "./platforms/fourthwall";
+import { normalizeBigCartelProduct } from "./platforms/bigcartel";
+import * as fw from "./__fixtures__/fourthwall";
+import * as bc from "./__fixtures__/bigcartel";
 import {
   catalog as rawCatalog,
   product,
@@ -290,12 +294,12 @@ describe("filterAndSortProducts", () => {
   });
 
   describe("price range", () => {
-    it("includes products whose variant price range overlaps the filter range", () => {
+    it("includes products with a variant priced inside the filter range", () => {
       expect(run({ priceRange: [0, 10] })).toEqual(["Delta Cap"]);
       expect(run({ priceRange: [45, 60] })).toEqual(["Beta Red Hoodie"]);
-      // Acme's variants cost 20 and 22, so [21, 21] overlaps even though no
-      // single variant costs exactly 21.
-      expect(run({ priceRange: [21, 21] })).toEqual(["Acme Blue Tee"]);
+      // Acme's variants cost 20 and 22: a range between them holds neither (#92).
+      expect(run({ priceRange: [21, 21] })).toEqual([]);
+      expect(run({ priceRange: [22, 22] })).toEqual(["Acme Blue Tee"]);
     });
 
     it("keeps a product with no variants or no usable price when a price range applies (#84)", () => {
@@ -819,5 +823,223 @@ describe("restorePriceRange", () => {
 
   it("keeps a range that only touches an end", () => {
     expect(restorePriceRange([20, 30], 10, 20)).toEqual([20, 20]);
+  });
+});
+
+// #92: variant-level filters are ANDed into one test per variant.
+describe("filtering per variant (#92)", () => {
+  const v = (options, price, extra = {}) => ({
+    id: options.join("/") || "v",
+    title: options.join(" / "),
+    price,
+    compareAtPrice: null,
+    available: true,
+    options,
+    ...extra,
+  });
+  const make = (title, variants, optionNames = ["Size", "Color"]) => ({
+    id: title,
+    handle: title,
+    title,
+    url: null,
+    images: [],
+    vendors: [],
+    categories: [],
+    tags: [],
+    available: true,
+    variants,
+    options: optionNames.map((name) => ({ name, values: [] })),
+  });
+  const base = { ...defaults, inStockOnly: false };
+  const filter = (products, state = {}) => filterAndSortProducts(products, { ...base, ...state });
+  const names = (products) => products.map((p) => p.title);
+  const prices = (p) => (p.matchingVariants ?? p.variants).map((x) => x.price);
+
+  it("needs one variant to match every selected option", () => {
+    const split = make("Split", [v(["S", "Red"], 10), v(["M", "Blue"], 10)]);
+    const both = make("Both", [v(["S", "Blue"], 10), v(["M", "Red"], 10)]);
+    const result = filter([split, both], { selectedOptions: { Size: ["S"], Color: ["Blue"] } });
+    expect(names(result)).toEqual(["Both"]);
+    expect(result[0].matchingVariants.map((x) => x.title)).toEqual(["S / Blue"]);
+  });
+
+  it("ORs the values of one option", () => {
+    const tee = make("Tee", [v(["S", "Red"], 10), v(["M", "Red"], 20), v(["L", "Red"], 30)]);
+    const [result] = filter([tee], { selectedOptions: { Size: ["S", "L"] } });
+    expect(prices(result)).toEqual([10, 30]);
+  });
+
+  describe("In stock only", () => {
+    const tee = make("Tee", [v(["S", "Blue"], 10, { available: false }), v(["S", "Red"], 10), v(["M", "Blue"], 10)]);
+    it("hides a product whose only matching variant is sold out", () => {
+      const state = { selectedOptions: { Size: ["S"], Color: ["Blue"] } };
+      expect(names(filter([tee], { ...state, inStockOnly: true }))).toEqual([]);
+      expect(names(filter([tee], { ...state, inStockOnly: false }))).toEqual(["Tee"]);
+    });
+
+    it("does not narrow the card or sorts by itself", () => {
+      const half = make("Half", [v(["S", "Red"], 10, { available: false }), v(["M", "Red"], 50)]);
+      const [result] = filter([half], { inStockOnly: true });
+      expect(result).toBe(half);
+      expect(result.matchingVariants).toBeUndefined();
+    });
+
+    it("counts only in-stock matches once something else narrows", () => {
+      const [result] = filter([tee], { selectedOptions: { Size: ["S"] }, inStockOnly: true });
+      expect(result.matchingVariants.map((x) => x.title)).toEqual(["S / Red"]);
+    });
+
+    it("lets the card read sold out when the matching variants are", () => {
+      const soldOut = make("Sold", [v(["S", "Red"], 10, { available: false }), v(["M", "Red"], 10)]);
+      const [result] = filter([soldOut], { selectedOptions: { Size: ["S"] }, inStockOnly: false });
+      expect(result.matchingVariants.some((x) => x.available)).toBe(false);
+    });
+  });
+
+  it("applies the price range to the matching variants", () => {
+    const tee = make("Tee", [v(["S", "Red"], 50), v(["M", "Red"], 10)]);
+    expect(names(filter([tee], { selectedOptions: { Size: ["S"] }, priceRange: [0, 20] }))).toEqual([]);
+    expect(names(filter([tee], { selectedOptions: { Size: ["M"] }, priceRange: [0, 20] }))).toEqual(["Tee"]);
+    const [narrowed] = filter([tee], { priceRange: [0, 20] });
+    expect(prices(narrowed)).toEqual([10]);
+  });
+
+  it("keeps the #119 sale rule: in-stock discounts count only while In stock only is on", () => {
+    const tee = make("Tee", [
+      v(["S", "Red"], 10, { compareAtPrice: 20, available: false }),
+      v(["M", "Red"], 20),
+    ]);
+    expect(names(filter([tee], { saleOnly: true, inStockOnly: true }))).toEqual([]);
+    expect(names(filter([tee], { saleOnly: true, inStockOnly: false }))).toEqual(["Tee"]);
+  });
+
+  it("applies On sale only to the selected options' variants", () => {
+    const tee = make("Tee", [v(["S", "Red"], 20), v(["M", "Red"], 10, { compareAtPrice: 20 })]);
+    expect(names(filter([tee], { saleOnly: true, selectedOptions: { Size: ["S"] } }))).toEqual([]);
+    expect(names(filter([tee], { saleOnly: true, selectedOptions: { Size: ["M"] } }))).toEqual(["Tee"]);
+  });
+
+  it("does not treat a compare-at price at or below the price as a sale", () => {
+    const tee = make("Tee", [v(["S", "Red"], 20, { compareAtPrice: 20 }), v(["M", "Red"], 20, { compareAtPrice: 10 })]);
+    expect(names(filter([tee], { saleOnly: true }))).toEqual([]);
+  });
+
+  describe("a product with no variants", () => {
+    const empty = make("Empty", []);
+    it("stays when only the stock or price filters apply", () => {
+      expect(names(filter([empty], { inStockOnly: true, priceRange: [0, 5] }))).toEqual(["Empty"]);
+    });
+    it("can't match an option or sale filter", () => {
+      expect(names(filter([empty], { selectedOptions: { Size: ["S"] } }))).toEqual([]);
+      expect(names(filter([empty], { saleOnly: true }))).toEqual([]);
+    });
+  });
+
+  it("never matches a variant missing an option value, and doesn't throw", () => {
+    const tee = make("Tee", [v(["S"], 10), v(["", "Blue"], 10), v([undefined, "Blue"], 10)]);
+    expect(names(filter([tee], { selectedOptions: { Size: ["S"], Color: ["Blue"] } }))).toEqual([]);
+    const [result] = filter([tee], { selectedOptions: { Color: ["Blue"] } });
+    expect(result.matchingVariants).toHaveLength(2);
+  });
+
+  it("excludes a single default-variant product from any option filter", () => {
+    const mug = make("Mug", [v([], 10)], []);
+    expect(names(filter([mug], { selectedOptions: { Size: ["S"] } }))).toEqual([]);
+  });
+
+  describe("with no variant-level filter narrowing", () => {
+    it("returns the same products in the same order, without matchingVariants", () => {
+      const products = catalog();
+      const state = { ...defaults, inStockOnly: true, priceRange: [5, 50] };
+      const result = filterAndSortProducts(products, state);
+      expect(result.every((p) => p.matchingVariants === undefined)).toBe(true);
+      expect(titles(result)).toEqual(["Acme Blue Tee", "Beta Red Hoodie"]);
+      expect(result[0]).toBe(products.find((p) => p.title === "Acme Blue Tee"));
+    });
+  });
+
+  it("sorts prices and discounts by the matching variants", () => {
+    const a = make("A", [v(["S", "Red"], 50, { compareAtPrice: 60 }), v(["M", "Red"], 5, { compareAtPrice: 100 })]);
+    const b = make("B", [v(["S", "Red"], 20, { compareAtPrice: 40 }), v(["M", "Red"], 60)]);
+    const state = { selectedOptions: { Size: ["S"] } };
+    expect(names(filter([a, b], { ...state, sortBy: "price-asc" }))).toEqual(["B", "A"]);
+    expect(names(filter([a, b], { ...state, sortBy: "price-desc" }))).toEqual(["A", "B"]);
+    expect(names(filter([a, b], { ...state, sortBy: "discount-percent" }))).toEqual(["B", "A"]);
+    // Without the selection the sorts see every variant.
+    expect(names(filter([a, b], { sortBy: "discount-percent" }))).toEqual(["A", "B"]);
+    expect(names(filter([a, b], { sortBy: "price-asc" }))).toEqual(["A", "B"]);
+  });
+
+  it("matches a price-narrowed product by the price-range ends inclusively", () => {
+    const tee = make("Tee", [v(["S", "Red"], 20), v(["M", "Red"], 30)]);
+    expect(names(filter([tee], { priceRange: [20, 20] }))).toEqual(["Tee"]);
+  });
+
+  describe("Fourthwall (stock and compare-at are per product)", () => {
+    const origin = "https://shop.example.com";
+    const tee = normalizeFourthwallProduct(
+      fw.product({
+        title: "Example Tee",
+        variants: ["Black, XS", "Black, S", "Vintage Black, XS", "Vintage Black, S"].map((t) => fw.variant(t)),
+      }),
+      origin
+    );
+    const uneven = normalizeFourthwallProduct(
+      fw.product({ title: "Uneven", variants: [fw.variant("Black, XS"), fw.variant("Black"), fw.variant("XS")] }),
+      origin
+    );
+    const soldOut = normalizeFourthwallProduct(fw.product({ title: "Sold Out Tee", available: false }), origin);
+
+    it("matches a combined colour and size on one variant", () => {
+      // The colour part has no name in the feed, so it is guessed as "Option 1".
+      expect(tee.options.map((o) => o.name)).toEqual(["Option 1", "Size"]);
+      const [result] = filter([tee], { selectedOptions: { "Option 1": ["Black"], Size: ["XS"] } });
+      expect(result.matchingVariants.map((x) => x.title)).toEqual(["Black, XS"]);
+      expect(names(filter([tee], { selectedOptions: { "Option 1": ["Black"], Size: ["M"] } }))).toEqual([]);
+    });
+
+    it("lines every variant's options up with the product's options", () => {
+      expect(tee.variants.map((x) => x.options)).toEqual([
+        ["Black", "XS"], ["Black", "S"], ["Vintage Black", "XS"], ["Vintage Black", "S"],
+      ]);
+    });
+
+    it("treats a product whose titles have different numbers of parts as one option of whole titles", () => {
+      expect(uneven.options.map((o) => o.name)).toEqual(["Option 1"]);
+      expect(uneven.variants.map((x) => x.options)).toEqual([["Black, XS"], ["Black"], ["XS"]]);
+      const [result] = filter([uneven], { selectedOptions: { "Option 1": ["Black"] } });
+      expect(result.matchingVariants.map((x) => x.title)).toEqual(["Black"]);
+      expect(names(filter([uneven], { selectedOptions: { Size: ["XS"] } }))).toEqual([]);
+    });
+
+    it("stock can't narrow by variant: a sold-out product has no in-stock variant at all", () => {
+      expect(names(filter([soldOut], { inStockOnly: true }))).toEqual([]);
+      expect(names(filter([soldOut], { inStockOnly: false }))).toEqual(["Sold Out Tee"]);
+      expect(new Set(tee.variants.map((x) => x.available)).size).toBe(1);
+    });
+  });
+
+  describe("Big Cartel (stock and sale are per option)", () => {
+    const shirt = normalizeBigCartelProduct(
+      bc.sized({ name: "Sized" }, ["S", "M", "L"], { soldOut: ["S"] }),
+      "https://shop.example.com",
+      "USD"
+    );
+
+    it("hides a product whose only selected size is sold out, and keeps one with another size in stock", () => {
+      const state = { selectedOptions: { Size: ["S"] } };
+      expect(names(filter([shirt], { ...state, inStockOnly: true }))).toEqual([]);
+      expect(names(filter([shirt], { ...state, inStockOnly: false }))).toEqual(["Sized"]);
+      expect(names(filter([shirt], { selectedOptions: { Size: ["S", "M"] }, inStockOnly: true }))).toEqual(["Sized"]);
+    });
+
+    it("carries per-option sale and sold-out flags onto the variants", () => {
+      const onSale = normalizeBigCartelProduct(
+        bc.sized({ name: "Sale", on_sale: true, default_price: 30 }, ["S", "M"], { price: 20 }),
+        "https://shop.example.com",
+        "USD"
+      );
+      expect(names(filter([onSale], { saleOnly: true, selectedOptions: { Size: ["M"] } }))).toEqual(["Sale"]);
+    });
   });
 });

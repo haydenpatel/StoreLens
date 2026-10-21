@@ -8,7 +8,9 @@ import { formatMoneyRange } from "@/lib/currency";
 
 function ProductCard({ product }) {
   const image = product.images?.[0]?.url || null;
-  const variants = product.variants || [];
+  // While filters narrow a product's variants, the price, badge and stock
+  // label describe the matching ones; the variant list below stays complete.
+  const variants = product.matchingVariants ?? product.variants ?? [];
   const prices = variants.map(v => v.price).filter(p => !Number.isNaN(p));
   const minPrice = prices.length > 0 ? Math.min(...prices) : null;
   const maxPrice = prices.length > 0 ? Math.max(...prices) : null;
@@ -44,7 +46,7 @@ function ProductCard({ product }) {
       );
 
   // Prepare variant titles for display (display up to maxChars and use `+N more`)
-  const variantTitles = (variants || []).map(v => v.title || '').filter(Boolean);
+  const variantTitles = (product.variants || []).map(v => v.title || '').filter(Boolean);
   const maxChars = 35; // max characters to show for the combined titles
   let variantsDisplay = '';
   let remaining = 0;
