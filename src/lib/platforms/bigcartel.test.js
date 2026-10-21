@@ -560,6 +560,30 @@ describe("listCollections", () => {
       expect(collections.map((c) => c.handle)).toEqual(["all", "art-prints", "tees"]);
     });
 
+    it("uses a list that arrives after the grace on the next read within the cache lifetime", async () => {
+      let release;
+      const slow = new Promise((resolve) => (release = resolve));
+      const body = { products_count: 4, currency: { code: "USD" }, categories: [category("Tees"), category("Art Prints", "art-prints")] };
+      stubShop(catalog(), (u) => (u.pathname.endsWith("/store.json") ? slow.then(() => jsonResponse(body)) : undefined));
+      const first = bigcartelAdapter.listCollections(ORIGIN);
+      await vi.advanceTimersByTimeAsync(800);
+      expect((await first).collections.map((c) => c.handle)).toEqual(["all", "art-prints", "tees"]);
+      release();
+      await vi.advanceTimersByTimeAsync(0);
+      const second = await bigcartelAdapter.listCollections(ORIGIN);
+      expect(second.collections.map((c) => c.handle)).toEqual(["all", "tees", "art-prints"]);
+    });
+
+    it("ignores a listed entry with no permalink and names one without a name from the products", async () => {
+      stubWith([{ id: 1 }, { id: 2, name: "No link" }, { id: 3, permalink: "tees" }]);
+      const { collections } = await bigcartelAdapter.listCollections(ORIGIN);
+      expect(collections.map((c) => [c.handle, c.title])).toEqual([
+        ["all", "All Products"],
+        ["tees", "Tees"],
+        ["art-prints", "Art Prints"],
+      ]);
+    });
+
     it("does not hold the products up for a store.json that never answers", async () => {
       stubShop(catalog(), (u) => (u.pathname.endsWith("/store.json") ? new Promise(() => {}) : undefined));
       const pending = bigcartelAdapter.listCollections(ORIGIN);
