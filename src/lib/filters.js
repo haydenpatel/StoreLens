@@ -387,8 +387,11 @@ export function filterAndSortProducts(products, state, capabilities = {}) {
   // Sale only
   if (saleOnly) {
     filtered = filtered.filter(p => {
-      const { hasDiscount } = getDiscountData(p.variants || []);
-      return hasDiscount;
+      const variants = p.variants || [];
+      // With "In stock only" on, only buyable variants count (as on the badge);
+      // with it off, any discounted variant matches, sold out or not.
+      if (!inStockOnly) return variants.some(v => v.compareAtPrice && v.compareAtPrice > v.price);
+      return getDiscountData(variants).hasDiscount;
     });
   }
 
