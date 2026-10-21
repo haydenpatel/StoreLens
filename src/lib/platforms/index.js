@@ -37,11 +37,14 @@ export function createRegistry(adapters, { cache = platformCache } = {}) {
 
       for (const adapter of adapters) {
         if (adapter === fallback || !adapter.detect) continue;
-        if (await adapter.detect(url, { signal })) {
+        const detected = await adapter.detect(url, { signal });
+        signal?.throwIfAborted();
+        if (detected) {
           cache.save(url.origin, adapter.id);
           return adapter;
         }
       }
+      signal?.throwIfAborted();
       return fallback;
     },
     // A load worked, so the store really is on this platform: remember it, so the

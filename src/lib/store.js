@@ -41,6 +41,12 @@ const CACHE_VERSION = 3;
 const CACHE_PREFIX = `storelens:collections:v${CACHE_VERSION}:`;
 const TTL_MS = 21600000;
 
+// A stored timestamp counts only if it is a real number, not in the future and
+// younger than `ttlMs`. Anything else (corrupt, missing, a clock that was ahead)
+// reads as expired, so a bad entry can't stay fresh forever.
+const isFreshTimestamp = (cachedAt, ttlMs) =>
+  typeof cachedAt === "number" && Number.isFinite(cachedAt) && cachedAt <= Date.now() && Date.now() - cachedAt < ttlMs;
+
 const cacheKey = (platformId, origin) => `${CACHE_PREFIX}${platformId}:${origin}`;
 
 export function loadCollectionsCache(platformId, origin) {
@@ -49,9 +55,8 @@ export function loadCollectionsCache(platformId, origin) {
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object") return null;
-    const { cachedAt, ttlMs, collections, allProductsHandle } = parsed;
-    if (!cachedAt || !ttlMs || !Array.isArray(collections)) return null;
-    if (Date.now() - cachedAt >= ttlMs) return null;
+    const { cachedAt, collections, allProductsHandle } = parsed;
+    if (!isFreshTimestamp(cachedAt, TTL_MS) || !Array.isArray(collections)) return null;
     return { collections, allProductsHandle: allProductsHandle ?? null };
   } catch {
     return null;
@@ -62,7 +67,6 @@ export function saveCollectionsCache(platformId, origin, collections, allProduct
   try {
     const payload = {
       cachedAt: Date.now(),
-      ttlMs: TTL_MS,
       collections,
       allProductsHandle: allProductsHandle ?? null,
     };
@@ -86,7 +90,7 @@ export function loadPlatformCache(origin) {
     const raw = localStorage.getItem(`${PLATFORM_CACHE_PREFIX}${origin}`);
     if (!raw) return null;
     const { cachedAt, platformId } = JSON.parse(raw) ?? {};
-    if (typeof platformId !== "string" || !cachedAt || Date.now() - cachedAt >= PLATFORM_TTL_MS) return null;
+    if (typeof platformId !== "string" || !isFreshTimestamp(cachedAt, PLATFORM_TTL_MS)) return null;
     return platformId;
   } catch {
     return null;

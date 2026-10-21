@@ -105,6 +105,24 @@ describe("resolveAdapter's network detection and platform cache", () => {
   };
   const shop = url("https://shop.example.com/collections/all");
 
+  it("rejects with an AbortError when the signal aborts during a detect that resolves false", async () => {
+    const controller = new AbortController();
+    const a = { ...fake("a", "a", () => false), detect: vi.fn(async () => (controller.abort(), false)) };
+    const b = detecting("b", true);
+    const registry = createRegistry([a, b, fake("fb", "Fallback", () => true)], { cache: memoryCache() });
+    await expect(registry.resolveAdapter(shop, { signal: controller.signal })).rejects.toMatchObject({ name: "AbortError" });
+    expect(b.detect).not.toHaveBeenCalled();
+  });
+
+  it("rejects rather than returning a detected adapter if the signal aborted meanwhile", async () => {
+    const controller = new AbortController();
+    const cache = memoryCache();
+    const a = { ...fake("a", "a", () => false), detect: vi.fn(async () => (controller.abort(), true)) };
+    const registry = createRegistry([a, fake("fb", "Fallback", () => true)], { cache });
+    await expect(registry.resolveAdapter(shop, { signal: controller.signal })).rejects.toMatchObject({ name: "AbortError" });
+    expect(cache.store.size).toBe(0);
+  });
+
   it("asks adapters that can detect, in order, and uses the first that claims the store", async () => {
     const a = detecting("a", false);
     const b = detecting("b", true);
