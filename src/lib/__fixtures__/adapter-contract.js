@@ -120,3 +120,31 @@ export function expectNeutralProduct(product, capabilities) {
   // (Variant option values can't outnumber the options, so none are left either.)
   if (capabilities.variantOptions === false) check(product.options, "variantOptions capability is false").toEqual([]);
 }
+
+// Checks an adapter's parseUrl (and that collectionUrl round-trips through it)
+// against the same expectations for every platform. Each adapter supplies its own
+// sample URLs, since each platform's addresses look different:
+//   origin:     the store's origin, as parseUrl should return it
+//   root:       the store's root URL
+//   collection: { url, handle }, a collection page
+//   product:    a single product's page (it isn't a collection)
+//   locale:     { url, origin, handle } for a platform with a locale prefix in the
+//               path; the origin parseUrl returns carries the prefix. Omit it for a
+//               platform that has none.
+export function expectParseUrl(adapter, { origin, root, collection, product, locale }) {
+  const where = `adapter "${adapter.id}"`;
+  const parse = (url) => adapter.parseUrl(new URL(url));
+
+  expect(parse(root), `${where}: the root`).toEqual({ origin, collection: null });
+  expect(parse(collection.url), `${where}: a collection page`).toEqual({ origin, collection: collection.handle });
+  expect(parse(product), `${where}: a product page is not a collection`).toEqual({ origin, collection: null });
+  if (locale) {
+    expect(parse(locale.url), `${where}: a locale prefix`).toEqual({ origin: locale.origin, collection: locale.handle });
+  }
+
+  // A link the adapter builds must read back as the same store and collection.
+  expect(parse(adapter.collectionUrl(origin, collection.handle)), `${where}: collectionUrl round trip`).toEqual({
+    origin,
+    collection: collection.handle,
+  });
+}

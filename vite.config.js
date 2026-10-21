@@ -23,6 +23,8 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['src/**/*.test.{js,jsx}', 'scripts/**/*.test.mjs'],
+    // Fails any test that calls fetch without stubbing it (no real network).
+    setupFiles: ['./src/lib/__fixtures__/no-network.js'],
   },
   server: {
     port: 5173,
