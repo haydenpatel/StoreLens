@@ -39,6 +39,13 @@ export async function fetchWithRetry(url, { signal, retries = 2, baseDelayMs = 5
     const response = await fetch(url, { signal });
     const retryable = response.status === 429 || response.status >= 500;
     if (!retryable || attempt >= retries) return response;
+    // The response is discarded, so release its connection rather than leave it
+    // open until garbage collection. Best effort: there may be no body to cancel.
+    try {
+      await response.body?.cancel?.();
+    } catch {
+      /* noop */
+    }
     await delay(retryDelayMs(response, attempt, { baseDelayMs, maxDelayMs }), signal);
   }
 }
