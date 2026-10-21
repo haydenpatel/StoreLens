@@ -1573,3 +1573,90 @@ describe("the filter drawer across loads (#113)", () => {
     await heading(2, 2);
   });
 });
+
+describe("the page while a store resolves and after a collection fails (#112)", () => {
+  const prompt = () => screen.queryByText(/store or collection URL above to get started/);
+  const dropdown = () => screen.getAllByRole("combobox")[0];
+
+  it("shows no prompt while a pasted store is resolving", async () => {
+    const slow = deferred();
+    slowResolve.override = (url) => (url.host === A ? slow.promise.then(() => detectAdapter(url)) : undefined);
+    vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: storeA() }));
+    openAt("/");
+    const user = userEvent.setup();
+    expect(prompt()).not.toBeNull();
+
+    await user.click(input());
+    await user.paste(A);
+    expect(prompt()).toBeNull();
+
+    await act(async () => slow.release());
+    await heading(3, 3);
+    expect(prompt()).toBeNull();
+  });
+
+  it("shows no prompt while a bare domain waits for discovery, and none once it loads", async () => {
+    const slow = deferred();
+    const hold = (url) => (url.host === A && url.pathname === "/collections.json" ? slow.promise : undefined);
+    vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: storeA() }, hold));
+    openAt("/");
+    const user = userEvent.setup();
+
+    await user.click(input());
+    await user.paste(A);
+    await waitFor(() => expect(dropdown().textContent).toMatch(/Discovering/));
+    expect(prompt()).toBeNull();
+
+    await act(async () => slow.release(jsonResponse({ collections: [{ handle: "all", title: "All", products_count: 3 }] })));
+    await heading(3, 3);
+    expect(prompt()).toBeNull();
+  });
+
+  it("returns the dropdown to its placeholder and drops the failed handle when a collection isn't found", async () => {
+    const logged = [vi.spyOn(console, "error"), vi.spyOn(console, "warn")];
+    for (const spy of logged) spy.mockImplementation(() => {});
+    vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: storeA() }));
+    openAt(`/${A}/collections/nope`);
+
+    expect(await screen.findByText(/That collection wasn't found/)).not.toBeNull();
+    await waitFor(() => expect(dropdown().hasAttribute("data-placeholder")).toBe(true));
+    expect(dropdown().textContent).toBe("Select a collection");
+
+    const user = userEvent.setup();
+    await user.click(dropdown());
+    const options = within(await screen.findByRole("listbox")).getAllByRole("option");
+    expect(options.map((o) => o.textContent.replace(/\s*\(\d+\)$/, "")).sort()).toEqual(["all", "mugs", "tees"]);
+    expect(screen.queryByRole("option", { name: /nope/i })).toBeNull();
+
+    const warnings = logged.flatMap((spy) => spy.mock.calls).filter((call) => /controlled/i.test(call.join(" ")));
+    expect(warnings).toEqual([]);
+  });
+
+  it("keeps a failed handle that the store's own listing offers, but not selected", async () => {
+    const refuse = (url) =>
+      url.host === A && url.pathname === "/collections/tees/products.json" ? jsonResponse({}, { ok: false, status: 403 }) : undefined;
+    vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: storeA() }, refuse));
+    openAt(`/${A}/collections/tees`);
+
+    await screen.findByText(/password protected or blocking access/);
+    await waitFor(() => expect(dropdown().hasAttribute("data-placeholder")).toBe(true));
+    const user = userEvent.setup();
+    await user.click(dropdown());
+    const names = within(await screen.findByRole("listbox")).getAllByRole("option").map((o) => o.textContent);
+    expect(names.some((n) => /^tees/i.test(n))).toBe(true);
+  });
+
+  it("clears the selection when a collection chosen from the dropdown fails", async () => {
+    const refuse = (url) =>
+      url.host === A && url.pathname === "/collections/mugs/products.json" ? jsonResponse({}, { ok: false, status: 403 }) : undefined;
+    vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: storeA() }, refuse));
+    openAt(`/${A}/collections/tees`);
+    await heading(3, 3);
+    const user = userEvent.setup();
+    await user.click(dropdown());
+    await user.click(await screen.findByRole("option", { name: /^mugs/i }));
+
+    await screen.findByText(/password protected or blocking access/);
+    await waitFor(() => expect(dropdown().hasAttribute("data-placeholder")).toBe(true));
+  });
+});
