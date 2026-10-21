@@ -116,7 +116,7 @@ export default function StoreLensApp() {
     if (!collectionsState.collections.some((c) => c.handle === inputHandle)) {
       setCollectionsState({
         ...collectionsState,
-        collections: [{ handle: inputHandle, title: titleFromHandle(inputHandle), products_count: null }, ...collectionsState.collections],
+        collections: [{ handle: inputHandle, title: titleFromHandle(inputHandle), products_count: null, addedForLoad: true }, ...collectionsState.collections],
       });
     }
   }
@@ -153,6 +153,14 @@ export default function StoreLensApp() {
   // choosing it; it travels with the pending auto-load because the load starts
   // later, after discovery.
   const autoLoadPendingRef = useRef(null);
+  // Mirrors whether autoLoadPendingRef is set, for the render: the prompt to enter
+  // a URL must not show while a bare domain waits for discovery to open its
+  // collection. Always set through setAutoLoadPending.
+  const [autoLoadWaiting, setAutoLoadWaiting] = useState(false);
+  const setAutoLoadPending = (pending) => {
+    autoLoadPendingRef.current = pending;
+    setAutoLoadWaiting(pending !== null);
+  };
   // The auto-load a discovery consumed without opening anything (it failed, or
   // found no all-products collection). Retry re-arms it, so a retry that works
   // opens the collection the user was waiting for. Dropped as soon as anything
@@ -242,6 +250,21 @@ export default function StoreLensApp() {
     else window.history.pushState(null, "", path);
   };
 
+  // A collection that failed to load is no longer the one chosen: the dropdown
+  // goes back to its placeholder, and the entry added only to hold that selection
+  // goes (one the store's own listing has stays).
+  const forgetFailedCollection = (platform, url) => {
+    const { collection } = platform.parseUrl(new URL(url));
+    setInputHandle("");
+    setSelectedHandle("");
+    if (!collection) return;
+    setCollectionsState((prev) =>
+      prev.collections.some((c) => c.addedForLoad && c.handle === collection)
+        ? { ...prev, collections: prev.collections.filter((c) => !(c.addedForLoad && c.handle === collection)) }
+        : prev
+    );
+  };
+
   // For a platform that can't list its collections: which collection a URL is,
   // if it isn't the default one that is always offered.
   const unlistedCollection = (platform, url) => {
@@ -303,6 +326,7 @@ export default function StoreLensApp() {
         setError(describeStoreError(err, errorContext()));
         setLoading(false);
         forgetAdapter(new URL(url));
+        forgetFailedCollection(loadAdapter, url);
         showFailedStore(appPathFor(url), fromAddressBar);
       }
       return;
@@ -320,6 +344,7 @@ export default function StoreLensApp() {
       if (pageError?.kind === "not-found") forgetVisitedCollectionFor(loadAdapter, url);
       setError(describeStoreError(pageError ?? new StoreError("empty"), errorContext()));
       setLoading(false);
+      forgetFailedCollection(loadAdapter, url);
       showFailedStore(appPathFor(url), fromAddressBar);
       return;
     }
@@ -404,7 +429,7 @@ export default function StoreLensApp() {
       setStoreOrigin("");
       setInputHandle("");
       setSelectedHandle("");
-      autoLoadPendingRef.current = null;
+      setAutoLoadPending(null);
       pendingFilterParamsRef.current = null;
       // Nothing is left to show: drop the previous page like a failed load does
       // (a link in the address bar keeps its address).
@@ -417,7 +442,7 @@ export default function StoreLensApp() {
       return;
     }
     // A valid new input replaces whatever store was still waiting on discovery.
-    autoLoadPendingRef.current = null;
+    setAutoLoadPending(null);
     unfulfilledAutoLoadRef.current = null;
     // Show what was entered at once (a paste is intercepted, so the box would
     // stay empty while a slow platform check runs); it is tidied up below.
@@ -450,7 +475,7 @@ export default function StoreLensApp() {
       // collection) instead of leaving the user stuck on an empty page.
       setSelectedHandle("");
       setCurrentCollectionUrl("");
-      autoLoadPendingRef.current = { fromAddressBar, origin };
+      setAutoLoadPending({ fromAddressBar, origin });
     }
     setDiscoveryRetryNonce((n) => n + 1);
   };
@@ -614,7 +639,7 @@ export default function StoreLensApp() {
           // be superseded must not consume the one set for the store replacing it.
           const pendingAutoLoad = autoLoadPendingRef.current?.origin === storeOrigin ? autoLoadPendingRef.current : null;
           if (pendingAutoLoad) {
-            autoLoadPendingRef.current = null;
+            setAutoLoadPending(null);
             if (allProductsHandle) {
               // Only replaceState (via lastLoadWasFromAddressBarRef) when this bare
               // domain itself came from the address bar (a deep link or
@@ -649,7 +674,7 @@ export default function StoreLensApp() {
           });
           const pendingAutoLoad = autoLoadPendingRef.current?.origin === storeOrigin ? autoLoadPendingRef.current : null;
           if (pendingAutoLoad) {
-            autoLoadPendingRef.current = null;
+            setAutoLoadPending(null);
             unfulfilledAutoLoadRef.current = pendingAutoLoad;
             setError(
               err instanceof StoreError
@@ -675,7 +700,7 @@ export default function StoreLensApp() {
     const unfulfilled = unfulfilledAutoLoadRef.current;
     unfulfilledAutoLoadRef.current = null;
     if (unfulfilled?.origin === storeOrigin) {
-      autoLoadPendingRef.current = unfulfilled;
+      setAutoLoadPending(unfulfilled);
       clearMessage();
     }
     setDiscoveryRetryNonce((n) => n + 1);
@@ -939,7 +964,7 @@ export default function StoreLensApp() {
               </Notice>
             ))}
 
-          {!loading && !error && !infoNotice && products.length === 0 && (
+          {!loading && !resolving && !autoLoadWaiting && !error && !infoNotice && products.length === 0 && (
             <div className="text-center py-20">
               <p className="text-muted-foreground text-lg">
                 Enter a {supportedPlatformNames()} store or collection URL above to get started
