@@ -62,8 +62,9 @@ const STORE_INFO_GRACE_MS = 750;
 
 // What the shop says about itself, from store.json: the currency its prices are
 // in (the products feed has none), how many products it has and its categories
-// in the shop's own order. All are optional extras, so any failure (or a slow answer) just means they are unknown,
-// and products still load (prices then show with the default "$").
+// in the shop's own order. All are optional extras, so any failure (or a slow
+// answer) just means they are unknown, and products still load (prices then
+// show with the default "$", and the categories come from the products).
 async function readStoreInfo(shop) {
   const timeout = new AbortController();
   const timer = setTimeout(() => timeout.abort(), STORE_INFO_TIMEOUT_MS);
