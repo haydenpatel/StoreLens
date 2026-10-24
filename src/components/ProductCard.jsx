@@ -17,9 +17,10 @@ function ProductCard({ product }) {
   const inStock = variants.some(v => v.available);
   // #125: a product with no variants had them all dropped as unpriced, so its
   // price and stock are both unknown (product.available is always false for it
-  // by contract). Show no stock label. To settle stock for these, see option C
-  // in #125: compute product.available in each adapter from the raw feed before
-  // unpriced variants are dropped, and use it here and in the stock filter.
+  // by contract). Show no stock label. Option C, not planned unless this is seen
+  // on a real store: compute product.available in each adapter from the raw feed
+  // before unpriced variants are dropped, update adapter-contract.js, and use it
+  // here and in the stock filter. See #125.
   const stockUnknown = variants.length === 0;
   const maxTagsToShow = 3;
   const maxTagChars = 18; // only show tags shorter than or equal to this
