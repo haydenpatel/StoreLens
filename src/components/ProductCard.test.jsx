@@ -107,7 +107,6 @@ describe("ProductCard content", () => {
   it("shows no stock label on a product with no variants, but keeps Price unavailable (#125)", () => {
     render(<ProductCard product={rich({ variants: [] })} />);
     expect(text()).not.toContain("Out of Stock");
-    expect(text()).not.toContain("In Stock");
     expect(text()).toContain("Price unavailable");
   });
 

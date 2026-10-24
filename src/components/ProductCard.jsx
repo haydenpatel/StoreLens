@@ -20,7 +20,7 @@ function ProductCard({ product }) {
   // by contract). Show no stock label. Option C, not planned unless this is seen
   // on a real store: compute product.available in each adapter from the raw feed
   // before unpriced variants are dropped, update adapter-contract.js, and use it
-  // here and in the stock filter. See #125.
+  // here and in the stock filter.
   const stockUnknown = variants.length === 0;
   const maxTagsToShow = 3;
   const maxTagChars = 18; // only show tags shorter than or equal to this
