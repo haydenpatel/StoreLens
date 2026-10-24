@@ -312,6 +312,16 @@ describe("filterAndSortProducts", () => {
       expect(run({ priceRange: [0, 10], inStockOnly: true }, products)).toEqual(["Garbled", "No variants"]);
     });
 
+    it("keeps a product with no variants under default filters and In stock only, but not under option or sale filters (#125)", () => {
+      const products = norm([
+        product({ title: "No variants", variants: [] }),
+        product({ title: "Priced", options: [{ name: "Size" }], variants: [variant({ price: "5.00", option1: "S" })] }),
+      ]);
+      expect(run({}, products)).toEqual(["No variants", "Priced"]);
+      expect(run({ inStockOnly: true }, products)).toEqual(["No variants", "Priced"]);
+      expect(run({ saleOnly: true }, products)).toEqual([]);
+    });
+
     it("sorts unpriced products without NaN comparisons (#84)", () => {
       const products = norm([
         product({ title: "A none", variants: [] }),

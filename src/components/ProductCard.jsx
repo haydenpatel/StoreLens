@@ -15,6 +15,12 @@ function ProductCard({ product }) {
   const minPrice = prices.length > 0 ? Math.min(...prices) : null;
   const maxPrice = prices.length > 0 ? Math.max(...prices) : null;
   const inStock = variants.some(v => v.available);
+  // #125: a product with no variants had them all dropped as unpriced, so its
+  // price and stock are both unknown (product.available is always false for it
+  // by contract). Show no stock label. To settle stock for these, see option C
+  // in #125: compute product.available in each adapter from the raw feed before
+  // unpriced variants are dropped, and use it here and in the stock filter.
+  const stockUnknown = variants.length === 0;
   const maxTagsToShow = 3;
   const maxTagChars = 18; // only show tags shorter than or equal to this
   const maxTagDisplayChars = 16; // truncate displayed tag text to this length
@@ -100,7 +106,7 @@ function ProductCard({ product }) {
           )}
           
           {/* Stock badge */}
-          {!inStock && (
+          {!inStock && !stockUnknown && (
             <Badge variant="secondary" className="absolute top-0 right-2 bg-destructive text-primary-foreground text-[10px] px-1.5 sm:text-xs sm:px-2">
               Out of Stock
             </Badge>
