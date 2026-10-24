@@ -49,16 +49,17 @@ export function formatMoney(amount, currency, { decimals } = {}) {
 export function formatMoneyRange(min, max, currency, { decimals } = {}) {
   if (!currency) {
     const one = (n) => `${FALLBACK_SYMBOL}${n.toFixed(decimals ?? 2)}`;
-    return min === max ? one(min) : `${one(min)} - ${one(max)}`;
+    return one(min) === one(max) ? one(min) : `${one(min)} - ${one(max)}`;
   }
   try {
     const low = moneyParts(min, currency, decimals);
-    if (min === max) return withCode(`${low.prefix}${low.number}`, low.code);
     const high = moneyParts(max, currency, decimals);
+    // Equal once formatted (e.g. 9.999999999999998 and 10): show one amount.
+    if (low.number === high.number) return withCode(`${low.prefix}${low.number}`, low.code);
     return withCode(`${low.prefix}${low.number} - ${high.prefix}${high.number}`, high.code);
   } catch {
     // Not a valid ISO 4217 code.
     const one = (n) => n.toFixed(decimals ?? 2);
-    return min === max ? `${currency} ${one(min)}` : `${currency} ${one(min)} - ${one(max)}`;
+    return one(min) === one(max) ? `${currency} ${one(min)}` : `${currency} ${one(min)} - ${one(max)}`;
   }
 }
