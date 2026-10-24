@@ -70,8 +70,8 @@ describe("formatMoneyRange", () => {
     expect(formatMoneyRange(9.999999999999998, 10, "CAD")).toBe(`$10.00${NB}CAD`);
     expect(formatMoneyRange(10, 10.01)).toBe("$10.00 - $10.01");
     // sidebar price range: whole units
-    expect(formatMoneyRange(5.2, 5.4, "USD", { decimals: 0 })).toBe("$5");
-    expect(formatMoneyRange(5.2, 6.4, "USD", { decimals: 0 })).toBe("$5 - $6");
+    expect(formatMoneyRange(5.2, 5.4, "USD", { decimals: 0 })).toBe(`$5${NB}USD`);
+    expect(formatMoneyRange(5.2, 6.4, "USD", { decimals: 0 })).toBe(`$5 - $6${NB}USD`);
   });
 
   it("keeps a bare $ range when the currency is unknown", () => {
