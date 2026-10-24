@@ -26,8 +26,9 @@ export function getDiscountData(variants = []) {
   const discounts = pool
     .filter(isDiscounted)
     .map(v => {
-      // Rounded to cents so 19.99 - 9.99 and 29.99 - 19.99 both give exactly 10.
-      const amount = Math.round((v.compareAtPrice - v.price) * 100) / 100;
+      // Rounded to 6 decimals only to drop float noise (19.99 - 9.99 and
+      // 29.99 - 19.99 both give exactly 10) without losing 3-decimal currencies.
+      const amount = Math.round((v.compareAtPrice - v.price) * 1e6) / 1e6;
       return { amount, percent: (amount / v.compareAtPrice) * 100 };
     });
 
