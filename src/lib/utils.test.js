@@ -65,4 +65,28 @@ describe("getDiscountData", () => {
     expect(result.minPercent).toBe(25);
     expect(result.bestPercentAmount).toBe(50);
   });
+
+  it("keeps the third decimal of 3-decimal currencies (#124)", () => {
+    const result = getDiscountData([
+      { price: 1, compareAtPrice: 2.005, available: true },
+      { price: 1, compareAtPrice: 2.006, available: true },
+    ]);
+    expect(result.minAmount).toBe(1.005);
+    expect(result.discountAmount).toBe(1.006);
+  });
+
+  it("drops float noise from savings so float noise does not split equal savings (#124)", () => {
+    const result = getDiscountData([
+      { price: 9.99, compareAtPrice: 19.99, available: true },
+      { price: 19.99, compareAtPrice: 29.99, available: true },
+    ]);
+    expect(result.discountAmount).toBe(10);
+    expect(result.minAmount).toBe(10);
+    const real = getDiscountData([
+      { price: 9.99, compareAtPrice: 19.99, available: true },
+      { price: 19.98, compareAtPrice: 29.99, available: true },
+    ]);
+    expect(real.minAmount).toBe(10);
+    expect(real.discountAmount).toBe(10.01);
+  });
 });

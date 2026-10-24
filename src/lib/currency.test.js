@@ -65,6 +65,15 @@ describe("formatMoneyRange", () => {
     expect(formatMoneyRange(5, 5)).toBe("$5.00");
   });
 
+  it("is a single value when the amounts format the same (#124)", () => {
+    expect(formatMoneyRange(9.999999999999998, 10)).toBe("$10.00");
+    expect(formatMoneyRange(9.999999999999998, 10, "CAD")).toBe(`$10.00${NB}CAD`);
+    expect(formatMoneyRange(10, 10.01)).toBe("$10.00 - $10.01");
+    // sidebar price range: whole units
+    expect(formatMoneyRange(5.2, 5.4, "USD", { decimals: 0 })).toBe(`$5${NB}USD`);
+    expect(formatMoneyRange(5.2, 6.4, "USD", { decimals: 0 })).toBe(`$5 - $6${NB}USD`);
+  });
+
   it("keeps a bare $ range when the currency is unknown", () => {
     expect(formatMoneyRange(5, 10)).toBe("$5.00 - $10.00");
     expect(formatMoneyRange(5, 10, undefined, { decimals: 0 })).toBe("$5 - $10");
