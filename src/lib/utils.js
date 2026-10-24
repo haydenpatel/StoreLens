@@ -26,7 +26,8 @@ export function getDiscountData(variants = []) {
   const discounts = pool
     .filter(isDiscounted)
     .map(v => {
-      const amount = v.compareAtPrice - v.price;
+      // Rounded to cents so 19.99 - 9.99 and 29.99 - 19.99 both give exactly 10.
+      const amount = Math.round((v.compareAtPrice - v.price) * 100) / 100;
       return { amount, percent: (amount / v.compareAtPrice) * 100 };
     });
 
@@ -44,6 +45,6 @@ export function getDiscountData(variants = []) {
     minAmount: Math.min(...amounts),
     minPercent: Math.min(...percents),
     // Ties on the percentage take the larger saving, matching the top of the range.
-    bestPercentAmount: Math.max(...discounts.filter(d => d.percent === discountPercent).map(d => d.amount)),
+    bestPercentAmount: Math.max(...discounts.filter(d => Math.abs(d.percent - discountPercent) < 1e-9).map(d => d.amount)),
   };
 }

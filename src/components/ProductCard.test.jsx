@@ -28,6 +28,18 @@ describe("ProductCard currency", () => {
     expect(text()).toContain(`Save up to $50.00${NB}CAD (50% off)`);
   });
 
+  it("shows one saving when the savings are equal after rounding to cents (#124)", () => {
+    render(<ProductCard product={product("CAD", [variant(9.99, 19.99), variant(19.99, 29.99)])} />);
+    expect(text()).toContain(`Save $10.00${NB}CAD (33-50% off)`);
+    expect(text()).not.toContain("$10.00 - $10.00");
+    expect(text()).toContain(`Save up to $10.00${NB}CAD (50% off)`);
+  });
+
+  it("still shows a range when savings differ by a cent (#124)", () => {
+    render(<ProductCard product={product("CAD", [variant(9.99, 19.99), variant(19.98, 29.99)])} />);
+    expect(text()).toContain(`Save $10.00 - $10.01${NB}CAD`);
+  });
+
   it("shows one percentage when only the saving differs (#114)", () => {
     render(<ProductCard product={product("CAD", [variant(50, 100), variant(100, 200)])} />);
     expect(text()).toContain(`Save $50.00 - $100.00${NB}CAD (50% off)`);
