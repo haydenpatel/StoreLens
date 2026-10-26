@@ -83,9 +83,9 @@ npm run dev
 
 Use `npm ci` rather than `npm install` for an existing clone: Node 22's npm rewrites `package-lock.json` on `npm install`, while `npm ci` leaves it alone. Use `npm install` only to change dependencies.
 
-Development needs Node 22.22.2+ (22.x), 24.15+ (24.x) or 26+: that is the range the test tooling (jsdom 30) supports, so Node 23 and 25 are out. CI uses Node 22, and `.nvmrc` selects it (`nvm use`). `package.json` declares this range in `engines`, so `npm install` on another Node prints one warning instead of scattered ones from dev packages.
+Development needs Node 22.22.2+ (22.x), 24.15+ (24.x) or 26+: that is the range the test tooling (jsdom 30) supports, so Node 23 and 25 are out. CI uses Node 22, and `.nvmrc` selects it (`nvm use`). `package.json` declares this range in `engines`, so `npm ci` (or `npm install`) on another Node prints one warning instead of scattered ones from dev packages.
 
-`npm install` also installs the git hooks in `.githooks/` (run it again after changing one). They refuse commits and merges on `main`: work on a branch (one per issue) and merge through a pull request.
+`npm ci` and `npm install` also install the git hooks in `.githooks/` (run it again after changing one). They refuse commits and merges on `main`: work on a branch (one per issue) and merge through a pull request.
 
 Dependabot (`.github/dependabot.yml`) opens one grouped upgrade PR per month for npm packages and one for GitHub Actions, plus grouped security fixes as they come. Review and merge them like any other PR once `test` passes.
 
