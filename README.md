@@ -34,11 +34,11 @@ Each platform is a small adapter (`src/lib/platforms/`) that turns the platform'
 - Browse any collection (including all products)
 - Auto-detect default collections from bare domains  
 - Loads full pagination for complete product retrieval  
-- Filter by vendor, category, tags, variant options, price, and stock or sale status — even if the shop doesn’t show them  
+- Filter by vendor, category, tags, variant options, price, and stock or sale status — even if the shop doesn’t show them. Filters match per variant: one variant must meet the selected options, stock, price and sale filters together  
 - Sorting by title, price, newest first, or highest discount 
 - Search across product titles and descriptions  
 - Recent Stores to quickly re-visit stores you have opened
-- Shareable links: the address keeps the store, collection, filters and sort, so a link reopens the same view
+- Shareable links: the address keeps the store, collection, filters and sort, so a link reopens the same view. Selections the collection doesn't have are dropped with a warning, and prices are clamped to its range
 - A bookmarklet that opens the store you're browsing in StoreLens (see [Open a store in StoreLens](#open-a-store-in-storelens))
 - Partial results with a warning if a page of products fails to load, instead of discarding what already loaded
 - Clean UI built with Tailwind + shadcn/ui  
@@ -77,13 +77,15 @@ Some sites' security settings may block bookmarklets. If yours does, paste the s
 Assuming your environment is already configured:
 
 ```bash
-npm install
+npm ci
 npm run dev
 ```
 
-Development needs Node 22.22.2+ (22.x), 24.15+ (24.x) or 26+: that is the range the test tooling (jsdom 30) supports, so Node 23 and 25 are out. CI uses Node 22, and `.nvmrc` selects it (`nvm use`). `package.json` declares this range in `engines`, so `npm install` on another Node prints one warning instead of scattered ones from dev packages.
+Use `npm ci` rather than `npm install` for an existing clone: Node 22's npm rewrites `package-lock.json` on `npm install`, while `npm ci` leaves it alone. Use `npm install` only to change dependencies.
 
-`npm install` also installs the git hooks in `.githooks/` (run it again after changing one). They refuse commits and merges on `main`: work on a branch (one per issue) and merge through a pull request.
+Development needs Node 22.22.2+ (22.x), 24.15+ (24.x) or 26+: that is the range the test tooling (jsdom 30) supports, so Node 23 and 25 are out. CI uses Node 22, and `.nvmrc` selects it (`nvm use`). `package.json` declares this range in `engines`, so `npm ci` (or `npm install`) on another Node prints one warning instead of scattered ones from dev packages.
+
+`npm ci` and `npm install` also install the git hooks in `.githooks/` (run it again after changing one). They refuse commits and merges on `main`: work on a branch (one per issue) and merge through a pull request.
 
 Dependabot (`.github/dependabot.yml`) opens one grouped upgrade PR per month for npm packages and one for GitHub Actions, plus grouped security fixes as they come. Review and merge them like any other PR once `test` passes.
 
@@ -117,11 +119,14 @@ StoreLens relies on each platform’s public JSON endpoints. Stores that restric
 
 ## Known Issues
 
+### All platforms
+
+- Known currencies are shown as symbol, amount and code ("$12.50 CAD", "£12.50 GBP"), so a CAD price is never mistaken for USD. A bare "$" with no code means the currency is unknown. This applies to every platform that reports a currency (Shopify via `/meta.json`, Big Cartel, Fourthwall); a Fourthwall shop in USD therefore reads "$12.50 USD".
+
 ### Shopify
 
 - Shopify enforces a limit of 1,000 collection pages (and 250 products per page).
   For a collection larger than 250,000 items StoreLens shows the first 250,000 products, with a warning.
-- Known currencies are shown as symbol, amount and code ("$12.50 CAD", "£12.50 GBP"), so a CAD price is never mistaken for USD. A bare "$" with no code means the currency is unknown. This applies to every platform that reports a currency (Shopify via `/meta.json`, Big Cartel, Fourthwall); a Fourthwall shop in USD therefore reads "$12.50 USD".
 - The products feed has no currency, so StoreLens reads the store's from its `/meta.json`; if that can't be read or is slow, prices show with "$".
 - On a Markets locale path (such as `/en-ca`) prices show a bare "$" with no code, whatever the market's currency: `/meta.json` reports the store's base currency there, not the market's, and the only source that names the market's currency (`/cart.js`) can't be read from a browser.
 
@@ -138,10 +143,10 @@ StoreLens relies on each platform’s public JSON endpoints. Stores that restric
 - Only shops at `*.bigcartel.com` work. A shop on its own domain can't be read: its feed carries no CORS headers, and the CORS-enabled feed is looked up by the shop's Big Cartel name, which can't be worked out from the domain. StoreLens says so when it can't reach such a shop.
 - StoreLens uses Big Cartel's legacy, undocumented product feed, which Big Cartel could change without notice. The documented API needs a login, so it can't be used.
 - The largest shops tested had 35 products, all returned, so whether Big Cartel caps a very large shop's feed is untested.
-- The products feed has no currency, so StoreLens reads the shop's from its `store.json`; if that can't be read, prices show with "$".
+- The products feed has no currency, so StoreLens reads the shop's from its `store.json`; if that can't be read or answers late, prices show with "$". A late `store.json` also skips the shortfall warning below and leaves the category dropdown alphabetical until the next read.
 - The feed can't be paged, so StoreLens compares the number of products loaded with the shop's own count in `store.json` and warns when fewer loaded (a shop whose count is missing or 0 is never warned about).
 - A product's sale price is only shown when the feed flags it on sale and an option costs less than the base price.
-- Categories show both in the collection dropdown and as the "Category" filter.
+- Categories show both in the collection dropdown and as the "Category" filter. The dropdown follows the shop's category order from `store.json` and leaves out empty categories.
 
 
 ## License
