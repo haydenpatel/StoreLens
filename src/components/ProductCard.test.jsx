@@ -104,6 +104,12 @@ describe("ProductCard content", () => {
     expect(text()).not.toContain("Out of Stock");
   });
 
+  it("shows no stock label on a product with no variants, but keeps Price unavailable (#125)", () => {
+    render(<ProductCard product={rich({ variants: [] })} />);
+    expect(text()).not.toContain("Out of Stock");
+    expect(text()).toContain("Price unavailable");
+  });
+
   it("keeps the sale badge on a sold-out product that was discounted", () => {
     const sold = { ...variant(20, 30), available: false };
     render(<ProductCard product={rich({ variants: [sold] })} />);
