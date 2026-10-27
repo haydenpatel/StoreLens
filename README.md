@@ -105,7 +105,7 @@ It hits real stores, so it isn't part of `npm test` or CI. **Run it by hand befo
 
 ## Browser support
 
-StoreLens needs Chrome 111+, Edge 111+, Firefox 128+ or Safari 16.4+. That is the floor of Tailwind CSS v4, which the styling is built on ([Tailwind's browser support](https://tailwindcss.com/docs/compatibility) lists Chrome 111, Safari 16.4 and Firefox 128; Edge follows Chrome's version). The JavaScript is transpiled for slightly older browsers (`build.target` in `vite.config.js`: Chrome and Edge 107, Firefox 104, Safari 16) and relies on that without fallbacks (for example `AbortSignal.throwIfAborted`), but the CSS is the higher bar. Older browsers aren't supported.
+StoreLens needs Chrome 111+, Edge 111+, Firefox 128+ or Safari 16.4+. That is the floor of Tailwind CSS v4, which the styling is built on ([Tailwind's browser support](https://tailwindcss.com/docs/compatibility) lists Chrome 111, Safari 16.4 and Firefox 128; Edge follows Chrome's version). The JavaScript is transpiled for slightly older browsers (`build.target` in `vite.config.js`: Chrome and Edge 107, Firefox 104, Safari 16) and relies on that without fallbacks (for example `AbortSignal.throwIfAborted`), but the CSS is the higher bar: it is built against the Tailwind floor above (`build.cssTarget` in `vite.config.js`: Chrome and Edge 111, Firefox 128, Safari 16.4), so modern colour syntax such as `oklch()` isn't rewritten for older browsers. Older browsers aren't supported.
 
 ## Status and Limitations
 
