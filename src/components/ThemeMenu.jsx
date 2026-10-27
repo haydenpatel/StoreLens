@@ -20,7 +20,8 @@ const OPTIONS = [
 
 // System / Light / Dark. Owns its state (useTheme), so no page has to pass it
 // down. The button shows the theme in force: a monitor while following the
-// system, otherwise the sun or moon.
+// system, otherwise the sun or moon. Icon-only on phones and on narrow
+// desktops (xl to 2xl), where the single-row header has no room for the label.
 export default function ThemeMenu() {
   const { preference, setPreference } = useTheme();
   const { Icon } = OPTIONS.find((o) => o.value === preference) ?? OPTIONS[0];
@@ -33,10 +34,10 @@ export default function ThemeMenu() {
           size="sm"
           aria-label="Theme"
           title="Theme"
-          className="gap-1 shrink-0 max-sm:!size-9 max-sm:!p-0 max-sm:!gap-0"
+          className="gap-1 shrink-0 max-sm:!size-9 max-sm:!p-0 max-sm:!gap-0 xl:max-2xl:!size-9 xl:max-2xl:!p-0 xl:max-2xl:!gap-0"
         >
           <Icon className="size-5" />
-          <span className="hidden sm:inline">Theme</span>
+          <span className="hidden sm:inline xl:max-2xl:hidden">Theme</span>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
