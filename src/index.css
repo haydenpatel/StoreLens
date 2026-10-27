@@ -66,9 +66,13 @@
   --shadow-opacity: var(--shadow-opacity);
   --color-shadow-color: var(--shadow-color);
   --color-destructive-foreground: var(--destructive-foreground);
+  --color-product-image: var(--product-image);
+  --color-badge-sale: var(--badge-sale);
+  --color-badge-out-of-stock: var(--badge-out-of-stock);
 }
 
 :root {
+  color-scheme: light;
   --background: oklch(1.0000 0 0);
   --foreground: oklch(0.2739 0.0055 286.0326);
   --card: oklch(1.0000 0 0);
@@ -101,6 +105,13 @@
   --sidebar-accent-foreground: oklch(0.4675 0.1639 256.6956);
   --sidebar-border: oklch(0.8714 0.0068 286.2574);
   --sidebar-ring: oklch(0.6048 0.2166 257.2136);
+  /* Product photos sit on a neutral light grey in both themes (light's
+     --secondary), so transparent images stay visible on the dark card. */
+  --product-image: oklch(0.9674 0.0013 286.3752);
+  /* Sale and Out of Stock badges carry white text: dark enough for 4.5:1,
+     the same in both themes since they sit on the photo, not the card. */
+  --badge-sale: oklch(0.52 0.14 150);
+  --badge-out-of-stock: oklch(0.54 0.22 28.6);
   --font-sans: "Sofia Sans Semi Condensed", ui-sans-serif, sans-serif, system-ui;
   --font-serif: 'Lora', serif;
   --font-mono: 'Fira Code', monospace;
@@ -127,6 +138,7 @@
 }
 
 .dark {
+  color-scheme: dark;
   --background: oklch(0.1408 0.0044 285.8229);
   --foreground: oklch(0.9851 0 0);
   --card: oklch(0.2103 0.0059 285.8852);
@@ -141,10 +153,13 @@
   --muted-foreground: oklch(0.7053 0.0130 286.0626);
   --accent: oklch(0.3233 0.1025 253.8852);
   --accent-foreground: oklch(1.0000 0 0);
-  --destructive: oklch(0.5779 0.2304 28.6093);
+  /* Lifted from the light value: destructive text needs 4.5:1 on the dark card. */
+  --destructive: oklch(0.7 0.19 25);
   --destructive-foreground: oklch(1.0000 0 0);
   --border: oklch(0.2739 0.0055 286.0326);
-  --input: oklch(0.2401 0.0038 286.1124);
+  /* Control edges (inputs, selects, checkboxes, outline buttons) need 3:1
+     against the dark header and sidebar; the light value already has it. */
+  --input: oklch(0.52 0.012 286);
   --ring: oklch(0.6048 0.2166 257.2136);
   --chart-1: oklch(0.6048 0.2166 257.2136);
   --chart-2: oklch(0.5854 0.2041 277.1173);
@@ -153,12 +168,18 @@
   --chart-5: oklch(0.6559 0.2118 354.3084);
   --sidebar: oklch(0.2103 0.0059 285.8852);
   --sidebar-foreground: oklch(0.9851 0 0);
-  --sidebar-primary: oklch(0.5155 0.1807 256.6832);
+  /* Lifted from the light value so the Filters heading and "Show all" links
+     reach 4.5:1 on the dark sidebar. */
+  --sidebar-primary: oklch(0.7 0.15 257);
   --sidebar-primary-foreground: oklch(1.0000 0 0);
   --sidebar-accent: oklch(0.3233 0.1025 253.8852);
   --sidebar-accent-foreground: oklch(1.0000 0 0);
   --sidebar-border: oklch(0.2739 0.0055 286.0326);
   --sidebar-ring: oklch(0.6048 0.2166 257.2136);
+  /* Same as :root on purpose: the product tile and badges don't follow the theme. */
+  --product-image: oklch(0.9674 0.0013 286.3752);
+  --badge-sale: oklch(0.52 0.14 150);
+  --badge-out-of-stock: oklch(0.54 0.22 28.6);
   --font-sans: "Sofia Sans Semi Condensed", ui-sans-serif, sans-serif, system-ui;
   --font-serif: 'Lora', serif;
   --font-mono: 'Fira Code', monospace;

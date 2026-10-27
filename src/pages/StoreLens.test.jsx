@@ -134,6 +134,8 @@ afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  // The theme menu in the header may have put the dark class on <html>.
+  document.documentElement.classList.remove("dark");
 });
 
 describe("the collection dropdown (#65)", () => {

@@ -91,7 +91,7 @@ function ProductCard({ product }) {
     <Card className="group hover:shadow-lg transition-all duration-200 border-border py-0">
       <CardContent className="p-0">
         {/* Image */}
-        <div className="aspect-square overflow-hidden rounded-t-xl relative">
+        <div className="aspect-square overflow-hidden rounded-t-xl relative bg-product-image">
           {image ? (
             <img
               src={image}
@@ -102,25 +102,25 @@ function ProductCard({ product }) {
             />
           ) : (
             <div className="w-full h-full flex items-center justify-center">
-              <Package className="w-12 h-12 text-muted" />
+              <Package className="w-12 h-12 text-black/20" />
             </div>
           )}
           
           {/* Stock badge */}
           {!inStock && !stockUnknown && (
-            <Badge variant="secondary" className="absolute top-0 right-2 bg-destructive text-primary-foreground text-[10px] px-1.5 sm:text-xs sm:px-2">
+            <Badge variant="secondary" className="absolute top-0 right-2 bg-badge-out-of-stock text-primary-foreground text-[10px] px-1.5 sm:text-xs sm:px-2">
               Out of Stock
             </Badge>
           )}
 
           {hasDiscount && inStock && (
-            <Badge variant="secondary" className="absolute top-0 right-2 bg-chart-3 text-primary-foreground text-[10px] px-1.5 sm:text-xs sm:px-2">
+            <Badge variant="secondary" className="absolute top-0 right-2 bg-badge-sale text-primary-foreground text-[10px] px-1.5 sm:text-xs sm:px-2">
               {discountText}
             </Badge>
           )}
 
           {hasDiscount && !inStock && (
-            <Badge variant="secondary" className="absolute top-6 right-2 bg-chart-3 text-primary-foreground text-[10px] px-1.5 sm:text-xs sm:px-2">
+            <Badge variant="secondary" className="absolute top-6 right-2 bg-badge-sale text-primary-foreground text-[10px] px-1.5 sm:text-xs sm:px-2">
               {discountText}
             </Badge>
           )}
