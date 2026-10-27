@@ -50,6 +50,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
   window.localStorage.clear();
   document.documentElement.classList.remove("dark");
@@ -127,6 +128,5 @@ describe("ThemeMenu", () => {
     expect(isDark()).toBe(false);
     await choose("Dark");
     expect(isDark()).toBe(true);
-    vi.restoreAllMocks();
   });
 });
