@@ -137,7 +137,12 @@ describe("watchSystemTheme", () => {
 // the same answer as resolveTheme for every combination.
 describe("index.html pre-render script", () => {
   const html = readFileSync(resolve(__dirname, "../../index.html"), "utf8");
-  const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]);
+  // Plain string search, not a regexp: this is our own file, not arbitrary HTML.
+  const scripts = [];
+  for (let from = html.indexOf("<script>"); from !== -1; from = html.indexOf("<script>", from + 1)) {
+    const end = html.indexOf("</script>", from);
+    scripts.push(html.slice(from + "<script>".length, end));
+  }
 
   function run({ storage, systemDark, matchMedia = true }) {
     const classes = new Set();
