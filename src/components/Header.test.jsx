@@ -17,7 +17,11 @@ beforeAll(() => {
   };
 });
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  window.localStorage.clear();
+  document.documentElement.classList.remove("dark");
+});
 
 function renderHeader(overrides = {}) {
   const props = {
@@ -83,6 +87,11 @@ describe("Header store field", () => {
     const link = screen.getByRole("link", { name: "Feedback" });
     expect(link.getAttribute("target")).toBe("_blank");
     expect(link.getAttribute("rel")).toContain("noopener");
+  });
+
+  it("has a theme menu, without matchMedia (jsdom has none)", () => {
+    renderHeader();
+    expect(screen.getByRole("button", { name: "Theme" })).toBeTruthy();
   });
 });
 

@@ -41,7 +41,7 @@ Each platform is a small adapter (`src/lib/platforms/`) that turns the platform'
 - Shareable links: the address keeps the store, collection, filters and sort, so a link reopens the same view. Selections the collection doesn't have are dropped with a warning, and prices are clamped to its range
 - A bookmarklet that opens the store you're browsing in StoreLens (see [Open a store in StoreLens](#open-a-store-in-storelens))
 - Partial results with a warning if a page of products fails to load, instead of discarding what already loaded
-- Clean UI built with Tailwind + shadcn/ui  
+- Clean UI built with Tailwind + shadcn/ui, in a light or dark theme: it follows your system setting, and the Theme menu in the header can override it (System, Light or Dark; remembered in this browser)  
 - Per-platform differences: a Fourthwall shop's collection dropdown offers "All Products", the collection in the link and the collections you have opened on that shop before (remembered in this browser, a few handles per shop), with a note saying why it can't list the rest (Fourthwall's collections can't be read from the browser, so paste a collection's link to open one); it has no vendor, type, tag or description filtering, because Fourthwall doesn't provide that data
 - Per-platform differences: a Big Cartel shop's collections are its categories (a product in several categories appears in each), "Artists" replaces the vendor filter and only shows for shops that fill it in, and there is no tag filtering because Big Cartel has no tags
 - 100% client-side — no API keys or server required
