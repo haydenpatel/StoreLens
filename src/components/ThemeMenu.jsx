@@ -23,7 +23,9 @@ const OPTIONS = [
 // "theme" whatever is chosen (a monitor on the button looked like a screen
 // setting); the checked item in the menu shows the current choice. Icon-only
 // on phones and on narrow desktops (xl to 2xl), where the single-row header
-// has no room for the label.
+// has no room for the label. The button only transitions its colours: with
+// the shared transition-all its padding and size animated when the window
+// was resized across a breakpoint, and a half-finished frame looked broken.
 export default function ThemeMenu() {
   const { preference, setPreference } = useTheme();
 
@@ -35,7 +37,7 @@ export default function ThemeMenu() {
           size="sm"
           aria-label="Theme"
           title="Theme"
-          className="gap-1 shrink-0 max-sm:!size-9 max-sm:!p-0 max-sm:!gap-0 xl:max-2xl:!size-9 xl:max-2xl:!p-0 xl:max-2xl:!gap-0"
+          className="gap-1 shrink-0 transition-[color,background-color,border-color,box-shadow] max-sm:!size-9 max-sm:!p-0 max-sm:!gap-0 xl:max-2xl:!size-9 xl:max-2xl:!p-0 xl:max-2xl:!gap-0"
         >
           <SunMoon className="size-5" />
           <span className="hidden sm:inline xl:max-2xl:hidden">Theme</span>
