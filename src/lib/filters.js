@@ -1,4 +1,5 @@
 import { getDiscountData, isDiscounted, shownVariants } from "@/lib/utils";
+import { compareText } from "@/lib/locale";
 
 // Pure filter/sort/URL-param logic over the platform-neutral product shape
 // (see platforms/types.js), kept out of the page component so it can be unit
@@ -37,9 +38,24 @@ export function htmlToText(html) {
     .trim();
 }
 
-// Adds `descriptionText` (the description without its markup) to each product.
+// Case and diacritics folded for search: "Café", "CAFÉ" and "cafe" are one text.
+// The same for every viewer (no locale-dependent lowercasing or collation), so
+// a shared ?q= link finds the same products everywhere. Only the Latin
+// combining marks (U+0300-U+036F) are stripped, then the text is recomposed, so
+// Japanese, Hindi and Korean text keeps its meaning (が stays が). Letters with
+// no combining form (ß, ø, ligatures such as æ) are not folded.
+export function foldText(text) {
+  return String(text ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").normalize("NFC").toLowerCase();
+}
+
+// Adds `descriptionText` (the description without its markup) and the folded
+// `titleSearch` / `descriptionSearch` to each product, once when products load
+// rather than on every keystroke.
 export function withSearchText(products) {
-  return products.map((product) => ({ ...product, descriptionText: htmlToText(product.description) }));
+  return products.map((product) => {
+    const descriptionText = htmlToText(product.description);
+    return { ...product, descriptionText, titleSearch: foldText(product.title), descriptionSearch: foldText(descriptionText) };
+  });
 }
 
 // Parses filter/sort state out of the URL's query string (?q=...&vendor=a,b&...).
@@ -184,14 +200,14 @@ export function computeFilterData(products) {
     .sort((a, b) => b.productCount - a.productCount)
     .map(({ casings, values }) => {
       const name = pickCasing(casings);
-      const displayValues = [...values.values()].map(pickCasing).sort();
+      const displayValues = [...values.values()].map(pickCasing).sort(compareText);
       return { name, key: name, values: displayValues };
     });
 
   return {
-    vendors: Array.from(vendors).sort(),
-    types: Array.from(types).sort(),
-    tags: Array.from(tags).sort(),
+    vendors: Array.from(vendors).sort(compareText),
+    types: Array.from(types).sort(compareText),
+    tags: Array.from(tags).sort(compareText),
     options: optionsArray,
     currency,
     minPrice: minPrice === Infinity ? 0 : Math.floor(minPrice),
@@ -377,10 +393,10 @@ export function filterAndSortProducts(products, state, capabilities = {}) {
 
   // Search
   if (searchQuery) {
-    const query = searchQuery.toLowerCase();
-    filtered = filtered.filter(p => 
-      p.title?.toLowerCase().includes(query) ||
-      (p.descriptionText ?? htmlToText(p.description)).toLowerCase().includes(query)
+    const query = foldText(searchQuery);
+    filtered = filtered.filter(p =>
+      (p.titleSearch ?? foldText(p.title)).includes(query) ||
+      (p.descriptionSearch ?? foldText(p.descriptionText ?? htmlToText(p.description))).includes(query)
     );
   }
 
@@ -411,9 +427,9 @@ export function filterAndSortProducts(products, state, capabilities = {}) {
   filtered.sort((a, b) => {
     switch (sortBy) {
       case "title-asc":
-        return (a.title || "").localeCompare(b.title || "");
+        return compareText(a.title || "", b.title || "");
       case "title-desc":
-        return (b.title || "").localeCompare(a.title || "");
+        return compareText(b.title || "", a.title || "");
       case "price-asc": {
         const aMin = Math.min(...pricesOf(a), Infinity);
         const bMin = Math.min(...pricesOf(b), Infinity);

@@ -4,7 +4,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ExternalLink, Package } from "lucide-react";
 import { getDiscountData, shownVariants } from "@/lib/utils";
-import { formatMoneyRange } from "@/lib/currency";
+import { formatMoneyRange, sameMoney } from "@/lib/currency";
+import { formatCount, formatPercent } from "@/lib/locale";
 
 function ProductCard({ product }) {
   const image = product.images?.[0]?.url || null;
@@ -28,25 +29,25 @@ function ProductCard({ product }) {
 
   // Core discount data using shared helper
   const { hasDiscount, discountAmount, discountPercent, minAmount, minPercent, bestPercentAmount } = getDiscountData(variants);
-  const percentLabel = (n) => (n >= 1 ? n.toFixed(0) : n.toFixed(1));
   // One figure when the discounted variants agree, otherwise a range of both
   // the saving and the percentage (never an amount and a percentage from
   // different variants).
-  const lowPct = percentLabel(minPercent ?? 0);
-  const highPct = percentLabel(discountPercent);
-  const isRange = hasDiscount && (lowPct !== highPct || minAmount !== discountAmount);
-  const pctRange = lowPct === highPct ? highPct : `${lowPct}-${highPct}`;
-  const upTo = `Save up to ${formatMoneyRange(bestPercentAmount ?? 0, bestPercentAmount ?? 0, product.currency)} (${highPct}% off)`;
+  // Compared as shown (rounded percentages, amounts in the currency's own
+  // decimals), not as raw numbers.
+  const highPct = formatPercent(discountPercent);
+  const pctRange = formatPercent(minPercent ?? 0, discountPercent);
+  const isRange = hasDiscount && (pctRange !== highPct || !sameMoney(minAmount, discountAmount, product.currency));
+  const upTo = `Save up to ${formatMoneyRange(bestPercentAmount ?? 0, bestPercentAmount ?? 0, product.currency)} (${highPct} off)`;
   // The badge is too narrow for a range on a phone, so there it falls back to
   // "up to" the best-percentage variant's own saving.
   const discountText = !hasDiscount
     ? null
     : !isRange
-      ? `Save ${formatMoneyRange(discountAmount, discountAmount, product.currency)} (${highPct}% off)`
+      ? `Save ${formatMoneyRange(discountAmount, discountAmount, product.currency)} (${highPct} off)`
       : (
         <>
           <span className="hidden sm:inline">
-            {`Save ${formatMoneyRange(minAmount, discountAmount, product.currency)} (${pctRange}% off)`}
+            {`Save ${formatMoneyRange(minAmount, discountAmount, product.currency)} (${pctRange} off)`}
           </span>
           <span className="sm:hidden">{upTo}</span>
         </>
@@ -140,7 +141,7 @@ function ProductCard({ product }) {
               {/* Variants*/}
               <p className="text-xs text-muted-foreground">
               {variantsDisplay}
-              <i>{(remaining > 0 ? ` +${remaining} more` : '')}</i>
+              <i>{(remaining > 0 ? ` +${formatCount(remaining)} more` : '')}</i>
               </p>
             </div>
 
@@ -192,7 +193,7 @@ function ProductCard({ product }) {
                   </Badge>
                 ))}
                 {hiddenCount > 0 && (
-                  <Badge variant="tags">+{hiddenCount}</Badge>
+                  <Badge variant="tags">+{formatCount(hiddenCount)}</Badge>
                 )}
               </div>
             );

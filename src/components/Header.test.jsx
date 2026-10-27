@@ -3,6 +3,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import Header from "./Header";
+import { setLocale } from "@/lib/locale";
 
 // Radix's Select and DropdownMenu need these to open in jsdom.
 beforeAll(() => {
@@ -131,6 +132,13 @@ describe("Header collection dropdown", () => {
     expect(options.map((o) => o.textContent)).toEqual(["Tees (12)", "Mugs"]);
     await userEvent.click(options[1]);
     expect(props.onSelectHandle).toHaveBeenCalledWith("mugs");
+  });
+
+  it("groups a collection's count the way the locale does (#115)", async () => {
+    setLocale("de-DE");
+    renderHeader({ collectionsStatus: "ready", collections: [{ handle: "all", title: "All", products_count: 1234 }] });
+    await userEvent.click(collectionSelect());
+    expect((await screen.findAllByRole("option")).map((o) => o.textContent)).toEqual(["All (1.234)"]);
   });
 
   it("shows the selected collection", () => {

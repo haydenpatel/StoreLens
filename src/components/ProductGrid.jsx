@@ -8,6 +8,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { currencyLabel } from "@/lib/currency";
+import { formatCount } from "@/lib/locale";
 import ProductCard from "./ProductCard";
 
 // Rendering a DOM card per product doesn't scale to collections with
@@ -72,8 +73,8 @@ function ProductGrid({ products, totalProducts, sortBy, setSortBy, currency }) {
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-2 mb-6">
         <div className="text-sm text-foreground">
-          Showing <span className="font-bold">{products.length}</span> of{" "}
-          <span className="font-bold">{totalProducts}</span> products
+          Showing <span className="font-bold">{formatCount(products.length)}</span> of{" "}
+          <span className="font-bold">{formatCount(totalProducts)}</span> products
         </div>
 
         <div className="flex items-center gap-2">

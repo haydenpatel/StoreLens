@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Clock, RefreshCw, ArrowRight, Loader2 } from "lucide-react";
 import { getDisplayOrigin } from "@/lib/store";
+import { formatCount } from "@/lib/locale";
 import Logo from "@/components/Logo";
 import ThemeMenu from "@/components/ThemeMenu";
 import {
@@ -167,7 +168,7 @@ export default function Header({
                       <SelectItem key={collection.handle} value={collection.handle}>
                         {collection.title}
                         {typeof collection.products_count === "number"
-                          ? ` (${collection.products_count})`
+                          ? ` (${formatCount(collection.products_count)})`
                           : ""}
                       </SelectItem>
                     ))}

@@ -1,5 +1,6 @@
-import { describe, it, expect } from "vitest";
-import { currencyLabel, formatMoney, formatMoneyRange } from "./currency";
+import { afterEach, describe, it, expect } from "vitest";
+import { currencyLabel, formatMoney, formatMoneyRange, sameMoney } from "./currency";
+import { setLocale } from "./locale";
 
 const NB = " ";
 
@@ -98,5 +99,52 @@ describe("currencyLabel", () => {
     expect(currencyLabel("CAD")).toBe("(CAD)");
     expect(formatMoney(5, "CAD")).toContain("CAD");
     expect(formatMoney(5, "USD")).toContain(currencyLabel("USD").slice(1, -1));
+  });
+});
+
+describe("locale (#115)", () => {
+  afterEach(() => setLocale("en-US"));
+
+  it("keeps the symbol, number, code order and moves only the separators", () => {
+    setLocale("de-DE");
+    expect(formatMoney(1234.5, "EUR")).toBe(`€1.234,50${NB}EUR`);
+    expect(formatMoney(1234.5, "CAD")).toBe(`$1.234,50${NB}CAD`);
+    expect(formatMoney(1234.5, "SEK")).toBe(`kr${NB}1.234,50${NB}SEK`);
+    expect(formatMoney(1234.5, "CHF")).toBe(`CHF${NB}1.234,50`);
+    expect(formatMoneyRange(5, 1234.5, "CAD")).toBe(`$5,00 - $1.234,50${NB}CAD`);
+  });
+
+  it("leaves the symbol and digits as en-US in ar-EG and ja-JP", () => {
+    for (const tag of ["ar-EG", "ja-JP"]) {
+      setLocale(tag);
+      expect(formatMoney(1234.5, "USD")).toBe(`$1,234.50${NB}USD`);
+      expect(formatMoney(1234.5, "JPY")).toBe(`¥1,235${NB}JPY`);
+      expect(formatMoney(1234.5, "CAD")).toBe(`$1,234.50${NB}CAD`);
+    }
+  });
+
+  it("is unchanged in en-NZ", () => {
+    setLocale("en-NZ");
+    expect(formatMoney(1234.5, "NZD")).toBe(`$1,234.50${NB}NZD`);
+  });
+
+  it("formats the unknown-currency and invalid-code fallbacks in the viewer's locale", () => {
+    setLocale("de-DE");
+    expect(formatMoney(1234.5)).toBe("$1.234,50");
+    expect(formatMoney(1234.5, undefined, { decimals: 0 })).toBe("$1.235");
+    expect(formatMoney(1234.5, "NOPE")).toBe("NOPE 1.234,50");
+    expect(formatMoneyRange(5, 1234.5, "NOPE")).toBe("NOPE 5,00 - 1.234,50");
+  });
+
+  it("keeps three decimals for KWD", () => {
+    setLocale("de-DE");
+    expect(formatMoney(1.234, "KWD")).toBe(`KWD${NB}1,234`);
+  });
+
+  it("sameMoney compares amounts as formatted", () => {
+    expect(sameMoney(9.999999999999998, 10, "USD")).toBe(true);
+    expect(sameMoney(10, 10.01, "USD")).toBe(false);
+    expect(sameMoney(10, 10.4, "JPY")).toBe(true);
+    expect(sameMoney(1.234, 1.235, "KWD")).toBe(false);
   });
 });

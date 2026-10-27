@@ -29,6 +29,7 @@ import {
   titleFromHandle,
 } from "@/lib/store";
 import { defaultAdapter, forgetAdapter, rememberAdapter, resolveAdapter, supportNotes, supportedPlatformNames } from "@/lib/platforms";
+import { formatCount, formatNumber } from "@/lib/locale";
 import { StoreError, describeStoreError, describeStoreErrorReason } from "@/lib/errors";
 
 // What describeStoreError needs to name the platforms that work.
@@ -366,11 +367,11 @@ export default function StoreLensApp() {
 
       if (pageError) {
         setLoadWarning(
-          `Loaded ${allProducts.length.toLocaleString()} products, but couldn't fetch the rest (${describeStoreErrorReason(pageError)}).`
+          `Loaded ${formatCount(allProducts.length)} products, but couldn't fetch the rest (${describeStoreErrorReason(pageError)}).`
         );
       } else if (truncated) {
         setLoadWarning(
-          `This collection is larger than StoreLens can load from ${loadAdapter.name} — showing the first ${allProducts.length.toLocaleString()} products.`
+          `This collection is larger than StoreLens can load from ${loadAdapter.name} — showing the first ${formatCount(allProducts.length)} products.`
         );
       }
 
@@ -792,7 +793,7 @@ export default function StoreLensApp() {
       // and the full range stays.
       const restored = restorePriceRange(pending.priceRange, filterData.minPrice, filterData.maxPrice);
       if (restored) setPriceRange(restored);
-      else ignored.push(`Price: ${pending.priceRange[0]} - ${pending.priceRange[1]}`);
+      else ignored.push(`Price: ${formatNumber(pending.priceRange[0])} - ${formatNumber(pending.priceRange[1])}`);
     }
     if (ignored.length > 0) {
       setLinkWarning(`Some filters in this link don't apply to this collection and were ignored (${ignored.join(", ")}).`);
@@ -923,7 +924,7 @@ export default function StoreLensApp() {
               onClick={() => setIsFilterDrawerOpen(true)}
             >
               <SlidersHorizontal className="w-4 h-4" />
-              Filters{activeFilterCount > 0 && ` (${activeFilterCount})`}
+              Filters{activeFilterCount > 0 && ` (${formatCount(activeFilterCount)})`}
             </Button>
           )}
 
@@ -932,7 +933,7 @@ export default function StoreLensApp() {
               <Loader2 className="w-8 h-8 animate-spin text-primary" />
               {loadProgress > 0 && (
                 <p className="text-sm text-muted-foreground">
-                  Loaded {loadProgress.toLocaleString()} products…
+                  Loaded {formatCount(loadProgress)} products…
                 </p>
               )}
             </div>
