@@ -27,28 +27,7 @@ export const GROUPS = [
 // @types/node should follow the Node version the project runs (22), not npm's latest.
 export const EXCLUDED = new Set(["@types/node"]);
 
-export const LABELS = ["chore", "priority: low"];
-
-export const MILESTONE = "Toolchain upgrades";
-
-// The milestone to put new issues in: the open one titled `title`, or null.
-// milestones: parsed `gh api repos/{owner}/{repo}/milestones` (open only by default).
-export function findMilestone(milestones, title = MILESTONE) {
-  return milestones.find((m) => m.title === title && m.state === "open")?.title ?? null;
-}
-
-// Looks the milestone up through `runFn(command, args)`. A failed fetch must not
-// stop issues being opened, so it warns with the error and returns null.
-export function loadMilestone(runFn, warn = console.warn) {
-  try {
-    return findMilestone(
-      JSON.parse(runFn("gh", ["api", "repos/{owner}/{repo}/milestones?state=open&per_page=100"])),
-    );
-  } catch (error) {
-    warn(`warning: could not look up milestones (${error.message}); opening issues without one`);
-    return null;
-  }
-}
+export const LABELS = ["chore", "priority: low", "major-upgrade"];
 
 // Highest major a range allows, from the first number of each version in it:
 // "^0.554.0" -> 0, "~7.2.2" -> 7, "^18 || ^19" -> 19, ">=1.2 <3" -> 3.
@@ -155,27 +134,18 @@ function main() {
     ).map((issue) => issue.title),
   );
 
-  const toOpen = found.filter(({ title }) => !existing.has(title));
-  const milestone = toOpen.length ? loadMilestone(run) : null;
-  if (toOpen.length && !milestone) {
-    console.warn(`warning: no open milestone titled "${MILESTONE}"; opening issues without one`);
-  } else if (milestone && dryRun) {
-    console.log(`milestone  ${milestone}`);
-  }
-
   for (const { title, upgrades } of found) {
     if (existing.has(title)) {
       console.log(`exists   ${title}`);
       continue;
     }
     if (dryRun) {
-      console.log(`would open  ${title}  (milestone: ${milestone ?? "none"})`);
+      console.log(`would open  ${title}`);
       continue;
     }
     const links = Object.fromEntries(upgrades.map(({ name }) => [name, linkFor(name)]));
     const args = ["issue", "create", "--title", title, "--body", issueBody(upgrades, links)];
     for (const label of LABELS) args.push("--label", label);
-    if (milestone) args.push("--milestone", milestone);
     console.log(`opened   ${title}  ${run("gh", args).trim()}`);
   }
   if (!found.length) console.log("No major upgrades available.");
