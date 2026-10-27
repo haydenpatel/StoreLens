@@ -127,59 +127,63 @@ export default function Header({
               mobile's own row, instead of wrapping below it; dissolves at
               sm+ so tablet/desktop keep their independent flex behavior. */}
           <div className="max-sm:flex max-sm:w-full max-sm:gap-2 sm:contents">
-            <Select
-              value={selectedHandle || ""}
-              onValueChange={onSelectHandle}
-              disabled={loading || !storeInput}
-            >
-              <SelectTrigger className="bg-background max-sm:flex-1 sm:w-auto sm:max-xl:min-w-[12rem] xl:min-w-[16rem] xl:order-2" aria-invalid={collectionsStatus === "error"}>
-                <SelectValue
-                  placeholder={
-                    collectionsStatus === "loading"
-                      ? "Discovering collections..."
-                      : collectionsStatus === "error"
-                      ? "Couldn't load collections"
-                      : collectionsStatus === "ready" && collections?.length === 0
-                      ? "No collections found"
-                      : "Select a collection"
-                  }
-                />
-              </SelectTrigger>
-              <SelectContent align="start">
-                {collectionsStatus === "loading" && (
-                  <SelectItem value="__loading" disabled>
-                    Discovering collections...
-                  </SelectItem>
-                )}
-                {collectionsStatus === "error" && (
-                  <SelectItem value="__error" disabled>
-                    {collectionsError || "Couldn't load collections for this store"}
-                  </SelectItem>
-                )}
-                {collectionsStatus === "ready" &&
-                  collections.map((collection) => (
-                    <SelectItem key={collection.handle} value={collection.handle}>
-                      {collection.title}
-                      {typeof collection.products_count === "number"
-                        ? ` (${collection.products_count})`
-                        : ""}
+            {/* Select and Retry share one box of fixed width (the select's old
+                min-width), so showing Retry only makes the select narrower and
+                nothing else in the row moves. On mobile the box dissolves and
+                the select simply takes the leftover width. The value is truncated with
+                an ellipsis (the shared select clips a one-line value without one). */}
+            <div className="max-sm:contents sm:flex sm:w-48 sm:shrink-0 sm:gap-2 xl:w-64 xl:order-2">
+              <Select
+                value={selectedHandle || ""}
+                onValueChange={onSelectHandle}
+                disabled={loading || !storeInput}
+              >
+                <SelectTrigger className="bg-background flex-1 min-w-0 *:data-[slot=select-value]:!block *:data-[slot=select-value]:!truncate" aria-invalid={collectionsStatus === "error"}>
+                  <SelectValue
+                    placeholder={
+                      collectionsStatus === "loading"
+                        ? "Discovering collections..."
+                        : collectionsStatus === "error"
+                        ? "Couldn't load collections"
+                        : collectionsStatus === "ready" && collections?.length === 0
+                        ? "No collections found"
+                        : "Select a collection"
+                    }
+                  />
+                </SelectTrigger>
+                <SelectContent align="start">
+                  {collectionsStatus === "loading" && (
+                    <SelectItem value="__loading" disabled>
+                      Discovering collections...
                     </SelectItem>
-                  ))}
-                {collectionsStatus === "ready" && collectionsPartial && (
-                  <SelectItem value="__partial" disabled>
-                    The store didn't answer every request, so this list may be incomplete. Use the retry button.
-                  </SelectItem>
-                )}
-                {/* A platform that can't list its collections says why, so a short list isn't mistaken for the whole store. */}
-                {collectionsStatus === "ready" && collectionsNote && (
-                  <SelectItem value="__note" disabled>
-                    {collectionsNote}
-                  </SelectItem>
-                )}
-              </SelectContent>
-            </Select>
-
-            <div className="flex gap-2 xl:order-2">
+                  )}
+                  {collectionsStatus === "error" && (
+                    <SelectItem value="__error" disabled>
+                      {collectionsError || "Couldn't load collections for this store"}
+                    </SelectItem>
+                  )}
+                  {collectionsStatus === "ready" &&
+                    collections.map((collection) => (
+                      <SelectItem key={collection.handle} value={collection.handle}>
+                        {collection.title}
+                        {typeof collection.products_count === "number"
+                          ? ` (${collection.products_count})`
+                          : ""}
+                      </SelectItem>
+                    ))}
+                  {collectionsStatus === "ready" && collectionsPartial && (
+                    <SelectItem value="__partial" disabled>
+                      The store didn't answer every request, so this list may be incomplete. Use the retry button.
+                    </SelectItem>
+                  )}
+                  {/* A platform that can't list its collections says why, so a short list isn't mistaken for the whole store. */}
+                  {collectionsStatus === "ready" && collectionsNote && (
+                    <SelectItem value="__note" disabled>
+                      {collectionsNote}
+                    </SelectItem>
+                  )}
+                </SelectContent>
+              </Select>
               {(collectionsStatus === "error" || (collectionsStatus === "ready" && collectionsPartial)) && (
                 <Button
                   variant="outline"
@@ -192,7 +196,9 @@ export default function Header({
                   <RefreshCw className="w-4 h-4" />
                 </Button>
               )}
+            </div>
 
+            <div className="flex gap-2 xl:order-2">
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button

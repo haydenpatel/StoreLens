@@ -57,6 +57,19 @@ afterEach(() => {
 });
 
 describe("ThemeMenu", () => {
+  it("keeps the same sun-and-moon icon on the button whatever is chosen", async () => {
+    stubSystem(false);
+    render(<ThemeMenu />);
+    const icon = () => screen.getByRole("button", { name: "Theme" }).querySelector("svg").getAttribute("class");
+    expect(icon()).toContain("lucide-sun-moon");
+    await choose("Dark");
+    expect(icon()).toContain("lucide-sun-moon");
+    await choose("Light");
+    expect(icon()).toContain("lucide-sun-moon");
+    await choose("System");
+    expect(icon()).toContain("lucide-sun-moon");
+  });
+
   it("offers System, Light and Dark, with the saved choice checked", async () => {
     stubSystem(false);
     window.localStorage.setItem(THEME_KEY, "dark");

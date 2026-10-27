@@ -1,5 +1,5 @@
 import React from "react";
-import { Monitor, Moon, Sun } from "lucide-react";
+import { Monitor, Moon, Sun, SunMoon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -19,12 +19,13 @@ const OPTIONS = [
 ];
 
 // System / Light / Dark. Owns its state (useTheme), so no page has to pass it
-// down. The button shows the theme in force: a monitor while following the
-// system, otherwise the sun or moon. Icon-only on phones and on narrow
-// desktops (xl to 2xl), where the single-row header has no room for the label.
+// down. The button always shows the same sun-and-moon glyph, which reads as
+// "theme" whatever is chosen (a monitor on the button looked like a screen
+// setting); the checked item in the menu shows the current choice. Icon-only
+// on phones and on narrow desktops (xl to 2xl), where the single-row header
+// has no room for the label.
 export default function ThemeMenu() {
   const { preference, setPreference } = useTheme();
-  const { Icon } = OPTIONS.find((o) => o.value === preference) ?? OPTIONS[0];
 
   return (
     <DropdownMenu>
@@ -36,7 +37,7 @@ export default function ThemeMenu() {
           title="Theme"
           className="gap-1 shrink-0 max-sm:!size-9 max-sm:!p-0 max-sm:!gap-0 xl:max-2xl:!size-9 xl:max-2xl:!p-0 xl:max-2xl:!gap-0"
         >
-          <Icon className="size-5" />
+          <SunMoon className="size-5" />
           <span className="hidden sm:inline xl:max-2xl:hidden">Theme</span>
         </Button>
       </DropdownMenuTrigger>

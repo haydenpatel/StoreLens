@@ -96,6 +96,20 @@ describe("Header store field", () => {
 });
 
 describe("Header collection dropdown", () => {
+  // The Retry button must take its room from the select, never from the rest of
+  // the row: they share one fixed-width box, and that box is in the same place
+  // with or without Retry (layout itself is checked in the browser).
+  it("puts the Retry button in the select's box, and leaves that box alone when it hides", () => {
+    renderHeader({ collectionsStatus: "error" });
+    const box = collectionSelect().parentElement;
+    expect(screen.getByTitle("Retry loading collections").parentElement).toBe(box);
+    expect(box.className).toContain("sm:w-48");
+    cleanup();
+    renderHeader({ collectionsStatus: "ready", collections: [] });
+    expect(screen.queryByTitle("Retry loading collections")).toBeNull();
+    expect(collectionSelect().parentElement.className).toContain("sm:w-48");
+  });
+
   it.each([
     [{ collectionsStatus: "loading" }, "Discovering collections..."],
     [{ collectionsStatus: "error" }, "Couldn't load collections"],
