@@ -1527,7 +1527,7 @@ describe("input and filter fixes (#84)", () => {
     vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: pricedStore() }));
     openAt(`/${A}/collections/all?minPrice=1000&maxPrice=2000`);
     await heading(3, 3);
-    expect(screen.getByText(/were ignored \(Price: 1000 - 2000\)/)).not.toBeNull();
+    expect(screen.getByText(/were ignored \(Price: 1,000 - 2,000\)/)).not.toBeNull();
   });
 
   it("starts with no Recent Stores when the saved history is not an array of strings", async () => {

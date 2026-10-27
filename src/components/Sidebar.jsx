@@ -8,6 +8,7 @@ import { Search, X } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator"
 import { cn } from "@/lib/utils";
+import { formatCount } from "@/lib/locale";
 import { formatMoneyRange } from "@/lib/currency";
 
 
@@ -326,7 +327,7 @@ function FilterSection({ title, items: collectionItems, selected, onToggle }) {
             onClick={() => setExpanded(!expanded)}
             className="text-sidebar-primary p-0 h-auto"
           >
-            {expanded ? "Show less" : `Show ${hiddenCount} more`}
+            {expanded ? "Show less" : `Show ${formatCount(hiddenCount)} more`}
           </Button></>
         )}
       </div>

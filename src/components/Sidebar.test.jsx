@@ -3,6 +3,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import Sidebar from "./Sidebar";
+import { setLocale } from "@/lib/locale";
 import { computeFilterData } from "@/lib/filters";
 
 class NoopObserver {
@@ -134,6 +135,15 @@ describe("Sidebar duplicate selections", () => {
     expect(props.setSelectedTags).toHaveBeenCalledWith([]);
     expect(errors).not.toHaveBeenCalled();
     errors.mockRestore();
+  });
+});
+
+describe("Sidebar counts (#115)", () => {
+  it("groups the hidden count the way the locale does", () => {
+    setLocale("de-DE");
+    const vendors = names("Vendor", 1500);
+    renderSidebar({ filterData: { ...computeFilterData([product(10), product(20)]), vendors } });
+    expect(screen.getByRole("button", { name: "Show 1.495 more" })).toBeTruthy();
   });
 });
 

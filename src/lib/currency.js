@@ -1,3 +1,5 @@
+import { formatNumber, numberFormat, numberText } from "@/lib/locale";
+
 // Prices come from platforms that may or may not say what currency they use.
 //
 // When the currency is known, every amount is laid out the same way:
@@ -10,26 +12,26 @@
 
 const FALLBACK_SYMBOL = "$";
 
-// Digit layout (decimal point and grouping) is fixed, not taken from the
-// browser: the UI text is English-only and the result is the same everywhere.
-// Symbol, number and code are placed by the rules above, not by Intl.
-const NUMBER_LOCALE = "en-US";
+// The symbol is fixed (from en-US, so "$", "£", "kr" are the same everywhere),
+// while the digits' decimal point and grouping follow the viewer's locale
+// (locale.js). Symbol, number and code are placed by the rules above, not by
+// Intl, so the order is the same in every locale.
+const SYMBOL_LOCALE = "en-US";
 
 // Splits an amount into its symbol, digits and code. Throws for an invalid code.
 function moneyParts(amount, currency, decimals) {
   const digits = decimals === undefined ? {} : { minimumFractionDigits: decimals, maximumFractionDigits: decimals };
-  const parts = new Intl.NumberFormat(NUMBER_LOCALE, {
-    style: "currency",
-    currency,
-    currencyDisplay: "narrowSymbol",
-    ...digits,
-  }).formatToParts(amount);
-  const symbol = parts.find((part) => part.type === "currency")?.value ?? currency;
-  const number = parts.filter((part) => part.type !== "currency" && part.type !== "literal").map((part) => part.value).join("");
+  const options = { style: "currency", currency, currencyDisplay: "narrowSymbol", ...digits };
+  const symbol = numberFormat(options, SYMBOL_LOCALE).formatToParts(amount).find((part) => part.type === "currency")?.value ?? currency;
+  const number = numberText(numberFormat(options).formatToParts(amount));
   // A letter symbol ("kr", "CHF") is set apart from the digits.
   const prefix = /\p{L}$/u.test(symbol) ? `${symbol}\u00a0` : symbol;
   return { prefix, number, code: symbol === currency ? "" : currency };
 }
+
+// An amount with no currency to say how many decimals it has.
+const plainNumber = (n, decimals) =>
+  formatNumber(n, { minimumFractionDigits: decimals ?? 2, maximumFractionDigits: decimals ?? 2 });
 
 const withCode = (text, code) => (code ? `${text}\u00a0${code}` : text);
 
@@ -48,7 +50,7 @@ export function formatMoney(amount, currency, { decimals } = {}) {
 // any pair of amounts (prices, savings).
 export function formatMoneyRange(min, max, currency, { decimals } = {}) {
   if (!currency) {
-    const one = (n) => `${FALLBACK_SYMBOL}${n.toFixed(decimals ?? 2)}`;
+    const one = (n) => `${FALLBACK_SYMBOL}${plainNumber(n, decimals)}`;
     return one(min) === one(max) ? one(min) : `${one(min)} - ${one(max)}`;
   }
   try {
@@ -59,7 +61,13 @@ export function formatMoneyRange(min, max, currency, { decimals } = {}) {
     return withCode(`${low.prefix}${low.number} - ${high.prefix}${high.number}`, high.code);
   } catch {
     // Not a valid ISO 4217 code.
-    const one = (n) => n.toFixed(decimals ?? 2);
+    const one = (n) => plainNumber(n, decimals);
     return one(min) === one(max) ? `${currency} ${one(min)}` : `${currency} ${one(min)} - ${one(max)}`;
   }
+}
+
+// Whether two amounts read the same once formatted in the currency (so
+// 9.999999999999998 and 10 do, and 0.001 and 0.002 in USD do).
+export function sameMoney(a, b, currency, options) {
+  return formatMoneyRange(a, a, currency, options) === formatMoneyRange(b, b, currency, options);
 }
