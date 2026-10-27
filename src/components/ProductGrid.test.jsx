@@ -2,6 +2,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { setLocale } from "@/lib/locale";
 import ProductGrid from "./ProductGrid";
 
 class NoopObserver {
@@ -59,6 +60,13 @@ describe("ProductGrid listing", () => {
   it("shows how many of the collection's products match", () => {
     render(grid(items(3), { total: 10 }));
     expect(document.body.textContent).toContain("Showing 3 of 10 products");
+  });
+
+  it("groups the counts the way the locale does (#115)", () => {
+    setLocale("de-DE");
+    render(grid(items(1234), { total: 2000 }));
+    expect(document.body.textContent).toContain("Showing 1.234 of 2.000 products");
+    setLocale("en-US");
   });
 
   it("says nothing matches, with no cards, when the list is empty", () => {

@@ -8,6 +8,7 @@
 // api.bigcartel.com/{shop}/store.json, read alongside. See
 // platforms/types.js for the shape this maps onto.
 import { StoreError, diagnoseFailure, isAbort } from "@/lib/errors";
+import { compareText } from "@/lib/locale";
 import { fetchWithRetry } from "./requests";
 
 const PLATFORM_ID = "bigcartel";
@@ -311,7 +312,7 @@ async function listCollections(origin, signal, { forceRefresh = false } = {}) {
     categories.delete(key);
     sorted.push({ handle, title: text(category.name) || used.title, products_count: used.products_count });
   }
-  sorted.push(...[...categories.values()].sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: "base" })));
+  sorted.push(...[...categories.values()].sort((a, b) => compareText(a.title, b.title)));
   return {
     collections: [{ handle: ALL_PRODUCTS_HANDLE, title: "All Products", products_count: feed.length }, ...sorted],
     allProductsHandle: ALL_PRODUCTS_HANDLE,
