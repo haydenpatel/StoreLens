@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { ExternalLink, Package } from "lucide-react";
 import { getDiscountData, shownVariants } from "@/lib/utils";
 import { formatMoneyRange, sameMoney } from "@/lib/currency";
-import { formatPercent } from "@/lib/locale";
+import { formatCount, formatPercent } from "@/lib/locale";
 
 function ProductCard({ product }) {
   const image = product.images?.[0]?.url || null;
@@ -141,7 +141,7 @@ function ProductCard({ product }) {
               {/* Variants*/}
               <p className="text-xs text-muted-foreground">
               {variantsDisplay}
-              <i>{(remaining > 0 ? ` +${remaining} more` : '')}</i>
+              <i>{(remaining > 0 ? ` +${formatCount(remaining)} more` : '')}</i>
               </p>
             </div>
 
@@ -193,7 +193,7 @@ function ProductCard({ product }) {
                   </Badge>
                 ))}
                 {hiddenCount > 0 && (
-                  <Badge variant="tags">+{hiddenCount}</Badge>
+                  <Badge variant="tags">+{formatCount(hiddenCount)}</Badge>
                 )}
               </div>
             );

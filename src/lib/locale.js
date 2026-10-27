@@ -105,9 +105,10 @@ export function formatPercent(low, high = low) {
 
 // One collator for every title and name sort. Numeric so "Item 2" precedes
 // "Item 10"; default sensitivity so accent and case variants still order
-// deterministically.
+// deterministically, and capitals first on a case-only tie (Apple, apple) in
+// every locale.
 export function compareText(a, b) {
-  collator ??= new Intl.Collator(getLocale(), { numeric: true });
+  collator ??= new Intl.Collator(getLocale(), { numeric: true, caseFirst: "upper" });
   return collator.compare(a, b);
 }
 

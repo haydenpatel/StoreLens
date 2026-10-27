@@ -94,6 +94,13 @@ describe("ProductCard locale (#115)", () => {
     expect(text()).toContain(`Save KWD${NB}1.000 - KWD${NB}1.001`);
   });
 
+  it("groups the tag overflow badge and variant overflow like other counts", () => {
+    setLocale("de-DE");
+    const tags = Array.from({ length: 1003 }, (_, i) => `t${i}`);
+    render(<ProductCard product={{ ...product("CAD", [variant(5)]), tags }} />);
+    expect(text()).toContain("+1.000");
+  });
+
   it("keeps symbols and Latin digits in ar-EG", () => {
     setLocale("ar-EG");
     render(<ProductCard product={product("CAD", [variant(20, 30)])} />);

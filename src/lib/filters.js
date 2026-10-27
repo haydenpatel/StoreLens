@@ -40,10 +40,12 @@ export function htmlToText(html) {
 
 // Case and diacritics folded for search: "Café", "CAFÉ" and "cafe" are one text.
 // The same for every viewer (no locale-dependent lowercasing or collation), so
-// a shared ?q= link finds the same products everywhere. Letters with no
-// combining form (ß, ø, ligatures such as æ) are not folded.
+// a shared ?q= link finds the same products everywhere. Only the Latin
+// combining marks (U+0300-U+036F) are stripped, then the text is recomposed, so
+// Japanese, Hindi and Korean text keeps its meaning (が stays が). Letters with
+// no combining form (ß, ø, ligatures such as æ) are not folded.
 export function foldText(text) {
-  return String(text ?? "").normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+  return String(text ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").normalize("NFC").toLowerCase();
 }
 
 // Adds `descriptionText` (the description without its markup) and the folded

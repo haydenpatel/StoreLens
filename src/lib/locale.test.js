@@ -97,7 +97,14 @@ describe("compareText", () => {
   const sorted = (list) => [...list].sort(compareText);
 
   it("puts capitalised names among the lowercase ones, not before them", () => {
-    expect(sorted(["Zebra", "apple", "Apple"])).toEqual(["apple", "Apple", "Zebra"]);
+    expect(sorted(["Zebra", "apple", "Apple"])).toEqual(["Apple", "apple", "Zebra"]);
+  });
+
+  it("orders case-only ties capital first in every locale", () => {
+    for (const tag of ["en-US", "da-DK", "tr-TR"]) {
+      setLocale(tag);
+      expect(sorted(["apple", "Zebra", "Apple"])).toEqual(["Apple", "apple", "Zebra"]);
+    }
   });
 
   it("orders numbers inside text numerically", () => {

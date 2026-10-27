@@ -47,6 +47,18 @@ describe("search folding (#115)", () => {
     expect(foldText("Æon")).toBe("æon");
     expect(foldText(undefined)).toBe("");
   });
+
+  it("leaves non-Latin scripts intact", () => {
+    expect(foldText("が")).toBe("が");
+    expect(foldText("が")).not.toBe("か");
+    expect(foldText("कि")).toBe("कि");
+    expect(foldText("가")).toBe("가");
+    const list = withSearchText([item("각"), item("가"), item("か"), item("が")]);
+    expect(run(list, { searchQuery: "가" })).toEqual(["가"]);
+    expect(run(list, { searchQuery: "か" })).toEqual(["か"]);
+    expect(run(list, { searchQuery: "が" })).toEqual(["が"]);
+    expect(foldText("Crème CAFÉ İstanbul")).toBe("creme cafe istanbul");
+  });
 });
 
 describe("sorting (#115)", () => {
@@ -54,9 +66,9 @@ describe("sorting (#115)", () => {
     const data = computeFilterData([
       item("a", { vendors: ["Zebra", "apple", "Apple"], categories: ["Éclair", "Zip", "eel"], tags: ["b", "B", "a"] }),
     ]);
-    expect(data.vendors).toEqual(["apple", "Apple", "Zebra"]);
+    expect(data.vendors).toEqual(["Apple", "apple", "Zebra"]);
     expect(data.types).toEqual(["Éclair", "eel", "Zip"]);
-    expect(data.tags).toEqual(["a", "b", "B"]);
+    expect(data.tags).toEqual(["a", "B", "b"]);
   });
 
   it("sorts option values numerically", () => {
