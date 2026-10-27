@@ -1,5 +1,6 @@
 import { loadCollectionsCache, saveCollectionsCache } from "@/lib/store";
 import { StoreError, diagnoseFailure, isAbort, kindFromStatus, probeUrl } from "@/lib/errors";
+import { compareText } from "@/lib/locale";
 import { fetchPages, fetchWithRetry } from "./requests";
 
 const PLATFORM_ID = "shopify";
@@ -369,7 +370,7 @@ async function discoverCollections(origin, signal, { forceRefresh = false } = {}
     if (aIndex !== -1) return -1;
     if (bIndex !== -1) return 1;
 
-    return String(a.title ?? "").localeCompare(String(b.title ?? ""), undefined, { sensitivity: "base" });
+    return compareText(String(a.title ?? ""), String(b.title ?? ""));
   });
 
   // Only treat a collection as "the" all-products collection when it's a

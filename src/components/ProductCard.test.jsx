@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import ProductCard from "./ProductCard";
+import { setLocale } from "@/lib/locale";
 
 afterEach(cleanup);
 
@@ -57,6 +58,47 @@ describe("ProductCard currency", () => {
     expect(text()).toContain("Save $10.00 (33% off)");
     expect(text()).toContain("$20.00");
     expect(text()).not.toMatch(/\b[A-Z]{3}\b/);
+  });
+});
+
+describe("ProductCard locale (#115)", () => {
+  afterEach(() => setLocale("en-US"));
+
+  it("reads a 0.96-1.2% saving as 1% (#126)", () => {
+    render(<ProductCard product={product("CAD", [variant(99.04, 100), variant(98.8, 100)])} />);
+    expect(text()).toContain("(1% off)");
+    expect(text()).not.toContain("1.0");
+  });
+
+  it("puts the percent sign where the locale does, once in a range", () => {
+    setLocale("tr-TR");
+    render(<ProductCard product={product("CAD", [variant(90, 100), variant(67, 100)])} />);
+    expect(text()).toContain("(%10-33 off)");
+    cleanup();
+    setLocale("de-DE");
+    render(<ProductCard product={product("CAD", [variant(1000.5, 1500.75)])} />);
+    expect(text()).toContain(`Save $500,25${NB}CAD (33${NB}% off)`);
+  });
+
+  it("reads a decimal percentage with the locale's separator", () => {
+    setLocale("de-DE");
+    render(<ProductCard product={product("CAD", [variant(99.6, 100)])} />);
+    expect(text()).toContain(`(0,4${NB}% off)`);
+  });
+
+  it("shows one saving when the amounts agree in a 3-decimal currency, a range when they differ", () => {
+    render(<ProductCard product={product("KWD", [variant(1, 2), variant(2, 3)])} />);
+    expect(text()).toContain(`Save KWD${NB}1.000 (33-50% off)`);
+    cleanup();
+    render(<ProductCard product={product("KWD", [variant(1, 2), variant(1.999, 3)])} />);
+    expect(text()).toContain(`Save KWD${NB}1.000 - KWD${NB}1.001`);
+  });
+
+  it("keeps symbols and Latin digits in ar-EG", () => {
+    setLocale("ar-EG");
+    render(<ProductCard product={product("CAD", [variant(20, 30)])} />);
+    expect(text()).toContain(`$20.00${NB}CAD`);
+    expect(text()).toContain(`Save $10.00${NB}CAD (33`);
   });
 });
 
