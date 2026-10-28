@@ -37,6 +37,7 @@ Each platform is a small adapter (`src/lib/platforms/`) that turns the platform'
 - Filter by vendor, category, tags, variant options, price, and stock or sale status — even if the shop doesn’t show them. Filters match per variant: one variant must meet the selected options, stock, price and sale filters together  
 - Sorting by title, price, newest first, or highest discount 
 - Search across product titles and descriptions  
+- Numbers, sorting and search follow your browser's language: digit layout (separators, grouping, percentages, counts) and sort order match your locale, and search ignores case and accents ("cafe" finds "Café"), the same for every viewer
 - Recent Stores to quickly re-visit stores you have opened
 - Shareable links: the address keeps the store, collection, filters and sort, so a link reopens the same view. Selections the collection doesn't have are dropped with a warning, and prices are clamped to its range
 - A bookmarklet that opens the store you're browsing in StoreLens (see [Open a store in StoreLens](#open-a-store-in-storelens))
@@ -109,7 +110,7 @@ StoreLens needs Chrome 111+, Edge 111+, Firefox 128+ or Safari 16.4+. That is th
 
 ## Status and Limitations
 
-StoreLens should be considered in ***beta*** (0.2).
+StoreLens should be considered in ***beta*** (0.3).
 
 Core browsing, filtering, and sorting features are functional.
 
@@ -122,6 +123,9 @@ StoreLens relies on each platform’s public JSON endpoints. Stores that restric
 ### All platforms
 
 - Known currencies are shown as symbol, amount and code ("$12.50 CAD", "£12.50 GBP"), so a CAD price is never mistaken for USD. A bare "$" with no code means the currency is unknown. This applies to every platform that reports a currency (Shopify via `/meta.json`, Big Cartel, Fourthwall); a Fourthwall shop in USD therefore reads "$12.50 USD".
+- The interface text stays English and digits stay Latin (0-9) in every locale; only the digit layout and sort order follow the browser's language.
+- Search does not fold ß, ø or æ ("strasse" won't find "Straße").
+- Edge keeps the light favicon on dark tab strips (Safari shows a light-tile icon).
 
 ### Shopify
 
