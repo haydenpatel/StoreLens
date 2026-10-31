@@ -2027,6 +2027,22 @@ describe("cancelling a slow or stalled load (#148)", () => {
     expect(titleShown("Delta Mug")).not.toBeNull();
   });
 
+  it("cancels a Big Cartel shop's feed, which has no pages to keep", async () => {
+    const shop = "example-shop.bigcartel.com";
+    vi.stubGlobal(
+      "fetch",
+      fakeStoresFetch({ bigcartel: { "example-shop": [] } }, (url) => (url.pathname === "/example-shop/products.json" ? never() : undefined))
+    );
+    openAt(`/${shop}/products`);
+    await waitFor(() => expect(cancelButton()).not.toBeNull());
+    await userEvent.setup().click(cancelButton());
+
+    expect(await screen.findByText("Loading was cancelled before any products arrived.")).not.toBeNull();
+    // (Recent Stores stays disabled: nothing has been visited yet.)
+    expect(input().disabled).toBe(false);
+    expect(cancelButton()).toBeNull();
+  });
+
   describe("the request timeout", () => {
     it("ends a stalled later page as the partial-results warning, and the controls come back", async () => {
       vi.useFakeTimers({ shouldAdvanceTime: true });
