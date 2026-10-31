@@ -397,7 +397,9 @@ export default function StoreLensApp() {
       lastLoadWasFromAddressBarRef.current = fromAddressBar;
       resetFilters();
 
-      if (pageError) {
+      if (pageError?.kind === "cancelled") {
+        setLoadWarning(`Loaded ${formatCount(allProducts.length)} products; you stopped loading the rest.`);
+      } else if (pageError) {
         setLoadWarning(
           `Loaded ${formatCount(allProducts.length)} products, but couldn't fetch the rest (${describeStoreErrorReason(pageError)}).`
         );

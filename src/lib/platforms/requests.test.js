@@ -184,6 +184,22 @@ describe("fetchWithRetry timeout", () => {
     await assertion;
   });
 
+  it("reports a timeout as a TimeoutError even when the browser rejects with a plain AbortError", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        (_url, { signal }) =>
+          new Promise((_, reject) =>
+            signal.addEventListener("abort", () => reject(new DOMException("Fetch is aborted", "AbortError")), { once: true })
+          )
+      )
+    );
+    const result = fetchWithRetry("https://x.example/a", { timeoutMs: 1000 });
+    const assertion = expect(result).rejects.toMatchObject({ name: "TimeoutError" });
+    await vi.advanceTimersByTimeAsync(1000);
+    await assertion;
+  });
+
   it("cuts off a body that stalls after the headers arrived", async () => {
     let bodySignal;
     vi.stubGlobal(

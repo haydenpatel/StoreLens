@@ -10,7 +10,7 @@ const notFound = () => jsonResponse({}, { ok: false, status: 404 });
 //   - `listCollections: false` leaves the collections out of the listing, so
 //     only probing can find them.
 //   - An unknown host fails the way an unreadable one does: fetch throws.
-// override(url: URL) may return a Response (or a promise of one) to replace the
+// override(url: URL, init) may return a Response (or a promise of one) to replace the
 // default answer for a request, or undefined to fall through. Tests use it to
 // hold a response back, or to fail one page.
 // By default the request honours its AbortSignal like a real fetch: it rejects with
@@ -19,11 +19,11 @@ const notFound = () => jsonResponse({}, { ok: false, status: 404 });
 // abort still arrives late (the app must ignore that too).
 export function fakeShopifyFetch(stores, override, { honorAbort = true } = {}) {
   const calls = [];
-  const respond = async (input) => {
+  const respond = async (input, init) => {
     const url = new URL(String(input));
     calls.push(url);
 
-    const custom = override?.(url);
+    const custom = override?.(url, init);
     if (custom !== undefined) return custom;
 
     const store = stores[url.host];
@@ -69,13 +69,13 @@ export function fakeShopifyFetch(stores, override, { honorAbort = true } = {}) {
 
   const fetchMock = (input, init) => {
     const signal = init?.signal;
-    if (!honorAbort || !signal) return respond(input);
+    if (!honorAbort || !signal) return respond(input, init);
     return new Promise((resolve, reject) => {
       // Rejects with the signal's reason, as fetch does (an AbortError unless aborted with another).
       const abort = () => reject(signal.reason ?? new DOMException("The operation was aborted.", "AbortError"));
       if (signal.aborted) return abort();
       signal.addEventListener("abort", abort, { once: true });
-      respond(input)
+      respond(input, init)
         .then(resolve, reject)
         .finally(() => signal.removeEventListener("abort", abort));
     });

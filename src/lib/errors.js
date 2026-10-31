@@ -131,7 +131,7 @@ export async function probeUrl(url, signal) {
     const response = await fetch(url, { signal: request.signal });
     return response.ok ? { ok: true } : { ok: false, status: response.status };
   } catch (err) {
-    if (isAbort(err, signal)) throw err;
+    if (signal?.aborted) throw err;
     return { ok: false };
   } finally {
     request.clear();
@@ -148,7 +148,9 @@ export async function diagnoseFailure({ status, probe, cause } = {}) {
   const make = (kind, s = status) => new StoreError(kind, { status: s, cause });
   // A request that timed out says the store is slow or unreachable, not that the
   // collection is missing, and a probe of the same store would only wait again.
-  if (cause?.name === "TimeoutError") return make("blocked-or-offline", undefined);
+  // (Browsers reject a body read aborted by the timeout with a plain AbortError, not
+  // the timeout's reason; callers rethrow the user's own aborts before diagnosing.)
+  if (cause?.name === "TimeoutError" || cause?.name === "AbortError") return make("blocked-or-offline", undefined);
   const ambiguous = status === undefined || status === 404 || status === 410;
   if (!ambiguous) return make(kindFromStatus(status));
   if (!probe) return make(status === undefined ? "blocked-or-offline" : "not-found");

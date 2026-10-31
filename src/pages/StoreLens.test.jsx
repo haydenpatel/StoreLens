@@ -1950,7 +1950,7 @@ describe("cancelling a slow or stalled load (#148)", () => {
     await user.click(cancelButton());
 
     await heading(250, 250);
-    expect(await screen.findByText("Loaded 250 products, but couldn't fetch the rest (loading was cancelled).")).not.toBeNull();
+    expect(await screen.findByText("Loaded 250 products; you stopped loading the rest.")).not.toBeNull();
     controlsEnabled();
     expect(cancelButton()).toBeNull();
     expect(window.location.pathname).toBe(`/${A}/collections/all`);
@@ -1967,20 +1967,39 @@ describe("cancelling a slow or stalled load (#148)", () => {
     expect(document.activeElement).not.toBe(document.body);
   });
 
-  it("drops a page that answers after the cancel, even when the request ignores its signal", async () => {
+  it("drops a page that answers after the cancel", async () => {
     const late = deferred();
+    vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: bigStore() }, (url) => (page2(url) ? late.promise : undefined)));
+    openAt(`/${A}/collections/all`);
+    await screen.findByText("Loaded 250 products…");
+    await userEvent.setup().click(cancelButton());
+    await heading(250, 250);
+    await act(async () => late.release(jsonResponse({ products: bigStore().collections.all.slice(250) })));
+    await drain();
+    expect(document.body.textContent).toContain("Showing 250 of 250 products");
+    expect(document.body.textContent).not.toContain("Showing 300");
+  });
+
+  it("drops what a cancelled load still delivers once a newer input took over", async () => {
+    const late = deferred();
+    // A request that ignores its signal, so the cancelled load is still unwinding.
     vi.stubGlobal(
       "fetch",
       fakeShopifyFetch({ [A]: bigStore() }, (url) => (page2(url) ? late.promise : undefined), { honorAbort: false })
     );
     openAt(`/${A}/collections/all`);
     await screen.findByText("Loaded 250 products…");
-    // The request that ignores its signal never settles, so the load can't
-    // finish by itself: the cancel must still not let page 2 in afterwards.
     await userEvent.setup().click(cancelButton());
+    // Back to the empty page: an input that starts no load of its own.
+    act(() => {
+      window.history.pushState(null, "", "/");
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
     await act(async () => late.release(jsonResponse({ products: bigStore().collections.all.slice(250) })));
     await drain();
-    expect(screen.queryByText(/Showing 300 of 300/)).toBeNull();
+    expect(titleShown("Big 000")).toBeNull();
+    expect(document.body.textContent).not.toContain("Showing");
+    expect(screen.getByText(/to get started/)).not.toBeNull();
   });
 
   it("shows no stale products from a cancelled load once another store has loaded", async () => {
@@ -2044,6 +2063,63 @@ describe("cancelling a slow or stalled load (#148)", () => {
   });
 
   describe("the request timeout", () => {
+    // Browsers reject a body read that the timeout aborts with a plain AbortError,
+    // not the signal's reason (headers-phase aborts do give the reason).
+    const stalledBody = (init) => ({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      json: () =>
+        new Promise((_, reject) =>
+          init.signal.addEventListener("abort", () => reject(new DOMException("The operation was aborted.", "AbortError")), { once: true })
+        ),
+    });
+
+    it("keeps the pages loaded when a later page's body stalls", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: bigStore() }, (url, init) => (page2(url) ? stalledBody(init) : undefined)));
+      openAt(`/${A}/collections/all`);
+      await screen.findByText("Loaded 250 products…");
+      await act(async () => void (await vi.advanceTimersByTimeAsync(31_000)));
+
+      expect(await screen.findByText("Loaded 250 products, but couldn't fetch the rest (the store couldn't be reached).")).not.toBeNull();
+      controlsEnabled();
+    });
+
+    it("reports a first page whose body stalls as unreachable", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      vi.stubGlobal(
+        "fetch",
+        fakeShopifyFetch({ [A]: storeA() }, (url, init) => (url.pathname === "/collections/tees/products.json" ? stalledBody(init) : undefined))
+      );
+      openAt(`/${A}/collections/tees`);
+      await waitFor(() => expect(input().disabled).toBe(true));
+      await act(async () => void (await vi.advanceTimersByTimeAsync(31_000)));
+
+      expect((await screen.findByRole("alert")).textContent).toMatch(/Couldn't reach this store/);
+      controlsEnabled();
+    });
+
+    it("keeps the pages loaded when a Fourthwall page's body stalls", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      const F = "merch.example.com";
+      const many = Array.from({ length: 45 }, (_, i) =>
+        fw.product({ title: `Fw ${i}`, handle: `fw-${i}`, price: 10 + i, variants: [fw.variant("S", { cents: (10 + i) * 100 })] })
+      );
+      vi.stubGlobal(
+        "fetch",
+        fakeStoresFetch({ fourthwall: { [F]: { collections: { all: many } } } }, (url, init) =>
+          url.host === F && url.pathname === "/collections/all/2.json" ? stalledBody(init) : undefined
+        )
+      );
+      openAt(`/${F}/collections/all`);
+      await waitFor(() => expect(cancelButton()).not.toBeNull());
+      await act(async () => void (await vi.advanceTimersByTimeAsync(31_000)));
+
+      expect(await screen.findByText("Loaded 20 products, but couldn't fetch the rest (the store couldn't be reached).")).not.toBeNull();
+      controlsEnabled();
+    });
+
     it("ends a stalled later page as the partial-results warning, and the controls come back", async () => {
       vi.useFakeTimers({ shouldAdvanceTime: true });
       vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: bigStore() }, (url) => (page2(url) ? never() : undefined)));

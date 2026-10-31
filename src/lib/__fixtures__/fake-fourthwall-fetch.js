@@ -12,11 +12,11 @@ export const PAGE_SIZE = 20;
 // override(url) and `honorAbort` work as in fakeShopifyFetch.
 export function fakeFourthwallFetch(shops, override, { honorAbort = true } = {}) {
   const calls = [];
-  const respond = async (input) => {
+  const respond = async (input, init) => {
     const url = new URL(String(input));
     calls.push(url);
 
-    const custom = override?.(url);
+    const custom = override?.(url, init);
     if (custom !== undefined) return custom;
 
     const shop = shops[url.host];
@@ -36,12 +36,12 @@ export function fakeFourthwallFetch(shops, override, { honorAbort = true } = {})
 
   const fetchMock = (input, init) => {
     const signal = init?.signal;
-    if (!honorAbort || !signal) return respond(input);
+    if (!honorAbort || !signal) return respond(input, init);
     return new Promise((resolve, reject) => {
       const abort = () => reject(new DOMException("The operation was aborted.", "AbortError"));
       if (signal.aborted) return abort();
       signal.addEventListener("abort", abort, { once: true });
-      respond(input)
+      respond(input, init)
         .then(resolve, reject)
         .finally(() => signal.removeEventListener("abort", abort));
     });

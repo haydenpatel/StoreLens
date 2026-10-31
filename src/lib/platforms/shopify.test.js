@@ -691,9 +691,10 @@ describe("listCollections when the first path segment may not be a locale", () =
   });
 
   it("rethrows an abort instead of falling back", async () => {
+    const controller = new AbortController();
     const abort = Object.assign(new Error("aborted"), { name: "AbortError" });
-    vi.stubGlobal("fetch", vi.fn(async () => { throw abort; }));
-    await expect(shopifyAdapter.listCollections(LOCALE)).rejects.toBe(abort);
+    vi.stubGlobal("fetch", vi.fn(async () => { controller.abort(); throw abort; }));
+    await expect(shopifyAdapter.listCollections(LOCALE, controller.signal)).rejects.toBe(abort);
   });
 });
 
@@ -856,29 +857,33 @@ describe("listCollections when discovery fails transiently", () => {
   });
 
   it("propagates an abort in the middle of the listing, keeping what loaded out of the cache", async () => {
+    const controller = new AbortController();
     const abort = Object.assign(new Error("aborted"), { name: "AbortError" });
     const full = Array.from({ length: 250 }, (_, i) => ({ handle: `c${i}`, title: `C${i}`, products_count: 1 }));
     const fetchMock = routedFetch({
       listing: (page) => {
         if (page === 1) return jsonResponse({ collections: full });
+        controller.abort();
         throw abort;
       },
     });
     vi.stubGlobal("fetch", fetchMock);
-    const { error } = await settle(shopifyAdapter.listCollections(ORIGIN));
+    const { error } = await settle(shopifyAdapter.listCollections(ORIGIN, controller.signal));
     expect(error).toBe(abort);
     expect(loadCollectionsCache("shopify", ORIGIN)).toBeNull();
     expect(probeUrls(fetchMock)).toEqual([]);
   });
 
   it("propagates an abort in the middle of probing, without trying the other handles", async () => {
+    const controller = new AbortController();
     const abort = Object.assign(new Error("aborted"), { name: "AbortError" });
     const fetchMock = vi.fn(async (url) => {
       if (url.includes("/collections.json")) return status(429);
-      throw abort;
+      controller.abort();
+        throw abort;
     });
     vi.stubGlobal("fetch", fetchMock);
-    const { error } = await settle(shopifyAdapter.listCollections(ORIGIN));
+    const { error } = await settle(shopifyAdapter.listCollections(ORIGIN, controller.signal));
     expect(error).toBe(abort);
     expect(loadCollectionsCache("shopify", ORIGIN)).toBeNull();
     expect(fetchMock.mock.calls.filter(([u]) => u.includes("/collections/"))).toHaveLength(1);
@@ -1202,24 +1207,27 @@ describe("listCollections", () => {
   });
 
   it("propagates an abort and does not cache a partial result", async () => {
+    const controller = new AbortController();
     const abort = Object.assign(new Error("aborted"), { name: "AbortError" });
-    vi.stubGlobal("fetch", vi.fn(async () => { throw abort; }));
+    vi.stubGlobal("fetch", vi.fn(async () => { controller.abort(); throw abort; }));
 
-    await expect(shopifyAdapter.listCollections(ORIGIN)).rejects.toBe(abort);
+    await expect(shopifyAdapter.listCollections(ORIGIN, controller.signal)).rejects.toBe(abort);
     expect(loadCollectionsCache("shopify", ORIGIN)).toBeNull();
   });
 
   it("propagates an abort that happens during probing", async () => {
+    const controller = new AbortController();
     const abort = Object.assign(new Error("aborted"), { name: "AbortError" });
     vi.stubGlobal(
       "fetch",
       vi.fn(async (url) => {
         if (url.includes("/collections.json")) return jsonResponse({ collections: [] });
+        controller.abort();
         throw abort;
       })
     );
 
-    await expect(shopifyAdapter.listCollections(ORIGIN)).rejects.toBe(abort);
+    await expect(shopifyAdapter.listCollections(ORIGIN, controller.signal)).rejects.toBe(abort);
     expect(loadCollectionsCache("shopify", ORIGIN)).toBeNull();
   });
 });
