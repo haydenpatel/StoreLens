@@ -36,7 +36,8 @@ export const FAILURE_KINDS = {
     reason: "the store is limiting requests",
   },
   // Not a failure of the store: the user stopped the load. Shown on its own when
-  // nothing had arrived yet, or as the reason in the partial-results warning.
+  // nothing had arrived yet. (A cancel that kept products has its own warning, so
+  // `reason` is only the generic fallback every kind must have.)
   cancelled: {
     message: "Loading was cancelled before any products arrived.",
     reason: "loading was cancelled",
@@ -75,6 +76,10 @@ export function describeStoreErrorReason(err) {
   return typeof copy.reason === "function" ? copy.reason(err.status) : copy.reason;
 }
 
+// Whether `err` is an abort. Name-based, so only for a caller that owns no signal
+// (the shared Big Cartel feed); a request that has one asks `signal.aborted`
+// instead, since a browser rejects a body read aborted by the timeout with a
+// plain AbortError too.
 export const isAbort = (err, signal) => signal?.aborted || err?.name === "AbortError";
 
 // The reason a load's signal is aborted with when the user presses Cancel, as
@@ -124,7 +129,8 @@ export function kindFromStatus(status) {
 // Asks a known-good URL whether the store itself can be read: resolves to
 // { ok: true } or { ok: false, status? }, where no status means the request
 // threw (offline, or blocked because the response carried no CORS headers).
-// Rethrows an abort so a cancelled load never reports a diagnosis.
+// Gives up after REQUEST_TIMEOUT_MS (reported as unreadable, like a throw). Rethrows
+// an abort of the caller's own signal so a cancelled load never reports a diagnosis.
 export async function probeUrl(url, signal) {
   const request = withTimeout(signal);
   try {

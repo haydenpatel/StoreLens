@@ -13,8 +13,11 @@ const notFound = () => jsonResponse({}, { ok: false, status: 404 });
 // override(url: URL, init) may return a Response (or a promise of one) to replace the
 // default answer for a request, or undefined to fall through. Tests use it to
 // hold a response back, or to fail one page.
-// By default the request honours its AbortSignal like a real fetch: it rejects with
-// an AbortError the moment the signal aborts (the app must ignore that). Pass
+// By default the request honours its AbortSignal like fetch() does while waiting for
+// headers: it rejects with the signal's reason (an AbortError unless aborted with
+// another) the moment the signal aborts (the app must ignore that). Reading a body
+// is not simulated: browsers reject an aborted body read with a plain AbortError,
+// so a test that needs one returns its own response from `override(url, init)`. Pass
 // `honorAbort: false` to ignore the signal instead, so a response held back past an
 // abort still arrives late (the app must ignore that too).
 export function fakeShopifyFetch(stores, override, { honorAbort = true } = {}) {
@@ -71,7 +74,6 @@ export function fakeShopifyFetch(stores, override, { honorAbort = true } = {}) {
     const signal = init?.signal;
     if (!honorAbort || !signal) return respond(input, init);
     return new Promise((resolve, reject) => {
-      // Rejects with the signal's reason, as fetch does (an AbortError unless aborted with another).
       const abort = () => reject(signal.reason ?? new DOMException("The operation was aborted.", "AbortError"));
       if (signal.aborted) return abort();
       signal.addEventListener("abort", abort, { once: true });

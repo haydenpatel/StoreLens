@@ -728,6 +728,29 @@ describe("listCollections when discovery fails transiently", () => {
     expect(fetchMock.mock.calls.length).toBeGreaterThan(before);
   });
 
+  it("gives up on an all-products probe that never answers, leaving the list partial", async () => {
+    const stalled = new Set();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url, init) => {
+        const { pathname } = new URL(url);
+        if (pathname.endsWith("/collections.json")) return Promise.resolve(jsonResponse({ collections: [{ handle: "tees", title: "Tees", products_count: 1 }] }));
+        if (pathname === "/collections/all/products.json") {
+          stalled.add(url);
+          // Like a browser's abort of a stalled request: a plain AbortError.
+          return new Promise((_, reject) =>
+            init.signal?.addEventListener("abort", () => reject(new DOMException("Fetch is aborted", "AbortError")))
+          );
+        }
+        return Promise.resolve(jsonResponse({}, { ok: false, status: 404 }));
+      })
+    );
+    const { value } = await settle(shopifyAdapter.listCollections(ORIGIN));
+    expect(stalled.size).toBe(1);
+    expect(value.partial).toBe(true);
+    expect(value.collections.map((c) => c.handle)).toEqual(["tees"]);
+  });
+
   it("does not cache an empty result when the listing failed and nothing was probed, and throws", async () => {
     vi.stubGlobal("fetch", routedFetch({ listing: () => status(429) }));
     const { error } = await settle(shopifyAdapter.listCollections(ORIGIN));
@@ -880,7 +903,7 @@ describe("listCollections when discovery fails transiently", () => {
     const fetchMock = vi.fn(async (url) => {
       if (url.includes("/collections.json")) return status(429);
       controller.abort();
-        throw abort;
+      throw abort;
     });
     vi.stubGlobal("fetch", fetchMock);
     const { error } = await settle(shopifyAdapter.listCollections(ORIGIN, controller.signal));

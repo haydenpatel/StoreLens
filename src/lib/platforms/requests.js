@@ -1,6 +1,7 @@
 // Request plumbing shared by platform adapters: retrying the failures worth
-// retrying, and fetching a paged listing with bounded concurrency.
-import { REQUEST_TIMEOUT_MS, isAbort, isCancelled, withTimeout } from "@/lib/errors";
+// retrying (each request under a timeout), and fetching a paged listing with
+// bounded concurrency.
+import { REQUEST_TIMEOUT_MS, isCancelled, withTimeout } from "@/lib/errors";
 
 const abortError = (signal) =>
   signal?.reason instanceof Error ? signal.reason : new DOMException("Aborted", "AbortError");
@@ -94,13 +95,12 @@ export async function fetchPages({ fetchPage, concurrency = 1, maxPages = Infini
     const results = await Promise.allSettled(batch.map((page) => fetchPage(page)));
     const cancelled = isCancelled(signal);
     if (signal?.aborted && !cancelled) {
-      const rejected = results.find((r) => r.status === "rejected" && isAbort(r.reason, signal));
+      const rejected = results.find((r) => r.status === "rejected");
       throw rejected ? rejected.reason : abortError(signal);
     }
 
     for (const result of results) {
       if (result.status === "rejected") {
-        if (!cancelled && isAbort(result.reason, signal)) throw result.reason;
         pageError = cancelled ? signal.reason : result.reason;
         done = true;
         break;

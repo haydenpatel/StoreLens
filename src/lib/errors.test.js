@@ -178,6 +178,26 @@ describe("probeUrl timeout", () => {
   });
 });
 
+describe("probeUrl abort", () => {
+  it("rethrows an abort from the caller's signal instead of calling the store unreadable", async () => {
+    const controller = new AbortController();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((_url, { signal }) => new Promise((_, reject) => signal.addEventListener("abort", () => reject(signal.reason))))
+    );
+    const result = probeUrl("https://shop.example.com/x", controller.signal);
+    const assertion = expect(result).rejects.toMatchObject({ name: "AbortError" });
+    controller.abort();
+    await assertion;
+  });
+
+  it("does not take a plain AbortError with a live signal for the caller's abort", async () => {
+    // What a browser rejects with when the timeout (not the caller) aborted the request.
+    vi.stubGlobal("fetch", vi.fn(async () => Promise.reject(new DOMException("Fetch is aborted", "AbortError"))));
+    expect(await probeUrl("https://shop.example.com/x", new AbortController().signal)).toEqual({ ok: false });
+  });
+});
+
 describe("probeUrl", () => {
   it("reports ok for a successful response", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({})));

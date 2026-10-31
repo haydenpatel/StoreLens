@@ -383,7 +383,8 @@ describe("switching stores while one is still resolving", () => {
 
 describe("switching stores when the abandoned request is aborted (rejects)", () => {
   // The same situations as above, with a fetch that behaves like a real one: the
-  // request rejects with an AbortError the moment its signal aborts.
+  // request rejects (with an AbortError, unless aborted with another reason) the
+  // moment its signal aborts.
   const never = () => new Promise(() => {});
 
   it("shows the second store, with no error, when the first one's discovery is aborted", async () => {
