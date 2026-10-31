@@ -35,6 +35,12 @@ export const FAILURE_KINDS = {
     message: "The store is limiting requests right now. Wait a moment and try again.",
     reason: "the store is limiting requests",
   },
+  // Not a failure of the store: the user stopped the load. Shown on its own when
+  // nothing had arrived yet, or as the reason in the partial-results warning.
+  cancelled: {
+    message: "Loading was cancelled before any products arrived.",
+    reason: "loading was cancelled",
+  },
   "server-error": {
     message: (_supported, status) =>
       `The store returned an error${status ? ` (status ${status})` : ""}. Try again shortly.`,
@@ -71,6 +77,42 @@ export function describeStoreErrorReason(err) {
 
 export const isAbort = (err, signal) => signal?.aborted || err?.name === "AbortError";
 
+// The reason a load's signal is aborted with when the user presses Cancel, as
+// opposed to a newer load superseding it. Paging stops on it but keeps the pages
+// that already arrived.
+export const cancelledError = () => new StoreError("cancelled");
+export const isCancelled = (signal) =>
+  Boolean(signal?.aborted) && signal.reason instanceof StoreError && signal.reason.kind === "cancelled";
+
+// How long one request may take before it is given up on as unreachable.
+export const REQUEST_TIMEOUT_MS = 30_000;
+
+// A signal that aborts when `signal` does, or with a TimeoutError after `ms`.
+// `clear()` stops the timer and the link to `signal`; a caller that hands the
+// response on leaves it running, so a body that stalls is cut off too.
+export function withTimeout(signal, ms = REQUEST_TIMEOUT_MS) {
+  const controller = new AbortController();
+  let timer;
+  const clear = () => {
+    clearTimeout(timer);
+    signal?.removeEventListener("abort", forward);
+  };
+  const forward = () => {
+    clear();
+    controller.abort(signal.reason);
+  };
+  if (signal?.aborted) {
+    controller.abort(signal.reason);
+    return { signal: controller.signal, clear };
+  }
+  signal?.addEventListener("abort", forward, { once: true });
+  timer = setTimeout(() => {
+    clear();
+    controller.abort(new DOMException("The request timed out", "TimeoutError"));
+  }, ms);
+  return { signal: controller.signal, clear };
+}
+
 // What an HTTP status says on its own, without looking at the store.
 export function kindFromStatus(status) {
   if (status === 429) return "rate-limited";
@@ -84,12 +126,15 @@ export function kindFromStatus(status) {
 // threw (offline, or blocked because the response carried no CORS headers).
 // Rethrows an abort so a cancelled load never reports a diagnosis.
 export async function probeUrl(url, signal) {
+  const request = withTimeout(signal);
   try {
-    const response = await fetch(url, { signal });
+    const response = await fetch(url, { signal: request.signal });
     return response.ok ? { ok: true } : { ok: false, status: response.status };
   } catch (err) {
     if (isAbort(err, signal)) throw err;
     return { ok: false };
+  } finally {
+    request.clear();
   }
 }
 
@@ -101,6 +146,9 @@ export async function probeUrl(url, signal) {
 // store to decide.
 export async function diagnoseFailure({ status, probe, cause } = {}) {
   const make = (kind, s = status) => new StoreError(kind, { status: s, cause });
+  // A request that timed out says the store is slow or unreachable, not that the
+  // collection is missing, and a probe of the same store would only wait again.
+  if (cause?.name === "TimeoutError") return make("blocked-or-offline", undefined);
   const ambiguous = status === undefined || status === 404 || status === 410;
   if (!ambiguous) return make(kindFromStatus(status));
   if (!probe) return make(status === undefined ? "blocked-or-offline" : "not-found");

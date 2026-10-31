@@ -1,6 +1,6 @@
 // Request plumbing shared by platform adapters: retrying the failures worth
 // retrying, and fetching a paged listing with bounded concurrency.
-import { isAbort } from "@/lib/errors";
+import { REQUEST_TIMEOUT_MS, isAbort, isCancelled, withTimeout } from "@/lib/errors";
 
 const abortError = (signal) =>
   signal?.reason instanceof Error ? signal.reason : new DOMException("Aborted", "AbortError");
@@ -34,9 +34,27 @@ function retryDelayMs(response, attempt, { baseDelayMs, maxDelayMs }) {
 // response either way, so the caller decides what a failure means. A request
 // that throws (offline, or blocked by CORS) isn't retried: it would fail again
 // and just delay the answer. Aborts reject straight away, including mid-wait.
-export async function fetchWithRetry(url, { signal, retries = 2, baseDelayMs = 500, maxDelayMs = 5000 } = {}) {
+//
+// Each attempt gets its own `timeoutMs`, for the headers and then the body (the
+// timer is left running when the response is returned, so a body that stalls is
+// cut off too). A request that times out rejects with a TimeoutError and, like
+// any other throw, isn't retried: the callers report it as unreachable. The wait
+// between attempts is not part of it, so a slow-but-answering store never trips it.
+export async function fetchWithRetry(
+  url,
+  { signal, retries = 2, baseDelayMs = 500, maxDelayMs = 5000, timeoutMs = REQUEST_TIMEOUT_MS } = {}
+) {
   for (let attempt = 0; ; attempt++) {
-    const response = await fetch(url, { signal });
+    const request = withTimeout(signal, timeoutMs);
+    let response;
+    try {
+      response = await fetch(url, { signal: request.signal });
+    } catch (err) {
+      request.clear();
+      // Whatever the browser rejects with for our own abort, a timeout is reported as one.
+      if (!signal?.aborted && request.signal.aborted) throw request.signal.reason;
+      throw err;
+    }
     const retryable = response.status === 429 || response.status >= 500;
     if (!retryable || attempt >= retries) return response;
     // The response is discarded, so release its connection rather than leave it
@@ -46,6 +64,7 @@ export async function fetchWithRetry(url, { signal, retries = 2, baseDelayMs = 5
     } catch {
       /* noop */
     }
+    request.clear();
     await delay(retryDelayMs(response, attempt, { baseDelayMs, maxDelayMs }), signal);
   }
 }
@@ -60,7 +79,9 @@ export async function fetchWithRetry(url, { signal, retries = 2, baseDelayMs = 5
 // alongside the error so the caller can show partial results.
 //
 // Returns { items, pageError, truncated }; `truncated` means `maxPages` ran out
-// with more to come. Rethrows an abort.
+// with more to come. Rethrows an abort, except one the user asked for with Cancel
+// (see isCancelled): that stops paging and returns the pages that arrived, with
+// a "cancelled" pageError.
 export async function fetchPages({ fetchPage, concurrency = 1, maxPages = Infinity, signal, onProgress }) {
   const items = [];
   let pageError = null;
@@ -71,15 +92,16 @@ export async function fetchPages({ fetchPage, concurrency = 1, maxPages = Infini
     const batch = [];
     for (let i = 0; i < concurrency && next + i <= maxPages; i++) batch.push(next + i);
     const results = await Promise.allSettled(batch.map((page) => fetchPage(page)));
-    if (signal?.aborted) {
+    const cancelled = isCancelled(signal);
+    if (signal?.aborted && !cancelled) {
       const rejected = results.find((r) => r.status === "rejected" && isAbort(r.reason, signal));
       throw rejected ? rejected.reason : abortError(signal);
     }
 
     for (const result of results) {
       if (result.status === "rejected") {
-        if (isAbort(result.reason, signal)) throw result.reason;
-        pageError = result.reason;
+        if (!cancelled && isAbort(result.reason, signal)) throw result.reason;
+        pageError = cancelled ? signal.reason : result.reason;
         done = true;
         break;
       }
@@ -92,6 +114,11 @@ export async function fetchPages({ fetchPage, concurrency = 1, maxPages = Infini
       }
     }
     next += batch.length;
+    // Cancelled while every page of the batch still came back.
+    if (cancelled && !done) {
+      pageError = signal.reason;
+      done = true;
+    }
   }
 
   return { items, pageError, truncated: !done && next > maxPages };

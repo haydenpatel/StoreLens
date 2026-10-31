@@ -30,7 +30,7 @@ import {
 } from "@/lib/store";
 import { defaultAdapter, forgetAdapter, rememberAdapter, resolveAdapter, supportNotes, supportedPlatformNames } from "@/lib/platforms";
 import { formatCount, formatNumber } from "@/lib/locale";
-import { StoreError, describeStoreError, describeStoreErrorReason } from "@/lib/errors";
+import { StoreError, cancelledError, describeStoreError, describeStoreErrorReason, isCancelled } from "@/lib/errors";
 
 // What describeStoreError needs to name the platforms that work.
 const errorContext = () => ({ supported: supportedPlatformNames(), notes: supportNotes() });
@@ -227,6 +227,26 @@ export default function StoreLensApp() {
   // the rest of the app's state) points at another.
   const fetchCollectionAbortRef = useRef(null);
 
+  // A newer load or input takes over: abort the load in flight and forget it, so
+  // that whatever it still delivers (even one the user had cancelled, whose
+  // partial products are otherwise kept) is dropped.
+  const supersedeLoad = () => {
+    fetchCollectionAbortRef.current?.abort();
+    fetchCollectionAbortRef.current = null;
+  };
+
+  // The Cancel button: stops the load in flight but, unlike superseding it,
+  // keeps the pages that already arrived (see fetchPages). The load then ends
+  // through its own path, with the partial-results warning or, when nothing had
+  // arrived, a notice.
+  const cancelLoad = () => {
+    const controller = fetchCollectionAbortRef.current;
+    if (!controller || controller.signal.aborted) return;
+    // The button is about to unmount; keep keyboard focus on the page.
+    mainRef.current?.focus();
+    controller.abort(cancelledError());
+  };
+
   // Whether the load that put the current collection on screen was asked for by
   // the address bar (a deep link or Back/Forward) rather than chosen by the user.
   // The address is then already an entry of its own, so the URL-sync effect only
@@ -287,10 +307,13 @@ export default function StoreLensApp() {
   // whether a failure replaces or pushes the history entry, and whether
   // filters waiting from the link still apply.
   const fetchCollection = async (url, { fromAddressBar = false } = {}) => {
-    fetchCollectionAbortRef.current?.abort();
+    supersedeLoad();
     const controller = new AbortController();
     fetchCollectionAbortRef.current = controller;
-    const isCurrent = () => !controller.signal.aborted;
+    // A cancelled load is still this one's to finish (it keeps what it has); a
+    // superseded one is no longer in the ref.
+    const isCurrent = () =>
+      fetchCollectionAbortRef.current === controller && (!controller.signal.aborted || isCancelled(controller.signal));
     // Any load that doesn't come from the address bar supersedes whatever
     // pending URL-driven filters might still be waiting for a load that
     // failed or was itself superseded before it could consume them - a
@@ -324,9 +347,12 @@ export default function StoreLensApp() {
       // Superseded (aborted) - the newer call owns state from here. Anything
       // else, e.g. an invalid collection URL, is reported to the user.
       if (isCurrent()) {
-        setError(describeStoreError(err, errorContext()));
+        // A cancel that reached us as a throw (a platform with no pages to keep).
+        const cancelled = isCancelled(controller.signal);
+        if (cancelled) setInfoNotice(describeStoreError(cancelledError()));
+        else setError(describeStoreError(err, errorContext()));
         setLoading(false);
-        forgetAdapter(new URL(url));
+        if (!cancelled) forgetAdapter(new URL(url));
         forgetFailedCollection(loadAdapter, url);
         showFailedStore(appPathFor(url), fromAddressBar);
       }
@@ -338,12 +364,18 @@ export default function StoreLensApp() {
     const { products: allProducts, pageError, truncated, notices } = result;
 
     if (allProducts.length === 0) {
-      // What was remembered about this store's platform may be out of date.
-      forgetAdapter(new URL(url));
-      // Only the shop saying it has no such collection means it is gone; being
-      // offline, blocked or throttled says nothing about the collection.
-      if (pageError?.kind === "not-found") forgetVisitedCollectionFor(loadAdapter, url);
-      setError(describeStoreError(pageError ?? new StoreError("empty"), errorContext()));
+      if (pageError?.kind === "cancelled") {
+        // The user stopped it before anything arrived: nothing is wrong with the
+        // store, so what is remembered about it stays.
+        setInfoNotice(describeStoreError(pageError));
+      } else {
+        // What was remembered about this store's platform may be out of date.
+        forgetAdapter(new URL(url));
+        // Only the shop saying it has no such collection means it is gone; being
+        // offline, blocked or throttled says nothing about the collection.
+        if (pageError?.kind === "not-found") forgetVisitedCollectionFor(loadAdapter, url);
+        setError(describeStoreError(pageError ?? new StoreError("empty"), errorContext()));
+      }
       setLoading(false);
       forgetFailedCollection(loadAdapter, url);
       showFailedStore(appPathFor(url), fromAddressBar);
@@ -417,7 +449,7 @@ export default function StoreLensApp() {
     resolveAbortRef.current = resolution;
     // Whatever collection was still loading belongs to the store being left, and
     // must not finish later over the page this input is about to show.
-    fetchCollectionAbortRef.current?.abort();
+    supersedeLoad();
     setLoading(false);
     inputFromAddressBarRef.current = fromAddressBar;
     // Every way of switching store comes through here (paste, submit, Recent
@@ -936,6 +968,11 @@ export default function StoreLensApp() {
                   Loaded {formatCount(loadProgress)} products…
                 </p>
               )}
+              {/* The controls above stay disabled while loading (the visible
+                  sign the request was sent); this is the way out of a slow one. */}
+              <Button variant="outline" size="sm" onClick={cancelLoad} aria-label="Cancel loading">
+                Cancel
+              </Button>
             </div>
           )}
 

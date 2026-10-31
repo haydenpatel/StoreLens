@@ -201,7 +201,8 @@ async function fetchCollection(collectionUrl, { signal, maxPages = MAX_PRODUCT_P
     signal,
     onProgress,
   });
-  if (currencyRequest) {
+  // Not worth waiting for once the user has cancelled.
+  if (currencyRequest && pageError?.kind !== "cancelled") {
     let timer;
     const grace = new Promise((resolve) => {
       timer = setTimeout(() => resolve(undefined), META_GRACE_MS);

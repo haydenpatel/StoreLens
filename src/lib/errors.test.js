@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   FAILURE_KINDS,
+  REQUEST_TIMEOUT_MS,
   StoreError,
   describeStoreError,
   describeStoreErrorReason,
@@ -148,6 +149,32 @@ describe("diagnoseFailure", () => {
   it("lets an abort from the probe propagate", async () => {
     const abort = Object.assign(new Error("aborted"), { name: "AbortError" });
     await expect(diagnoseFailure({ probe: async () => Promise.reject(abort) })).rejects.toBe(abort);
+  });
+});
+
+describe("diagnoseFailure for a timeout", () => {
+  it("calls it unreachable without asking the probe", async () => {
+    const probe = vi.fn(async () => ({ ok: true }));
+    const err = await diagnoseFailure({ cause: new DOMException("The request timed out", "TimeoutError"), probe });
+    expect(err.kind).toBe("blocked-or-offline");
+    expect(probe).not.toHaveBeenCalled();
+  });
+});
+
+describe("probeUrl timeout", () => {
+  it("gives up on a store that never answers, as unreadable", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn((_url, { signal }) => new Promise((_, reject) => signal.addEventListener("abort", () => reject(signal.reason))))
+      );
+      const result = probeUrl("https://shop.example.com/x");
+      await vi.advanceTimersByTimeAsync(REQUEST_TIMEOUT_MS);
+      expect(await result).toEqual({ ok: false });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { StoreError, cancelledError } from "@/lib/errors";
 import { fetchPages, fetchWithRetry } from "./requests";
 
 const response = (status, headers = {}) => ({
@@ -21,12 +22,16 @@ describe("fetchWithRetry", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("passes the signal to fetch", async () => {
+  it("gives fetch a signal that follows the one it was given", async () => {
     const fetchMock = vi.fn(async () => response(200));
     vi.stubGlobal("fetch", fetchMock);
-    const { signal } = new AbortController();
-    await fetchWithRetry("https://x.example/a", { signal });
-    expect(fetchMock).toHaveBeenCalledWith("https://x.example/a", { signal });
+    const controller = new AbortController();
+    await fetchWithRetry("https://x.example/a", { signal: controller.signal });
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("https://x.example/a");
+    expect(init.signal.aborted).toBe(false);
+    controller.abort();
+    expect(init.signal.aborted).toBe(true);
   });
 
   it("retries a 429 and a 5xx, with exponential backoff", async () => {
@@ -131,6 +136,78 @@ describe("fetchWithRetry", () => {
     await expect(fetchWithRetry("https://x.example/a", { signal: controller.signal })).rejects.toMatchObject({
       name: "AbortError",
     });
+  });
+});
+
+// A fetch that never answers but rejects, like a real one, when its signal aborts.
+const stalledFetch = () =>
+  vi.fn(
+    (_url, { signal }) =>
+      new Promise((_, reject) => signal.addEventListener("abort", () => reject(signal.reason), { once: true }))
+  );
+
+describe("fetchWithRetry timeout", () => {
+  it("rejects with a TimeoutError once a request takes longer than the timeout, without retrying", async () => {
+    const fetchMock = stalledFetch();
+    vi.stubGlobal("fetch", fetchMock);
+    const result = fetchWithRetry("https://x.example/a", { timeoutMs: 1000 });
+    const assertion = expect(result).rejects.toMatchObject({ name: "TimeoutError" });
+    await vi.advanceTimersByTimeAsync(999);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    await assertion;
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("times each attempt on its own, leaving out the wait between attempts", async () => {
+    // Each answer takes 800 ms and the backoff 900 ms: 3.3 s overall, every
+    // piece inside the 1 s limit.
+    const statuses = [503, 503, 200];
+    const fetchMock = vi.fn(
+      () => new Promise((resolve) => setTimeout(() => resolve(response(statuses.shift())), 800))
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const result = fetchWithRetry("https://x.example/a", { timeoutMs: 1000, baseDelayMs: 900, maxDelayMs: 900 });
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect((await result).status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("times out a retried attempt too", async () => {
+    const queue = [() => Promise.resolve(response(503)), null];
+    const stalled = stalledFetch();
+    vi.stubGlobal("fetch", vi.fn((url, init) => (queue.shift() ?? (() => stalled(url, init)))()));
+    const result = fetchWithRetry("https://x.example/a", { timeoutMs: 1000, baseDelayMs: 100 });
+    const assertion = expect(result).rejects.toMatchObject({ name: "TimeoutError" });
+    await vi.advanceTimersByTimeAsync(1200);
+    await assertion;
+  });
+
+  it("cuts off a body that stalls after the headers arrived", async () => {
+    let bodySignal;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url, { signal }) => {
+        bodySignal = signal;
+        return response(200);
+      })
+    );
+    await fetchWithRetry("https://x.example/a", { timeoutMs: 1000 });
+    expect(bodySignal.aborted).toBe(false);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(bodySignal.aborted).toBe(true);
+    expect(bodySignal.reason.name).toBe("TimeoutError");
+  });
+
+  it("passes the caller's own abort reason through, rather than a timeout", async () => {
+    vi.stubGlobal("fetch", stalledFetch());
+    const controller = new AbortController();
+    const result = fetchWithRetry("https://x.example/a", { signal: controller.signal, timeoutMs: 1000 });
+    const reason = cancelledError();
+    const assertion = expect(result).rejects.toBe(reason);
+    controller.abort(reason);
+    await assertion;
   });
 });
 
@@ -241,6 +318,64 @@ describe("fetchPages", () => {
       return { items: ["a"], done: false };
     });
     await expect(fetchPages({ fetchPage, signal: controller.signal })).rejects.toMatchObject({ name: "AbortError" });
+  });
+
+  describe("when cancelled", () => {
+    const cancelled = () => {
+      const controller = new AbortController();
+      controller.abort(cancelledError());
+      return controller;
+    };
+
+    it("keeps the pages that arrived and reports the cancel", async () => {
+      const controller = new AbortController();
+      const abort = Object.assign(new Error("aborted"), { name: "AbortError" });
+      const fetchPage = vi.fn(async (page) => {
+        if (page === 3) {
+          controller.abort(cancelledError());
+          throw abort;
+        }
+        return { items: [`p${page}`], done: false };
+      });
+      const result = await fetchPages({ fetchPage, signal: controller.signal });
+      expect(result.items).toEqual(["p1", "p2"]);
+      expect(result.pageError).toBeInstanceOf(StoreError);
+      expect(result.pageError.kind).toBe("cancelled");
+      expect(result.truncated).toBe(false);
+      expect(fetchPage).toHaveBeenCalledTimes(3);
+    });
+
+    it("reports a cancel with nothing loaded", async () => {
+      const controller = cancelled();
+      const fetchPage = vi.fn(async () => Promise.reject(Object.assign(new Error("aborted"), { name: "AbortError" })));
+      const result = await fetchPages({ fetchPage, signal: controller.signal });
+      expect(result.items).toEqual([]);
+      expect(result.pageError.kind).toBe("cancelled");
+    });
+
+    it("keeps a contiguous run when a concurrent batch is cut short", async () => {
+      const controller = new AbortController();
+      const abort = Object.assign(new Error("aborted"), { name: "AbortError" });
+      const fetchPage = vi.fn(async (page) => {
+        if (page === 2) {
+          controller.abort(cancelledError());
+          throw abort;
+        }
+        return { items: [`p${page}`], done: false };
+      });
+      const result = await fetchPages({ fetchPage, concurrency: 3, signal: controller.signal });
+      // Page 3 arrived, but page 2 didn't: it can't be kept without a gap.
+      expect(result.items).toEqual(["p1"]);
+      expect(result.pageError.kind).toBe("cancelled");
+    });
+
+    it("still throws an ordinary abort", async () => {
+      const controller = new AbortController();
+      controller.abort();
+      await expect(fetchPages({ fetchPage: async () => ({ items: ["a"], done: false }), signal: controller.signal })).rejects.toMatchObject({
+        name: "AbortError",
+      });
+    });
   });
 
   describe("with concurrency", () => {

@@ -1910,3 +1910,167 @@ describe("filters match per variant (#92)", () => {
     expect(within(card("Alpha Tee")).getByText(/\$20(\.00)? - \$60(\.00)?/)).toBeTruthy();
   });
 });
+
+describe("cancelling a slow or stalled load (#148)", () => {
+  const never = () => new Promise(() => {});
+  // A collection of two pages (the feed pages at 250): 250 products, then 50.
+  const bigStore = () => ({ collections: { all: Array.from({ length: 300 }, (_, i) => item(`Big ${String(i).padStart(3, "0")}`, "Acme")) } });
+  const page2 = (url) => url.host === A && url.pathname === "/collections/all/products.json" && url.searchParams.get("page") === "2";
+  const cancelButton = () => screen.queryByRole("button", { name: "Cancel loading" });
+  const controlsEnabled = () => {
+    expect(input().disabled).toBe(false);
+    expect(screen.getByTitle("Recent Stores").disabled).toBe(false);
+  };
+
+  it("keeps the controls disabled during a normal load, and offers Cancel", async () => {
+    const slow = deferred();
+    const hold = (url) => (url.host === A && url.pathname === "/collections/tees/products.json" ? slow.promise : undefined);
+    vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: storeA() }, hold));
+    openAt(`/${A}/collections/tees`);
+
+    await waitFor(() => expect(input().disabled).toBe(true));
+    expect(screen.getByTitle("Load this store").disabled).toBe(true);
+    expect(screen.getByRole("combobox").disabled ?? screen.getByRole("combobox").hasAttribute("data-disabled")).toBeTruthy();
+    expect(cancelButton()).not.toBeNull();
+
+    await act(async () => slow.release(jsonResponse({ products: storeA().collections.tees })));
+    await heading(3, 3);
+    controlsEnabled();
+    expect(cancelButton()).toBeNull();
+  });
+
+  it("Cancel keeps the pages loaded so far, warns, and re-enables the controls", async () => {
+    const fetchMock = fakeShopifyFetch({ [A]: bigStore() }, (url) => (page2(url) ? never() : undefined));
+    vi.stubGlobal("fetch", fetchMock);
+    openAt(`/${A}/collections/all`);
+    await screen.findByText("Loaded 250 products…");
+    expect(input().disabled).toBe(true);
+
+    const user = userEvent.setup();
+    await user.click(cancelButton());
+
+    await heading(250, 250);
+    expect(await screen.findByText("Loaded 250 products, but couldn't fetch the rest (loading was cancelled).")).not.toBeNull();
+    controlsEnabled();
+    expect(cancelButton()).toBeNull();
+    expect(window.location.pathname).toBe(`/${A}/collections/all`);
+  });
+
+  it("is keyboard operable and hands focus to the page", async () => {
+    vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: bigStore() }, (url) => (page2(url) ? never() : undefined)));
+    openAt(`/${A}/collections/all`);
+    await screen.findByText("Loaded 250 products…");
+    const user = userEvent.setup();
+    cancelButton().focus();
+    await user.keyboard("{Enter}");
+    await heading(250, 250);
+    expect(document.activeElement).not.toBe(document.body);
+  });
+
+  it("drops a page that answers after the cancel, even when the request ignores its signal", async () => {
+    const late = deferred();
+    vi.stubGlobal(
+      "fetch",
+      fakeShopifyFetch({ [A]: bigStore() }, (url) => (page2(url) ? late.promise : undefined), { honorAbort: false })
+    );
+    openAt(`/${A}/collections/all`);
+    await screen.findByText("Loaded 250 products…");
+    // The request that ignores its signal never settles, so the load can't
+    // finish by itself: the cancel must still not let page 2 in afterwards.
+    await userEvent.setup().click(cancelButton());
+    await act(async () => late.release(jsonResponse({ products: bigStore().collections.all.slice(250) })));
+    await drain();
+    expect(screen.queryByText(/Showing 300 of 300/)).toBeNull();
+  });
+
+  it("shows no stale products from a cancelled load once another store has loaded", async () => {
+    const late = deferred();
+    vi.stubGlobal(
+      "fetch",
+      fakeShopifyFetch({ [A]: bigStore(), [B]: storeB() }, (url) => (page2(url) ? late.promise : undefined), { honorAbort: false })
+    );
+    openAt(`/${A}/collections/all`);
+    await screen.findByText("Loaded 250 products…");
+    const user = userEvent.setup();
+    await user.click(cancelButton());
+    // Cancelled but not unwound (the fetch ignores its signal); a newer load wins.
+    act(() => {
+      window.history.pushState(null, "", `/${B}/collections/all`);
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+    await heading(2, 2);
+
+    await act(async () => late.release(jsonResponse({ products: bigStore().collections.all.slice(250) })));
+    await drain();
+    expect(titleShown("Echo Hat")).not.toBeNull();
+    expect(titleShown("Big 000")).toBeNull();
+    expect(screen.queryByText(/couldn't fetch the rest/)).toBeNull();
+    expect(window.location.pathname).toBe(`/${B}/collections/all`);
+  });
+
+  it("with nothing loaded yet, says so in a notice instead of an error, and leaves the store remembered", async () => {
+    vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: storeA() }, (url) => (url.pathname === "/collections/tees/products.json" ? never() : undefined)));
+    openAt(`/${A}/collections/tees`);
+    await waitFor(() => expect(cancelButton()).not.toBeNull());
+    await userEvent.setup().click(cancelButton());
+
+    expect(await screen.findByText("Loading was cancelled before any products arrived.")).not.toBeNull();
+    controlsEnabled();
+    expect(cancelButton()).toBeNull();
+
+    // The same store can be loaded again straight away.
+    const user = userEvent.setup();
+    await user.click(input());
+    await user.clear(input());
+    await user.paste(`${A}/collections/mugs`);
+    await heading(2, 2);
+    expect(titleShown("Delta Mug")).not.toBeNull();
+  });
+
+  describe("the request timeout", () => {
+    it("ends a stalled later page as the partial-results warning, and the controls come back", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: bigStore() }, (url) => (page2(url) ? never() : undefined)));
+      openAt(`/${A}/collections/all`);
+      await screen.findByText("Loaded 250 products…");
+      expect(input().disabled).toBe(true);
+
+      await act(async () => void (await vi.advanceTimersByTimeAsync(29_000)));
+      expect(input().disabled).toBe(true);
+      await act(async () => void (await vi.advanceTimersByTimeAsync(1_500)));
+
+      expect(await screen.findByText("Loaded 250 products, but couldn't fetch the rest (the store couldn't be reached).")).not.toBeNull();
+      controlsEnabled();
+    });
+
+    it("ends a stalled first page as the unreachable error", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: storeA() }, (url) => (url.pathname === "/collections/tees/products.json" ? never() : undefined)));
+      openAt(`/${A}/collections/tees`);
+      await waitFor(() => expect(input().disabled).toBe(true));
+      await act(async () => void (await vi.advanceTimersByTimeAsync(31_000)));
+
+      const alert = await screen.findByRole("alert");
+      expect(alert.textContent).toMatch(/Couldn't reach this store/);
+      controlsEnabled();
+    });
+
+    it("does not fire on a slow load that keeps progressing", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      const all = bigStore().collections.all;
+      const after = (ms, products) => new Promise((resolve) => setTimeout(() => resolve(jsonResponse({ products })), ms));
+      vi.stubGlobal(
+        "fetch",
+        fakeShopifyFetch({ [A]: { collections: { all } } }, (url) => {
+          if (url.host !== A || url.pathname !== "/collections/all/products.json") return undefined;
+          return page2(url) ? after(20_000, all.slice(250)) : after(20_000, all.slice(0, 250));
+        })
+      );
+      openAt(`/${A}/collections/all`);
+      // 40 s in all, each request 20 s: over the limit overall, under it per request.
+      await act(async () => void (await vi.advanceTimersByTimeAsync(41_000)));
+      await heading(300, 300);
+      expect(screen.queryByText(/couldn't fetch the rest/)).toBeNull();
+    });
+  });
+});

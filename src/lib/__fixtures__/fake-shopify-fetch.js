@@ -71,7 +71,8 @@ export function fakeShopifyFetch(stores, override, { honorAbort = true } = {}) {
     const signal = init?.signal;
     if (!honorAbort || !signal) return respond(input);
     return new Promise((resolve, reject) => {
-      const abort = () => reject(new DOMException("The operation was aborted.", "AbortError"));
+      // Rejects with the signal's reason, as fetch does (an AbortError unless aborted with another).
+      const abort = () => reject(signal.reason ?? new DOMException("The operation was aborted.", "AbortError"));
       if (signal.aborted) return abort();
       signal.addEventListener("abort", abort, { once: true });
       respond(input)
