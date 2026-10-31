@@ -41,7 +41,7 @@ Each platform is a small adapter (`src/lib/platforms/`) that turns the platform'
 - Recent Stores to quickly re-visit stores you have opened
 - Shareable links: the address keeps the store, collection, filters and sort, so a link reopens the same view. Selections the collection doesn't have are dropped with a warning, and prices are clamped to its range
 - A bookmarklet that opens the store you're browsing in StoreLens (see [Open a store in StoreLens](#open-a-store-in-storelens))
-- Partial results with a warning if a page of products fails to load, instead of discarding what already loaded
+- Partial results with a warning if a page of products fails to load, instead of discarding what already loaded; a Cancel button appears while products load and keeps what has loaded so far, and each request attempt (including reading its response) times out after 30 seconds
 - Clean UI built with Tailwind + shadcn/ui, in a light or dark theme: it follows your system setting, and the Theme menu in the header can override it (System, Light or Dark; remembered in this browser)  
 - Per-platform differences: a Fourthwall shop's collection dropdown offers "All Products", the collection in the link and the collections you have opened on that shop before (remembered in this browser, a few handles per shop), with a note saying why it can't list the rest (Fourthwall's collections can't be read from the browser, so paste a collection's link to open one); it has no vendor, type, tag or description filtering, because Fourthwall doesn't provide that data
 - Per-platform differences: a Big Cartel shop's collections are its categories (a product in several categories appears in each), "Artists" replaces the vendor filter and only shows for shops that fill it in, and there is no tag filtering because Big Cartel has no tags
@@ -134,7 +134,7 @@ Core browsing, filtering, and sorting features are functional.
 
 StoreLens relies on each platform’s public JSON endpoints. Stores that restrict or heavily customise their storefront data may return incomplete or inconsistent information.
 
-**A note about very large collections:** StoreLens works by fetching every product in a collection. Extremely large catalogues may load slowly, and performance will depend on your browser and computer.
+**A note about very large collections:** StoreLens works by fetching every product in a collection. Extremely large catalogues may load slowly, and performance will depend on your browser and computer. A slow load can be cancelled, and the products loaded so far are kept.
 
 ## Known Issues
 

@@ -383,7 +383,8 @@ describe("switching stores while one is still resolving", () => {
 
 describe("switching stores when the abandoned request is aborted (rejects)", () => {
   // The same situations as above, with a fetch that behaves like a real one: the
-  // request rejects with an AbortError the moment its signal aborts.
+  // request rejects (with an AbortError, unless aborted with another reason) the
+  // moment its signal aborts.
   const never = () => new Promise(() => {});
 
   it("shows the second store, with no error, when the first one's discovery is aborted", async () => {
@@ -1908,5 +1909,261 @@ describe("filters match per variant (#92)", () => {
     await open();
     expect(checkbox("In stock only").getAttribute("aria-checked")).toBe("true");
     expect(within(card("Alpha Tee")).getByText(/\$20(\.00)? - \$60(\.00)?/)).toBeTruthy();
+  });
+});
+
+describe("cancelling a slow or stalled load (#148)", () => {
+  const never = () => new Promise(() => {});
+  // A collection of two pages (the feed pages at 250): 250 products, then 50.
+  const bigStore = () => ({ collections: { all: Array.from({ length: 300 }, (_, i) => item(`Big ${String(i).padStart(3, "0")}`, "Acme")) } });
+  const page2 = (url) => url.host === A && url.pathname === "/collections/all/products.json" && url.searchParams.get("page") === "2";
+  const cancelButton = () => screen.queryByRole("button", { name: "Cancel loading" });
+  const controlsEnabled = () => {
+    expect(input().disabled).toBe(false);
+    expect(screen.getByTitle("Recent Stores").disabled).toBe(false);
+  };
+
+  it("keeps the controls disabled during a normal load, and offers Cancel", async () => {
+    const slow = deferred();
+    const hold = (url) => (url.host === A && url.pathname === "/collections/tees/products.json" ? slow.promise : undefined);
+    vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: storeA() }, hold));
+    openAt(`/${A}/collections/tees`);
+
+    await waitFor(() => expect(input().disabled).toBe(true));
+    expect(screen.getByTitle("Load this store").disabled).toBe(true);
+    expect(screen.getByRole("combobox").disabled ?? screen.getByRole("combobox").hasAttribute("data-disabled")).toBeTruthy();
+    expect(cancelButton()).not.toBeNull();
+
+    await act(async () => slow.release(jsonResponse({ products: storeA().collections.tees })));
+    await heading(3, 3);
+    controlsEnabled();
+    expect(cancelButton()).toBeNull();
+  });
+
+  it("Cancel keeps the pages loaded so far, warns, and re-enables the controls", async () => {
+    const fetchMock = fakeShopifyFetch({ [A]: bigStore() }, (url) => (page2(url) ? never() : undefined));
+    vi.stubGlobal("fetch", fetchMock);
+    openAt(`/${A}/collections/all`);
+    await screen.findByText("Loaded 250 products…");
+    expect(input().disabled).toBe(true);
+
+    const user = userEvent.setup();
+    await user.click(cancelButton());
+
+    await heading(250, 250);
+    expect(await screen.findByText("Loaded 250 products; you stopped loading the rest.")).not.toBeNull();
+    controlsEnabled();
+    expect(cancelButton()).toBeNull();
+    expect(window.location.pathname).toBe(`/${A}/collections/all`);
+  });
+
+  it("is keyboard operable and hands focus to the page", async () => {
+    vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: bigStore() }, (url) => (page2(url) ? never() : undefined)));
+    openAt(`/${A}/collections/all`);
+    await screen.findByText("Loaded 250 products…");
+    const user = userEvent.setup();
+    cancelButton().focus();
+    await user.keyboard("{Enter}");
+    await heading(250, 250);
+    expect(document.activeElement).not.toBe(document.body);
+  });
+
+  it("drops a page that answers after the cancel", async () => {
+    const late = deferred();
+    vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: bigStore() }, (url) => (page2(url) ? late.promise : undefined)));
+    openAt(`/${A}/collections/all`);
+    await screen.findByText("Loaded 250 products…");
+    await userEvent.setup().click(cancelButton());
+    await heading(250, 250);
+    await act(async () => late.release(jsonResponse({ products: bigStore().collections.all.slice(250) })));
+    await drain();
+    expect(document.body.textContent).toContain("Showing 250 of 250 products");
+    expect(document.body.textContent).not.toContain("Showing 300");
+  });
+
+  it("drops what a cancelled load still delivers once a newer input took over", async () => {
+    const late = deferred();
+    // A request that ignores its signal, so the cancelled load is still unwinding.
+    vi.stubGlobal(
+      "fetch",
+      fakeShopifyFetch({ [A]: bigStore() }, (url) => (page2(url) ? late.promise : undefined), { honorAbort: false })
+    );
+    openAt(`/${A}/collections/all`);
+    await screen.findByText("Loaded 250 products…");
+    await userEvent.setup().click(cancelButton());
+    // Back to the empty page: an input that starts no load of its own.
+    act(() => {
+      window.history.pushState(null, "", "/");
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+    await act(async () => late.release(jsonResponse({ products: bigStore().collections.all.slice(250) })));
+    await drain();
+    expect(titleShown("Big 000")).toBeNull();
+    expect(document.body.textContent).not.toContain("Showing");
+    expect(screen.getByText(/to get started/)).not.toBeNull();
+  });
+
+  it("shows no stale products from a cancelled load once another store has loaded", async () => {
+    const late = deferred();
+    vi.stubGlobal(
+      "fetch",
+      fakeShopifyFetch({ [A]: bigStore(), [B]: storeB() }, (url) => (page2(url) ? late.promise : undefined), { honorAbort: false })
+    );
+    openAt(`/${A}/collections/all`);
+    await screen.findByText("Loaded 250 products…");
+    const user = userEvent.setup();
+    await user.click(cancelButton());
+    // Cancelled but not unwound (the fetch ignores its signal); a newer load wins.
+    act(() => {
+      window.history.pushState(null, "", `/${B}/collections/all`);
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+    await heading(2, 2);
+
+    await act(async () => late.release(jsonResponse({ products: bigStore().collections.all.slice(250) })));
+    await drain();
+    expect(titleShown("Echo Hat")).not.toBeNull();
+    expect(titleShown("Big 000")).toBeNull();
+    expect(screen.queryByText(/couldn't fetch the rest/)).toBeNull();
+    expect(window.location.pathname).toBe(`/${B}/collections/all`);
+  });
+
+  it("with nothing loaded yet, says so in a notice instead of an error, and leaves the store remembered", async () => {
+    vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: storeA() }, (url) => (url.pathname === "/collections/tees/products.json" ? never() : undefined)));
+    openAt(`/${A}/collections/tees`);
+    await waitFor(() => expect(cancelButton()).not.toBeNull());
+    await userEvent.setup().click(cancelButton());
+
+    expect(await screen.findByText("Loading was cancelled before any products arrived.")).not.toBeNull();
+    controlsEnabled();
+    expect(cancelButton()).toBeNull();
+
+    // The same store can be loaded again straight away.
+    const user = userEvent.setup();
+    await user.click(input());
+    await user.clear(input());
+    await user.paste(`${A}/collections/mugs`);
+    await heading(2, 2);
+    expect(titleShown("Delta Mug")).not.toBeNull();
+  });
+
+  it("cancels a Big Cartel shop's feed, which has no pages to keep", async () => {
+    const shop = "example-shop.bigcartel.com";
+    vi.stubGlobal(
+      "fetch",
+      fakeStoresFetch({ bigcartel: { "example-shop": [] } }, (url) => (url.pathname === "/example-shop/products.json" ? never() : undefined))
+    );
+    openAt(`/${shop}/products`);
+    await waitFor(() => expect(cancelButton()).not.toBeNull());
+    await userEvent.setup().click(cancelButton());
+
+    expect(await screen.findByText("Loading was cancelled before any products arrived.")).not.toBeNull();
+    // (Recent Stores stays disabled: nothing has been visited yet.)
+    expect(input().disabled).toBe(false);
+    expect(cancelButton()).toBeNull();
+  });
+
+  describe("the request timeout", () => {
+    // Browsers reject a body read that the timeout aborts with a plain AbortError,
+    // not the signal's reason (headers-phase aborts do give the reason).
+    const stalledBody = (init) => ({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      json: () =>
+        new Promise((_, reject) =>
+          init.signal.addEventListener("abort", () => reject(new DOMException("The operation was aborted.", "AbortError")), { once: true })
+        ),
+    });
+
+    it("keeps the pages loaded when a later page's body stalls", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: bigStore() }, (url, init) => (page2(url) ? stalledBody(init) : undefined)));
+      openAt(`/${A}/collections/all`);
+      await screen.findByText("Loaded 250 products…");
+      await act(async () => void (await vi.advanceTimersByTimeAsync(31_000)));
+
+      expect(await screen.findByText("Loaded 250 products, but couldn't fetch the rest (the store couldn't be reached).")).not.toBeNull();
+      controlsEnabled();
+    });
+
+    it("reports a first page whose body stalls as unreachable", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      vi.stubGlobal(
+        "fetch",
+        fakeShopifyFetch({ [A]: storeA() }, (url, init) => (url.pathname === "/collections/tees/products.json" ? stalledBody(init) : undefined))
+      );
+      openAt(`/${A}/collections/tees`);
+      await waitFor(() => expect(input().disabled).toBe(true));
+      await act(async () => void (await vi.advanceTimersByTimeAsync(31_000)));
+
+      expect((await screen.findByRole("alert")).textContent).toMatch(/Couldn't reach this store/);
+      controlsEnabled();
+    });
+
+    it("keeps the pages loaded when a Fourthwall page's body stalls", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      const F = "merch.example.com";
+      const many = Array.from({ length: 45 }, (_, i) =>
+        fw.product({ title: `Fw ${i}`, handle: `fw-${i}`, price: 10 + i, variants: [fw.variant("S", { cents: (10 + i) * 100 })] })
+      );
+      vi.stubGlobal(
+        "fetch",
+        fakeStoresFetch({ fourthwall: { [F]: { collections: { all: many } } } }, (url, init) =>
+          url.host === F && url.pathname === "/collections/all/2.json" ? stalledBody(init) : undefined
+        )
+      );
+      openAt(`/${F}/collections/all`);
+      await waitFor(() => expect(cancelButton()).not.toBeNull());
+      await act(async () => void (await vi.advanceTimersByTimeAsync(31_000)));
+
+      expect(await screen.findByText("Loaded 20 products, but couldn't fetch the rest (the store couldn't be reached).")).not.toBeNull();
+      controlsEnabled();
+    });
+
+    it("ends a stalled later page as the partial-results warning, and the controls come back", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: bigStore() }, (url) => (page2(url) ? never() : undefined)));
+      openAt(`/${A}/collections/all`);
+      await screen.findByText("Loaded 250 products…");
+      expect(input().disabled).toBe(true);
+
+      await act(async () => void (await vi.advanceTimersByTimeAsync(29_000)));
+      expect(input().disabled).toBe(true);
+      await act(async () => void (await vi.advanceTimersByTimeAsync(1_500)));
+
+      expect(await screen.findByText("Loaded 250 products, but couldn't fetch the rest (the store couldn't be reached).")).not.toBeNull();
+      controlsEnabled();
+    });
+
+    it("ends a stalled first page as the unreachable error", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: storeA() }, (url) => (url.pathname === "/collections/tees/products.json" ? never() : undefined)));
+      openAt(`/${A}/collections/tees`);
+      await waitFor(() => expect(input().disabled).toBe(true));
+      await act(async () => void (await vi.advanceTimersByTimeAsync(31_000)));
+
+      const alert = await screen.findByRole("alert");
+      expect(alert.textContent).toMatch(/Couldn't reach this store/);
+      controlsEnabled();
+    });
+
+    it("does not fire on a slow load that keeps progressing", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      const all = bigStore().collections.all;
+      const after = (ms, products) => new Promise((resolve) => setTimeout(() => resolve(jsonResponse({ products })), ms));
+      vi.stubGlobal(
+        "fetch",
+        fakeShopifyFetch({ [A]: { collections: { all } } }, (url) => {
+          if (url.host !== A || url.pathname !== "/collections/all/products.json") return undefined;
+          return page2(url) ? after(20_000, all.slice(250)) : after(20_000, all.slice(0, 250));
+        })
+      );
+      openAt(`/${A}/collections/all`);
+      // 40 s in all, each request 20 s: over the limit overall, under it per request.
+      await act(async () => void (await vi.advanceTimersByTimeAsync(41_000)));
+      await heading(300, 300);
+      expect(screen.queryByText(/couldn't fetch the rest/)).toBeNull();
+    });
   });
 });

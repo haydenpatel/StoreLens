@@ -2,7 +2,7 @@
 // {origin}/collections/{slug}/{n}.json (20 products a page; `?page=` and friends
 // are ignored, only the path form pages). See platforms/types.js for the shape
 // this maps onto.
-import { StoreError, diagnoseFailure, isAbort, probeUrl } from "@/lib/errors";
+import { StoreError, diagnoseFailure, probeUrl } from "@/lib/errors";
 import { fetchPages, fetchWithRetry } from "./requests";
 
 const PLATFORM_ID = "fourthwall";
@@ -180,7 +180,7 @@ async function fetchCollection(collectionUrl, { signal, onProgress, maxPages = M
     try {
       response = await request();
     } catch (err) {
-      if (isAbort(err, signal)) throw err;
+      if (signal?.aborted) throw err;
       const diagnosis = await diagnose({ cause: err });
       if (diagnosis.kind !== "not-found" || page > 1) throw diagnosis;
       // The shop answers but this page threw. The feed's real 404 carries no
@@ -190,7 +190,7 @@ async function fetchCollection(collectionUrl, { signal, onProgress, maxPages = M
       try {
         response = await request();
       } catch (retryErr) {
-        if (isAbort(retryErr, signal)) throw retryErr;
+        if (signal?.aborted) throw retryErr;
         throw diagnosis;
       }
     }
@@ -200,7 +200,7 @@ async function fetchCollection(collectionUrl, { signal, onProgress, maxPages = M
     try {
       data = await response.json();
     } catch (err) {
-      if (isAbort(err, signal)) throw err;
+      if (signal?.aborted) throw err;
       throw err instanceof SyntaxError ? new StoreError("unsupported-platform", { cause: err }) : await diagnose({ cause: err });
     }
     if (!Array.isArray(data?.products)) throw new StoreError("unsupported-platform");
