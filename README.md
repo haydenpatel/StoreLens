@@ -71,13 +71,13 @@ StoreLens has no server of its own that receives store data: the page is static,
 
 - **Google Fonts.** Every visit loads the Sofia Sans Semi Condensed font from `fonts.googleapis.com` and `fonts.gstatic.com` (`index.html`), so Google sees the request (your IP address and the usual browser headers). The font is not self-hosted.
 - **Cloudflare Web Analytics.** The production site at storelens.pages.dev has Cloudflare's Web Analytics beacon (`static.cloudflareinsights.com/beacon.min.js`, which reports to `cloudflareinsights.com`). It is injected by Cloudflare Pages, so it is not in this repository or in the local dev build. Whether the page URL it reports includes the path or query string (and so the store you opened) has not been verified here, so don't assume it doesn't.
-- **The stores themselves.** Your browser requests the store's product feeds directly from the store (Shopify `/products.json`, `/collections.json` and `/meta.json`; Fourthwall `/collections/{handle}/{page}.json`), and loads product images from the store's own image host (for example `cdn.shopify.com`). Big Cartel feeds come from `api.bigcartel.com`. These stores see your IP address, and what you open, as they would for any visitor.
+- **The stores themselves.** Your browser requests the store's product feeds directly from the store (Shopify `/products.json`, `/collections.json` and `/meta.json`; Fourthwall `/collections/{handle}/{page}.json`), and loads product images from the platform's image CDN: `cdn.shopify.com` for Shopify and `imgproxy.fourthwall.dev` for Fourthwall. Big Cartel feeds come from `api.bigcartel.com`, with images from `assets.bigcartel.com`. Those image hosts come from the URLs in each live feed (for Fourthwall and Big Cartel StoreLens only passes the feed's URLs through), so they can change. These stores see your IP address, and what you open, as they would for any visitor.
 - **Shared links.** A StoreLens link names a store in its address, so opening one makes the recipient's browser contact that store, as above. Only share a link with someone you'd be comfortable showing that store to.
 - **Browser storage.** StoreLens keeps the following in this browser's `localStorage` only; it is never sent anywhere:
   - `storelens-theme`: your Theme menu choice (System, Light or Dark).
   - `storelens-url-history`: Recent Stores, the last five store addresses you opened.
   - `storelens:collections:v3:{platform}:{store}`: a six-hour cache of a store's collection list.
-  - `storelens:platform:v1:{store}`: which platform a store was recognised as.
+  - `storelens:platform:v1:{store}`: which platform a store was recognised as, remembered for seven days.
   - `storelens:visited-collections:v1`: the collection handles you have opened on Fourthwall shops (up to 20 per shop, 25 shops).
 
   Clearing the site's data in your browser removes all of it.
