@@ -1,5 +1,5 @@
 import { loadCollectionsCache, saveCollectionsCache } from "@/lib/store";
-import { StoreError, diagnoseFailure, isAbort, kindFromStatus, probeUrl } from "@/lib/errors";
+import { StoreError, diagnoseFailure, kindFromStatus, probeUrl, withTimeout } from "@/lib/errors";
 import { compareText } from "@/lib/locale";
 import { fetchPages, fetchWithRetry } from "./requests";
 
@@ -171,7 +171,7 @@ async function fetchCollection(collectionUrl, { signal, maxPages = MAX_PRODUCT_P
       if (page === 1 && !isLocalePath && !currencyRequest) currencyRequest = readCurrency(origin);
       response = await request;
     } catch (err) {
-      if (isAbort(err, signal)) throw err;
+      if (signal?.aborted) throw err;
       throw await diagnose({ cause: err });
     }
     if (!response.ok) throw await diagnose({ status: response.status });
@@ -180,7 +180,7 @@ async function fetchCollection(collectionUrl, { signal, maxPages = MAX_PRODUCT_P
     try {
       data = await response.json();
     } catch (err) {
-      if (isAbort(err, signal)) throw err;
+      if (signal?.aborted) throw err;
       // A body that isn't JSON is a web page, not a feed; a read that fails
       // part-way is the connection.
       throw err instanceof SyntaxError ? new StoreError("unsupported-platform", { cause: err }) : await diagnose({ cause: err });
@@ -201,7 +201,8 @@ async function fetchCollection(collectionUrl, { signal, maxPages = MAX_PRODUCT_P
     signal,
     onProgress,
   });
-  if (currencyRequest) {
+  // Not worth waiting for once the user has cancelled.
+  if (currencyRequest && pageError?.kind !== "cancelled") {
     let timer;
     const grace = new Promise((resolve) => {
       timer = setTimeout(() => resolve(undefined), META_GRACE_MS);
@@ -218,7 +219,7 @@ async function fetchCollectionsPage(origin, page, signal) {
   try {
     response = await fetchWithRetry(`${origin}/collections.json?limit=250&page=${page}`, { signal });
   } catch (err) {
-    if (isAbort(err, signal)) throw err;
+    if (signal?.aborted) throw err;
     throw new StoreError("blocked-or-offline", { cause: err });
   }
   if (!response.ok) {
@@ -232,7 +233,7 @@ async function fetchCollectionsPage(origin, page, signal) {
   try {
     data = await response.json();
   } catch (err) {
-    if (isAbort(err, signal)) throw err;
+    if (signal?.aborted) throw err;
     throw new StoreError(err instanceof SyntaxError ? "unsupported-platform" : "blocked-or-offline", { cause: err });
   }
   return Array.isArray(data?.collections) ? data.collections : [];
@@ -271,10 +272,12 @@ async function probeAllProductsCollection(origin, existingHandles, signal) {
   let inconclusive = false;
   for (const handle of ALL_PRODUCTS_HANDLES) {
     if (existingHandles.has(handle)) return { found: null, inconclusive };
+    // Bounded by the request timeout, headers and body; a stall is just inconclusive.
+    const request = withTimeout(signal);
     try {
       const response = await fetch(
         `${origin}/collections/${handle}/products.json?limit=1`,
-        { signal }
+        { signal: request.signal }
       );
       if (!response.ok) {
         if (isTransientStatus(response.status)) inconclusive = true;
@@ -289,10 +292,12 @@ async function probeAllProductsCollection(origin, existingHandles, signal) {
       // switched stores) — propagate it rather than treating it as "this
       // candidate failed", so the aborted discovery can't save a partial
       // result to the cache.
-      if (err?.name === "AbortError") throw err;
+      if (signal?.aborted) throw err;
       // A body that isn't JSON is a page, not a feed: the store's own answer.
       // A dropped connection or a body cut short says nothing about this handle.
       if (!(err instanceof SyntaxError)) inconclusive = true;
+    } finally {
+      request.clear();
     }
   }
   return { found: null, inconclusive };
