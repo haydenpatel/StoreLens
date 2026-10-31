@@ -291,6 +291,16 @@ describe("filterAndSortProducts", () => {
       expect(run({ selectedOptions: { Material: ["Cotton"] } })).toEqual([]);
       expect(run({ selectedOptions: { option1: ["M"] } })).toEqual([]);
     });
+
+    it("excludes a product with no variants whenever an option filter applies", () => {
+      const products = norm([
+        product({ title: "No variants", options: [{ name: "Size" }], variants: [] }),
+        product({ title: "Sized", options: [{ name: "Size" }], variants: [variant({ option1: "S" })] }),
+      ]);
+      expect(run({}, products)).toEqual(["No variants", "Sized"]);
+      expect(run({ selectedOptions: { Size: ["S"] } }, products)).toEqual(["Sized"]);
+      expect(run({ selectedOptions: { Size: ["S", "M"] } }, products)).toEqual(["Sized"]);
+    });
   });
 
   describe("price range", () => {
