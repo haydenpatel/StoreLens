@@ -58,7 +58,7 @@ export function withSearchText(products) {
   });
 }
 
-// Parses filter/sort state out of the URL's query string (?q=...&vendor=a,b&...).
+// Parses filter/sort state out of the URL's query string (?q=...&vendor=a&vendor=b&...).
 // Returns null when there's nothing to restore, so callers can tell "no
 // params" apart from "params that happen to match the defaults".
 export function parseFilterParams(search) {
