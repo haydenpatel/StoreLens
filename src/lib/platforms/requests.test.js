@@ -385,6 +385,19 @@ describe("fetchPages", () => {
       expect(result.pageError.kind).toBe("cancelled");
     });
 
+    it("treats a plain AbortError with a live signal as a failed page, not an abort", async () => {
+      // What a browser rejects a body read with when our own timeout aborted it.
+      const plain = Object.assign(new Error("Fetch is aborted"), { name: "AbortError" });
+      const controller = new AbortController();
+      const fetchPage = vi.fn(async (page) => {
+        if (page === 2) throw plain;
+        return { items: [`p${page}`], done: false };
+      });
+      const result = await fetchPages({ fetchPage, signal: controller.signal });
+      expect(result.items).toEqual(["p1"]);
+      expect(result.pageError).toBe(plain);
+    });
+
     it("still throws an ordinary abort", async () => {
       const controller = new AbortController();
       controller.abort();

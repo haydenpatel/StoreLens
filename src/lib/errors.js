@@ -76,10 +76,11 @@ export function describeStoreErrorReason(err) {
   return typeof copy.reason === "function" ? copy.reason(err.status) : copy.reason;
 }
 
-// Whether `err` is an abort. Name-based, so only for a caller that owns no signal
-// (the shared Big Cartel feed); a request that has one asks `signal.aborted`
-// instead, since a browser rejects a body read aborted by the timeout with a
-// plain AbortError too.
+// Whether `err` is an abort: the signal aborted, or the error is named AbortError.
+// The name alone can't tell the caller's abort from our own timeout (a browser
+// rejects a body read aborted by the timeout with a plain AbortError too), so code
+// that reads request bodies asks `signal.aborted` instead. This is for Big Cartel's
+// shared feed load, which rejects with the signal's reason when the caller aborts.
 export const isAbort = (err, signal) => signal?.aborted || err?.name === "AbortError";
 
 // The reason a load's signal is aborted with when the user presses Cancel, as
