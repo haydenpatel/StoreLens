@@ -45,7 +45,7 @@ Each platform is a small adapter (`src/lib/platforms/`) that turns the platform'
 - Clean UI built with Tailwind + shadcn/ui, in a light or dark theme: it follows your system setting, and the Theme menu in the header can override it (System, Light or Dark; remembered in this browser)  
 - Per-platform differences: a Fourthwall shop's collection dropdown offers "All Products", the collection in the link and the collections you have opened on that shop before (remembered in this browser, a few handles per shop), with a note saying why it can't list the rest (Fourthwall's collections can't be read from the browser, so paste a collection's link to open one); it has no vendor, type, tag or description filtering, because Fourthwall doesn't provide that data
 - Per-platform differences: a Big Cartel shop's collections are its categories (a product in several categories appears in each), "Artists" replaces the vendor filter and only shows for shops that fill it in, and there is no tag filtering because Big Cartel has no tags
-- 100% client-side — no API keys or server required
+- 100% client-side — no StoreLens backend, API keys or server required (your browser still talks to a few third parties; see [Privacy](#privacy))
 - Static build that needs no server. Store and collection links rely on `public/_redirects` sending every path to `index.html`, which Cloudflare Pages and Netlify read. On GitHub Pages and Vercel (which ignore that file) those links would 404 unless you add an equivalent rewrite rule
 
 
@@ -64,6 +64,23 @@ Then click the bookmark while on a store's page. It builds the same `/{host}{pat
 - It only helps on stores StoreLens supports (see [Supported platforms](#supported-platforms)). A Big Cartel shop on its own domain can't be read, as described in [Known Issues](#big-cartel).
 
 Some sites' security settings may block bookmarklets. If yours does, paste the store's address into StoreLens instead.
+
+## Privacy
+
+StoreLens has no server of its own that receives store data: the page is static, and everything it shows is fetched and processed in your browser. That doesn't mean nothing leaves the browser:
+
+- **Google Fonts.** Every visit loads the Sofia Sans Semi Condensed font from `fonts.googleapis.com` and `fonts.gstatic.com` (`index.html`), so Google sees the request (your IP address and the usual browser headers). The font is not self-hosted.
+- **Cloudflare Web Analytics.** The production site at storelens.pages.dev has Cloudflare's Web Analytics beacon (`static.cloudflareinsights.com/beacon.min.js`, which reports to `cloudflareinsights.com`). It is injected by Cloudflare Pages, so it is not in this repository or in the local dev build. Cloudflare describes it as cookieless; whether the page URL it reports includes the path or query string (and so the store you opened) has not been verified here, so don't assume it doesn't.
+- **The stores themselves.** Your browser requests the store's product feeds directly from the store (Shopify `/products.json`, `/collections.json` and `/meta.json`; Fourthwall `/collections/{handle}/{page}.json`), and loads product images from the store's own image host (for example `cdn.shopify.com`). Big Cartel feeds come from `api.bigcartel.com`. These stores see your IP address, and what you open, as they would for any visitor.
+- **Shared links.** A StoreLens link names a store in its address, so opening one makes the recipient's browser contact that store, as above. Only share a link with someone you'd be comfortable showing that store to.
+- **Browser storage.** StoreLens keeps the following in this browser's `localStorage` only; it is never sent anywhere:
+  - `storelens-theme`: your Theme menu choice (System, Light or Dark).
+  - `storelens-url-history`: Recent Stores, the last five store addresses you opened.
+  - `storelens:collections:v3:{platform}:{store}`: a six-hour cache of a store's collection list.
+  - `storelens:platform:v1:{store}`: which platform a store was recognised as.
+  - `storelens:visited-collections:v1`: the collection handles you have opened on Fourthwall shops (up to 20 per shop, 25 shops).
+
+  Clearing the site's data in your browser removes all of it.
 
 ## Tech Stack
 
