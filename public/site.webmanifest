@@ -4,6 +4,7 @@
         {"src":"android-chrome-512x512.png","sizes":"512x512","type":"image/png"}
     ],
     "theme_color":"#007BFF",
-    "background_color":"#ffffff",
+    "background_color":"#fafafa",
+    "start_url":"/",
     "display":"standalone"
 }

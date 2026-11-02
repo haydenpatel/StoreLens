@@ -100,6 +100,14 @@ describe("compareText", () => {
     expect(sorted(["Zebra", "apple", "Apple"])).toEqual(["Apple", "apple", "Zebra"]);
   });
 
+  it("orders numerically equal strings the same way whatever the input order", () => {
+    for (const list of [["1", "01"], ["01", "1"]]) expect(sorted(list)).toEqual(["01", "1"]);
+    for (const list of [["Item 1", "Item 01"], ["Item 01", "Item 1"]]) {
+      expect(sorted(list)).toEqual(["Item 01", "Item 1"]);
+    }
+    expect(compareText("1", "1")).toBe(0);
+  });
+
   it("orders case-only ties capital first in every locale", () => {
     for (const tag of ["en-US", "da-DK", "tr-TR"]) {
       setLocale(tag);

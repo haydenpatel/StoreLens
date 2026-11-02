@@ -211,9 +211,7 @@ export default function StoreLensApp() {
   const [priceRangeFor, setPriceRangeFor] = useState(filterData);
   if (priceRangeFor !== filterData) {
     setPriceRangeFor(filterData);
-    if (filterData.minPrice !== Infinity && filterData.maxPrice !== 0) {
-      setPriceRange([filterData.minPrice, filterData.maxPrice]);
-    }
+    setPriceRange([filterData.minPrice, filterData.maxPrice]);
   }
 
   const [inStockOnly, setInStockOnly] = useState(false);

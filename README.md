@@ -142,7 +142,7 @@ StoreLens relies on each platform’s public JSON endpoints. Stores that restric
 
 - Known currencies are shown as symbol, amount and code ("$12.50 CAD", "£12.50 GBP"), so a CAD price is never mistaken for USD. A bare "$" with no code means the currency is unknown. This applies to every platform that reports a currency (Shopify via `/meta.json`, Big Cartel, Fourthwall); a Fourthwall shop in USD therefore reads "$12.50 USD".
 - The interface text stays English and digits stay Latin (0-9) in every locale; only the digit layout and sort order follow the browser's language.
-- Search does not fold ß, ø or æ ("strasse" won't find "Straße").
+- Search does not fold ß, ø, æ or the dotless Turkish ı ("strasse" won't find "Straße", "KIRMIZI" won't find "kırmızı"). Folding covers Latin script only, so Arabic marks and full-width forms are not folded either.
 - Edge keeps the light favicon on dark tab strips (Safari shows a light-tile icon).
 
 ### Shopify
