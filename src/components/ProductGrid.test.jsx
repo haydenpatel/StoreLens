@@ -124,3 +124,24 @@ describe("ProductGrid listing", () => {
     });
   });
 });
+
+describe("ProductGrid accessibility (#145)", () => {
+  const p = { id: 1, handle: "p", title: "Tee", images: [], tags: [], variants: [], currency: "USD" };
+  const grid = (products, total) => (
+    <ProductGrid products={products} totalProducts={total} sortBy="title-asc" setSortBy={vi.fn()} currency="USD" />
+  );
+
+  it("names the sort select by its visible label", () => {
+    render(grid([p], 1));
+    expect(screen.getByRole("combobox", { name: "Sort by:" })).toBeTruthy();
+  });
+
+  it("announces the result count politely as one sentence", () => {
+    const { rerender } = render(grid([p], 3));
+    const status = screen.getByRole("status");
+    expect(status.textContent).toBe("Showing 1 of 3 products");
+    rerender(grid([p, p], 3));
+    expect(screen.getByRole("status")).toBe(status);
+    expect(status.textContent).toBe("Showing 2 of 3 products");
+  });
+});

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import Header from "../components/Header";
 import Sidebar from "../components/Sidebar";
 import ProductGrid from "../components/ProductGrid";
+import LoadStatus from "../components/LoadStatus";
 
 import {
   buildFilterSearch,
@@ -962,11 +963,13 @@ export default function StoreLensApp() {
             </Button>
           )}
 
+          <LoadStatus loading={loading} loaded={loadProgress} />
+
           {loading && (
             <div className="flex flex-col items-center justify-center gap-3 h-64">
               <Loader2 className="w-8 h-8 animate-spin text-primary" />
               {loadProgress > 0 && (
-                <p className="text-sm text-muted-foreground">
+                <p aria-hidden="true" className="text-sm text-muted-foreground">
                   Loaded {formatCount(loadProgress)} products…
                 </p>
               )}
