@@ -12,12 +12,12 @@ describe("LoadStatus (#145)", () => {
     expect(status.textContent).toBe("");
     rerender(<LoadStatus loading loaded={0} />);
     expect(screen.getByRole("status")).toBe(status);
-    expect(status.textContent).toBe("Loading products…");
+    expect(status.textContent).toBe("Loading products");
   });
 
   it("reports how many products have loaded", () => {
     render(<LoadStatus loading loaded={1250} />);
-    expect(screen.getByRole("status").textContent).toBe("Loaded 1,250 products…");
+    expect(screen.getByRole("status").textContent).toBe("1,250 products loaded so far");
   });
 
   it("clears when the load ends", () => {
