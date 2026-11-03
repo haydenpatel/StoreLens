@@ -2,6 +2,11 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <!-- Before JS runs (and for the media query alone) each follows the OS. They
+         come before the script below so its loop finds them: it points both at
+         the saved theme, and applyTheme keeps them in step afterwards. -->
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#09090b" />
     <!-- Applies the theme before first paint so there is no flash of the wrong
          one, and points both theme-color metas (the colours of the page
          background) at it. Keep in step with src/lib/theme.js (key, rules and
@@ -26,15 +31,11 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sofia+Sans+Semi+Condensed:ital,wght@0,1..1000;1,1..1000&display=swap">
-    <!-- Before JS runs (and for the media query alone) each follows the OS; the
-         script above and applyTheme then set both to the chosen theme. -->
-    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff" />
-    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#09090b" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>StoreLens</title>
   </head>
   <body>
-    <noscript>StoreLens needs JavaScript to load a store's products. Please turn it on and reload.</noscript>
+    <noscript style="display:block;padding:16px;font-family:sans-serif">StoreLens needs JavaScript to load a store's products. Please turn it on and reload.</noscript>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>

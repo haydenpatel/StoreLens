@@ -229,6 +229,14 @@ describe("index.html pre-render script", () => {
     expect(html.indexOf("<script>")).toBeLessThan(html.indexOf('type="module"'));
   });
 
+  it("comes after the theme-color metas, and its selector matches them", () => {
+    const script = html.indexOf("<script>");
+    const metaTags = [...html.matchAll(/<meta name="theme-color"[^>]*>/g)];
+    expect(metaTags).toHaveLength(2);
+    for (const tag of metaTags) expect(tag.index).toBeLessThan(script);
+    expect(scripts[0]).toContain('meta[name="theme-color"]');
+  });
+
   it.each([
     [undefined, true],
     [undefined, false],
