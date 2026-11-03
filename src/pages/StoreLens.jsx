@@ -963,7 +963,7 @@ export default function StoreLensApp() {
             </Button>
           )}
 
-          <LoadStatus loading={loading} loaded={loadProgress} />
+          <LoadStatus loading={loading} count={products.length} />
 
           {loading && (
             <div className="flex flex-col items-center justify-center gap-3 h-64">
