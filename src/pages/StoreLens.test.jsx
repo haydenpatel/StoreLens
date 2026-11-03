@@ -26,6 +26,16 @@ vi.mock("@/lib/platforms", async (importOriginal) => {
   };
 });
 
+// The real retry backoff (500 + 1000 ms) would make every retry path sleep;
+// shrink it to 1 ms (Retry-After waits included), keeping the retry count.
+vi.mock("@/lib/platforms/requests", async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    fetchWithRetry: (url, options) => actual.fetchWithRetry(url, { ...options, baseDelayMs: 1, maxDelayMs: 1 }),
+  };
+});
+
 // jsdom has neither observer (nor matchMedia, below); the product grid and the
 // Radix controls need them.
 class NoopObserver {
@@ -70,7 +80,7 @@ const storeA = () => ({
 const storeB = () => ({ collections: { all: [item("Echo Hat", "Zed"), item("Foxtrot Scarf", "Zed")] } });
 
 const heading = (shown, total) =>
-  screen.findByText((_, el) => el?.textContent === `Showing ${shown} of ${total} products`, {}, { timeout: 3000 });
+  screen.findByText((_, el) => el?.textContent === `Showing ${shown} of ${total} products`);
 const titleShown = (title) => screen.queryByText(title);
 const input = () => screen.getByPlaceholderText("Paste a store or collection URL");
 
@@ -543,7 +553,7 @@ describe("store resolution that takes a while", () => {
     openAt(`/${A}`);
     const user = userEvent.setup();
 
-    const retry = await screen.findByTitle("Retry loading collections", {}, { timeout: 10000 });
+    const retry = await screen.findByTitle("Retry loading collections");
     expect(titleShown("Alpha Tee")).toBeNull();
 
     failing = false;
@@ -561,14 +571,14 @@ describe("store resolution that takes a while", () => {
     vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: storeA(), [B]: storeB() }, down));
     openAt(`/${A}`);
     const user = userEvent.setup();
-    await screen.findByTitle("Retry loading collections", {}, { timeout: 10000 });
+    await screen.findByTitle("Retry loading collections");
 
     await user.click(input());
     await user.paste(B);
     await user.keyboard("{Enter}");
     // B fails too (the retry button is still there, now for B).
     await screen.findByDisplayValue(B);
-    await screen.findByTitle("Retry loading collections", {}, { timeout: 10000 });
+    await screen.findByTitle("Retry loading collections");
 
     failing = false;
     await user.click(screen.getByTitle("Retry loading collections"));
@@ -605,7 +615,7 @@ describe("a collection that fails part-way", () => {
     openAt(`/${A}/collections/big`);
 
     expect(
-      await screen.findByText("Loaded 250 products, but couldn't fetch the rest (the store couldn't be reached).", {}, { timeout: 3000 })
+      await screen.findByText("Loaded 250 products, but couldn't fetch the rest (the store couldn't be reached).")
     ).not.toBeNull();
     await heading(250, 250);
   });
@@ -877,7 +887,7 @@ describe("a Fourthwall shop", () => {
     openAt(`/${F}/collections/all`);
 
     expect(
-      await screen.findByText("Loaded 180 products, but couldn't fetch the rest (the store couldn't be reached).", {}, { timeout: 4000 })
+      await screen.findByText("Loaded 180 products, but couldn't fetch the rest (the store couldn't be reached).")
     ).not.toBeNull();
     await heading(180, 180);
   });
@@ -1020,26 +1030,26 @@ describe("a Big Cartel shop", () => {
   it("explains a category the shop doesn't have", async () => {
     stub({ "example-shop": feed() });
     openAt(`/${BC}/category/nope`);
-    expect(await screen.findByText(/That collection wasn't found/, {}, { timeout: 3000 })).not.toBeNull();
+    expect(await screen.findByText(/That collection wasn't found/)).not.toBeNull();
   });
 
   it("explains a locked shop", async () => {
     stub({ "example-shop": feed() }, undefined, { locked: ["example-shop"] });
     openAt(`/${BC}`);
-    expect(await screen.findByText(/This store is locked/, {}, { timeout: 3000 })).not.toBeNull();
+    expect(await screen.findByText(/This store is locked/)).not.toBeNull();
   });
 
   it("says what a Big Cartel shop on its own domain would run into, without claiming this one is Big Cartel", async () => {
     stub({});
     openAt("/shop.example.com");
-    expect(await screen.findByText(/Couldn't reach this store/, {}, { timeout: 3000 })).not.toBeNull();
+    expect(await screen.findByText(/Couldn't reach this store/)).not.toBeNull();
     expect(screen.getByText(/If this is a Big Cartel shop, sorry: StoreLens can only read ones at a shopname\.bigcartel\.com address, not on their own domain\./)).not.toBeNull();
   });
 
   it("explains a closed shop", async () => {
     stub({});
     openAt(`/${BC}`);
-    expect(await screen.findByText(/That store wasn't found/, {}, { timeout: 3000 })).not.toBeNull();
+    expect(await screen.findByText(/That store wasn't found/)).not.toBeNull();
     expect(screen.queryByText(/dropdown/)).toBeNull();
   });
 });
