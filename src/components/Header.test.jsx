@@ -214,3 +214,20 @@ describe("Header Recent Stores", () => {
     expect(props.onSelectHistory).toHaveBeenCalledWith("https://shop.example.com/en-ca");
   });
 });
+
+describe("Header accessible names (#145)", () => {
+  it("names the URL field and the collection select", () => {
+    renderHeader({
+      collectionsStatus: "ready",
+      collections: [{ handle: "all", title: "All products" }],
+      selectedHandle: "all",
+    });
+    expect(screen.getByRole("textbox", { name: "Store or collection URL" })).toBe(urlField());
+    expect(screen.getByRole("combobox", { name: "Collection" })).toBe(collectionSelect());
+  });
+
+  it("names the collection select before a collection is chosen", () => {
+    renderHeader();
+    expect(screen.getByRole("combobox", { name: "Collection" })).toBe(collectionSelect());
+  });
+});
