@@ -91,6 +91,8 @@ export default function StoreLensApp() {
   // Shown as a warning: the list on screen is incomplete (a page failed, or the
   // platform's paging limit was hit).
   const [loadWarning, setLoadWarning] = useState(null);
+  // The last load ended because the user pressed Cancel (and kept what it had).
+  const [loadCancelled, setLoadCancelled] = useState(false);
   // Shown as a warning: parts of a shared link (filters) that couldn't be applied.
   const [linkWarning, setLinkWarning] = useState(null);
   // Shown beside the products: things about this load the platform says to
@@ -326,6 +328,7 @@ export default function StoreLensApp() {
     setLoadProgress(0);
     clearMessage();
     setLoadWarning(null);
+    setLoadCancelled(false);
     setLinkWarning(null);
     setPlatformNotices([]);
     closeFilterDrawer();
@@ -397,6 +400,7 @@ export default function StoreLensApp() {
       resetFilters();
 
       if (pageError?.kind === "cancelled") {
+        setLoadCancelled(true);
         setLoadWarning(`Loaded ${formatCount(allProducts.length)} products; you stopped loading the rest.`);
       } else if (pageError) {
         setLoadWarning(
@@ -961,7 +965,7 @@ export default function StoreLensApp() {
             </Button>
           )}
 
-          <LoadStatus loading={loading} count={products.length} />
+          <LoadStatus loading={loading} count={products.length} cancelled={loadCancelled} />
 
           {loading && (
             <div className="flex flex-col items-center justify-center gap-3 h-64">
