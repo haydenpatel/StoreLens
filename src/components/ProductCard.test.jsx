@@ -132,7 +132,7 @@ describe("ProductCard content", () => {
     render(<ProductCard product={rich()} />);
     expect(screen.getByRole("heading", { name: "Tee" })).toBeTruthy();
     expect(screen.getByRole("img", { name: "Tee" }).getAttribute("src")).toBe("https://example.com/tee.jpg");
-    const link = screen.getByRole("link", { name: /View/ });
+    const link = screen.getByRole("link", { name: "View Tee (opens in a new tab)" });
     expect(link.getAttribute("href")).toBe("https://shop.example.com/products/tee");
     expect(link.getAttribute("target")).toBe("_blank");
     expect(link.getAttribute("rel")).toContain("noopener");

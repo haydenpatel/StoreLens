@@ -79,7 +79,9 @@
   --card-foreground: oklch(0.2739 0.0055 286.0326);
   --popover: oklch(1.0000 0 0);
   --popover-foreground: oklch(0.2739 0.0055 286.0326);
-  --primary: oklch(0.6048 0.2166 257.2136);
+  /* White text on --primary (the Reset button) needs 4.5:1: darker than the
+     original blue (3.98:1). Same hue as --sidebar-primary. */
+  --primary: oklch(0.5155 0.1807 256.6832);
   --primary-foreground: oklch(1.0000 0 0);
   --secondary: oklch(0.9674 0.0013 286.3752);
   --secondary-foreground: oklch(0.3703 0.0119 285.8054);
@@ -90,7 +92,9 @@
   --destructive: oklch(0.5779 0.2304 28.6093);
   --destructive-foreground: oklch(1.0000 0 0);
   --border: oklch(0.8714 0.0068 286.2574);
-  --input: oklch(0.8714 0.0068 286.2574);
+  /* Control edges (inputs, selects, checkboxes, outline buttons) need 3:1
+     against white, the header and the sidebar; the old value was 1.3-1.5:1. */
+  --input: oklch(0.63 0.0068 286.2574);
   --ring: oklch(0.6048 0.2166 257.2136);
   --chart-1: oklch(0.6048 0.2166 257.2136);
   --chart-2: oklch(0.5854 0.2041 277.1173);
@@ -145,7 +149,9 @@
   --card-foreground: oklch(0.9851 0 0);
   --popover: oklch(0.2103 0.0059 285.8852);
   --popover-foreground: oklch(0.9851 0 0);
-  --primary: oklch(0.6048 0.2166 257.2136);
+  /* Dark enough for white text (4.5:1) yet light enough to stay 3:1 against
+     the dark background, sidebar and card (spinner, checked boxes). */
+  --primary: oklch(0.55 0.2166 257.2136);
   --primary-foreground: oklch(1.0000 0 0);
   --secondary: oklch(0.2103 0.0059 285.8852);
   --secondary-foreground: oklch(0.7118 0.0129 286.0665);
@@ -158,7 +164,7 @@
   --destructive-foreground: oklch(1.0000 0 0);
   --border: oklch(0.2739 0.0055 286.0326);
   /* Control edges (inputs, selects, checkboxes, outline buttons) need 3:1
-     against the dark header and sidebar; the light value already has it. */
+     against the dark header and sidebar, like the light value. */
   --input: oklch(0.52 0.012 286);
   --ring: oklch(0.6048 0.2166 257.2136);
   --chart-1: oklch(0.6048 0.2166 257.2136);

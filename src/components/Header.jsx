@@ -97,6 +97,7 @@ export default function Header({
             <Input
               type="text"
               placeholder="Paste a store or collection URL"
+              aria-label="Store or collection URL"
               value={storeInput}
               onChange={(e) => onStoreInputChange(e.target.value)}
               onPaste={(e) => {
@@ -139,7 +140,7 @@ export default function Header({
                 onValueChange={onSelectHandle}
                 disabled={loading || !storeInput}
               >
-                <SelectTrigger className="bg-background flex-1 min-w-0 *:data-[slot=select-value]:!block *:data-[slot=select-value]:!truncate" aria-invalid={collectionsStatus === "error"}>
+                <SelectTrigger aria-label="Collection" className="bg-background flex-1 min-w-0 *:data-[slot=select-value]:!block *:data-[slot=select-value]:!truncate" aria-invalid={collectionsStatus === "error"}>
                   <SelectValue
                     placeholder={
                       collectionsStatus === "loading"
