@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   applyTheme,
+  applyThemeColor,
   getStorage,
   readPreference,
   resolveTheme,
   systemPrefersDark,
+  watchStoredTheme,
   watchSystemTheme,
   writePreference,
 } from "@/lib/theme";
@@ -14,7 +16,8 @@ const matchMediaFn = (query) => window.matchMedia(query);
 const getMatchMedia = () => (typeof window.matchMedia === "function" ? matchMediaFn : undefined);
 
 // Owns the theme state: the saved choice (System, Light or Dark), whether the
-// OS is dark right now, and the resulting theme, which it puts on <html>.
+// OS is dark right now, and the resulting theme, which it puts on <html> and
+// in the theme-color metas. It follows changes made in other tabs.
 // The OS is only watched while the choice is System.
 export function useTheme() {
   const [preference, setPreferenceState] = useState(() => readPreference(getStorage()));
@@ -23,7 +26,16 @@ export function useTheme() {
 
   useEffect(() => {
     applyTheme(document.documentElement, theme);
+    applyThemeColor(document, theme);
   }, [theme]);
+
+  // Another tab changed the saved choice: follow it.
+  useEffect(() => {
+    return watchStoredTheme(window, (next) => {
+      setSystemDark(systemPrefersDark(getMatchMedia()));
+      setPreferenceState(next);
+    });
+  }, []);
 
   useEffect(() => {
     if (preference !== "system") return undefined;
