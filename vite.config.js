@@ -26,8 +26,12 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['src/**/*.test.{js,jsx}', 'scripts/**/*.test.mjs'],
+    // Several suites run at once and a cold first render takes seconds, so the
+    // 5 s default timed tests out under load. Testing Library's own wait is set
+    // lower (async-util-timeout.js) so it fails first, with a readable message.
+    testTimeout: 15000,
     // Fails any test that calls fetch without stubbing it (no real network).
-    setupFiles: ['./src/lib/__fixtures__/no-network.js', './src/lib/__fixtures__/locale-setup.js'],
+    setupFiles: ['./src/lib/__fixtures__/no-network.js', './src/lib/__fixtures__/locale-setup.js', './src/lib/__fixtures__/async-util-timeout.js'],
   },
   server: {
     port: 5173,
