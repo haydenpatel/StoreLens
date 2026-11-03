@@ -155,6 +155,7 @@ function ProductCard({ product }) {
               >
                 <a 
                   href={productUrl}
+                  aria-label={`View ${product.title} (opens in a new tab)`}
                   target="_blank"
                   rel="noopener noreferrer"
                 >

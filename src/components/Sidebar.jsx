@@ -152,6 +152,7 @@ export default function Sidebar({
               <Input
                 type="text"
                 placeholder="Search products..."
+                aria-label="Search products"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className={cn("pl-9 text-sm", searchQuery && "pr-9")}
@@ -250,6 +251,7 @@ export default function Sidebar({
                 max={filterData.maxPrice}
                 step={1}
                 value={priceRange}
+                thumbLabels={["Minimum price", "Maximum price"]}
                 onValueChange={setPriceRange}
                 className="w-full"
               />

@@ -349,3 +349,12 @@ describe("Sidebar controls", () => {
     expect(props.onReset).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("Sidebar accessible names (#145)", () => {
+  it("names the search field and both price slider thumbs", () => {
+    renderSidebar({ filterData: computeFilterData([product(10), product(20)]) });
+    expect(screen.getByRole("textbox", { name: "Search products" })).toBeTruthy();
+    expect(screen.getByRole("slider", { name: "Minimum price" })).toBeTruthy();
+    expect(screen.getByRole("slider", { name: "Maximum price" })).toBeTruthy();
+  });
+});

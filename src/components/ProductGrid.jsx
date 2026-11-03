@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useId, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import {
   Select,
@@ -19,6 +19,7 @@ const CHUNK_SIZE = 60;
 function ProductGrid({ products, totalProducts, sortBy, setSortBy, currency }) {
   const [visibleCount, setVisibleCount] = useState(CHUNK_SIZE);
   const [productsForReset, setProductsForReset] = useState(products);
+  const sortLabelId = useId();
   const sentinelRef = useRef(null);
   const productsLengthRef = useRef(products.length);
 
@@ -72,15 +73,15 @@ function ProductGrid({ products, totalProducts, sortBy, setSortBy, currency }) {
     <div>
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-2 mb-6">
-        <div className="text-sm text-foreground">
+        <div role="status" className="text-sm text-foreground">
           Showing <span className="font-bold">{formatCount(products.length)}</span> of{" "}
           <span className="font-bold">{formatCount(totalProducts)}</span> products
         </div>
 
         <div className="flex items-center gap-2">
-          <span className="text-sm text-foreground">Sort by:</span>
+          <span id={sortLabelId} className="text-sm text-foreground">Sort by:</span>
           <Select value={sortBy} onValueChange={setSortBy}>
-            <SelectTrigger className="w-44 sm:w-50">
+            <SelectTrigger aria-labelledby={sortLabelId} className="w-44 sm:w-50">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
