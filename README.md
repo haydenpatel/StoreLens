@@ -144,6 +144,7 @@ StoreLens relies on each platform’s public JSON endpoints. Stores that restric
 - The interface text stays English and digits stay Latin (0-9) in every locale; only the digit layout and sort order follow the browser's language.
 - Search does not fold ß, ø, æ or the dotless Turkish ı ("strasse" won't find "Straße", "KIRMIZI" won't find "kırmızı"). Folding covers Latin script only, so Arabic marks and full-width forms are not folded either.
 - Edge keeps the light favicon on dark tab strips (Safari shows a light-tile icon).
+- The home-screen icon on iOS is a single image, so iOS derives its Dark, Clear and Tinted looks itself: Dark shows a black tile, and Clear and Tinted are monochrome and plain. A web app can't supply separate dark artwork.
 
 ### Shopify
 
