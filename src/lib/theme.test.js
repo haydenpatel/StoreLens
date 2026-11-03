@@ -5,7 +5,10 @@ import { describe, expect, it, vi } from "vitest";
 import {
   DARK_QUERY,
   THEME_KEY,
+  THEME_COLORS,
   applyTheme,
+  applyThemeColor,
+  watchStoredTheme,
   readPreference,
   resolveTheme,
   systemPrefersDark,
@@ -94,6 +97,58 @@ describe("applyTheme", () => {
   });
 });
 
+describe("applyThemeColor", () => {
+  it("sets every theme-color meta to the theme's colour", () => {
+    const metas = [{ setAttribute: vi.fn() }, { setAttribute: vi.fn() }];
+    const doc = { querySelectorAll: vi.fn(() => metas) };
+    applyThemeColor(doc, "dark");
+    expect(doc.querySelectorAll).toHaveBeenCalledWith('meta[name="theme-color"]');
+    for (const m of metas) expect(m.setAttribute).toHaveBeenLastCalledWith("content", THEME_COLORS.dark);
+    applyThemeColor(doc, "light");
+    for (const m of metas) expect(m.setAttribute).toHaveBeenLastCalledWith("content", THEME_COLORS.light);
+  });
+
+  it("matches the index.html meta colours", () => {
+    const html = readFileSync(resolve(__dirname, "../../index.html"), "utf8");
+    expect(html).toContain(`media="(prefers-color-scheme: light)" content="${THEME_COLORS.light}"`);
+    expect(html).toContain(`media="(prefers-color-scheme: dark)" content="${THEME_COLORS.dark}"`);
+  });
+});
+
+describe("watchStoredTheme", () => {
+  function fakeTarget() {
+    const listeners = new Set();
+    return {
+      listeners,
+      addEventListener: vi.fn((type, fn) => listeners.add(fn)),
+      removeEventListener: vi.fn((type, fn) => listeners.delete(fn)),
+      fire: (event) => listeners.forEach((fn) => fn(event)),
+    };
+  }
+
+  it("reports the new saved choice for the theme key and for a cleared storage", () => {
+    const target = fakeTarget();
+    const onChange = vi.fn();
+    watchStoredTheme(target, onChange);
+    target.fire({ key: THEME_KEY, storageArea: memoryStorage({ [THEME_KEY]: "dark" }) });
+    expect(onChange).toHaveBeenLastCalledWith("dark");
+    target.fire({ key: THEME_KEY, storageArea: memoryStorage() });
+    expect(onChange).toHaveBeenLastCalledWith("system");
+    target.fire({ key: null, storageArea: memoryStorage() });
+    expect(onChange).toHaveBeenCalledTimes(3);
+  });
+
+  it("ignores other keys and stops after unsubscribe", () => {
+    const target = fakeTarget();
+    const onChange = vi.fn();
+    const stop = watchStoredTheme(target, onChange);
+    target.fire({ key: "other", storageArea: memoryStorage({ other: "x" }) });
+    expect(onChange).not.toHaveBeenCalled();
+    stop();
+    expect(target.listeners.size).toBe(0);
+  });
+});
+
 describe("systemPrefersDark", () => {
   it("reads the media query and tolerates a missing matchMedia", () => {
     expect(systemPrefersDark(() => ({ matches: true }))).toBe(true);
@@ -146,7 +201,14 @@ describe("index.html pre-render script", () => {
 
   function run({ storage, systemDark, matchMedia = true }) {
     const classes = new Set();
+    const metas = [{ content: "x" }, { content: "y" }].map((m) => ({
+      content: m.content,
+      setAttribute(name, value) {
+        if (name === "content") this.content = value;
+      },
+    }));
     const document = {
+      querySelectorAll: (sel) => (sel === 'meta[name="theme-color"]' ? metas : []),
       documentElement: {
         classList: { toggle: (name, on) => (on ? classes.add(name) : classes.delete(name)) },
       },
@@ -156,12 +218,23 @@ describe("index.html pre-render script", () => {
       : {};
     const localStorage = storage;
     new Function("document", "window", "localStorage", scripts[0])(document, window, localStorage);
-    return classes.has("dark") ? "dark" : "light";
+    const theme = classes.has("dark") ? "dark" : "light";
+    // Every theme-color meta gets the resolved theme's colour.
+    for (const meta of metas) expect(meta.content).toBe(THEME_COLORS[theme]);
+    return theme;
   }
 
   it("has exactly one inline classic script, before the module script", () => {
     expect(scripts).toHaveLength(1);
     expect(html.indexOf("<script>")).toBeLessThan(html.indexOf('type="module"'));
+  });
+
+  it("comes after the theme-color metas, and its selector matches them", () => {
+    const script = html.indexOf("<script>");
+    const metaTags = [...html.matchAll(/<meta name="theme-color"[^>]*>/g)];
+    expect(metaTags).toHaveLength(2);
+    for (const tag of metaTags) expect(tag.index).toBeLessThan(script);
+    expect(scripts[0]).toContain('meta[name="theme-color"]');
   });
 
   it.each([

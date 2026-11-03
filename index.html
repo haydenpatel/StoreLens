@@ -2,16 +2,25 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <!-- Before JS runs (and for the media query alone) each follows the OS. They
+         come before the script below so its loop finds them: it points both at
+         the saved theme, and applyTheme keeps them in step afterwards. -->
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#09090b" />
     <!-- Applies the theme before first paint so there is no flash of the wrong
-         one. Keep in step with src/lib/theme.js (key and rules); theme.test.js
-         runs this exact script against it. If a Content-Security-Policy is ever
-         added, this inline script needs a sha256 hash (or move it to a file). -->
+         one, and points both theme-color metas (the colours of the page
+         background) at it. Keep in step with src/lib/theme.js (key, rules and
+         colours); theme.test.js runs this exact script against it. If a
+         Content-Security-Policy is ever added, this inline script needs a
+         sha256 hash (or move it to a file). -->
     <script>
       (function () {
         var p = null;
         try { p = localStorage.getItem("storelens-theme"); } catch (e) {}
         var dark = p === "dark" || (p !== "light" && !!window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
         document.documentElement.classList.toggle("dark", dark);
+        var metas = document.querySelectorAll('meta[name="theme-color"]');
+        for (var i = 0; i < metas.length; i++) metas[i].setAttribute("content", dark ? "#09090b" : "#ffffff");
       })();
     </script>
     <link rel="icon" type="image/svg+xml" sizes="any" href="/StoreLens-icon.svg" />
@@ -26,6 +35,7 @@
     <title>StoreLens</title>
   </head>
   <body>
+    <noscript style="display:block;padding:16px;font-family:sans-serif">StoreLens needs JavaScript to load a store's products. Please turn it on and reload.</noscript>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>

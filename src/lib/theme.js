@@ -4,6 +4,9 @@
 // theme.test.js pins the two together, so change both or neither.
 export const THEME_KEY = "storelens-theme";
 export const DARK_QUERY = "(prefers-color-scheme: dark)";
+// The page background in each theme, for the browser's theme-color (address
+// bar and status bar tint). Keep in step with --background in index.css.
+export const THEME_COLORS = { light: "#ffffff", dark: "#09090b" };
 export const PREFERENCES = ["system", "light", "dark"];
 
 // localStorage can throw on access (blocked storage), so the lookup is guarded
@@ -47,6 +50,13 @@ export function applyTheme(root, theme) {
   root.classList.toggle("dark", theme === "dark");
 }
 
+// Points every theme-color meta at the theme, so it follows the user's choice
+// and not just the OS (the media attributes in index.html only know the OS).
+export function applyThemeColor(doc, theme) {
+  const color = THEME_COLORS[theme === "dark" ? "dark" : "light"];
+  doc.querySelectorAll('meta[name="theme-color"]').forEach((meta) => meta.setAttribute("content", color));
+}
+
 export function systemPrefersDark(matchMediaFn) {
   return typeof matchMediaFn === "function" && matchMediaFn(DARK_QUERY).matches === true;
 }
@@ -60,4 +70,17 @@ export function watchSystemTheme(matchMediaFn, onChange) {
   const handler = (event) => onChange(event.matches === true);
   query.addEventListener("change", handler);
   return () => query.removeEventListener("change", handler);
+}
+
+// Calls onChange(preference) when another tab changes the saved choice
+// (a "storage" event for THEME_KEY, or null when storage is cleared); returns
+// the unsubscribe function.
+export function watchStoredTheme(target, onChange) {
+  const handler = (event) => {
+    if (event.key === THEME_KEY || event.key === null) {
+      onChange(readPreference(event.storageArea ?? getStorage()));
+    }
+  };
+  target.addEventListener("storage", handler);
+  return () => target.removeEventListener("storage", handler);
 }

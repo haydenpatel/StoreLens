@@ -106,10 +106,13 @@ export function formatPercent(low, high = low) {
 // One collator for every title and name sort. Numeric so "Item 2" precedes
 // "Item 10"; default sensitivity so accent and case variants still order
 // deterministically, and capitals first on a case-only tie (Apple, apple) in
-// every locale.
+// every locale. Strings the collator calls equal ("1"/"01", "Item 1"/"Item 01")
+// fall back to code-unit order, so their order never depends on feed order.
 export function compareText(a, b) {
   collator ??= new Intl.Collator(getLocale(), { numeric: true, caseFirst: "upper" });
-  return collator.compare(a, b);
+  const result = collator.compare(a, b);
+  if (result !== 0) return result;
+  return a < b ? -1 : a > b ? 1 : 0;
 }
 
 // Dates: none are shown today (they only drive the "newest first" sort). If one
