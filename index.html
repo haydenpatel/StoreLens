@@ -5,8 +5,9 @@
     <!-- Applies the theme before first paint so there is no flash of the wrong
          one, and points both theme-color metas (the colours of the page
          background) at it. Keep in step with src/lib/theme.js (key, rules and
-         colours); theme.test.js runs this exact script against it. If a Content-Security-Policy is ever
-         added, this inline script needs a sha256 hash (or move it to a file). -->
+         colours); theme.test.js runs this exact script against it. If a
+         Content-Security-Policy is ever added, this inline script needs a
+         sha256 hash (or move it to a file). -->
     <script>
       (function () {
         var p = null;
