@@ -92,7 +92,7 @@ export default function StoreLensApp() {
   // platform's paging limit was hit).
   const [loadWarning, setLoadWarning] = useState(null);
   // The last load ended because the user pressed Cancel (and kept what it had).
-  const [loadCancelled, setLoadCancelled] = useState(false);
+  const [loadOutcome, setLoadOutcome] = useState("finished");
   // Shown as a warning: parts of a shared link (filters) that couldn't be applied.
   const [linkWarning, setLinkWarning] = useState(null);
   // Shown beside the products: things about this load the platform says to
@@ -328,7 +328,7 @@ export default function StoreLensApp() {
     setLoadProgress(0);
     clearMessage();
     setLoadWarning(null);
-    setLoadCancelled(false);
+    setLoadOutcome("finished");
     setLinkWarning(null);
     setPlatformNotices([]);
     closeFilterDrawer();
@@ -400,13 +400,15 @@ export default function StoreLensApp() {
       resetFilters();
 
       if (pageError?.kind === "cancelled") {
-        setLoadCancelled(true);
+        setLoadOutcome("cancelled");
         setLoadWarning(`Loaded ${formatCount(allProducts.length)} products; you stopped loading the rest.`);
       } else if (pageError) {
+        setLoadOutcome("incomplete");
         setLoadWarning(
           `Loaded ${formatCount(allProducts.length)} products, but couldn't fetch the rest (${describeStoreErrorReason(pageError)}).`
         );
       } else if (truncated) {
+        setLoadOutcome("incomplete");
         setLoadWarning(
           `This collection is larger than StoreLens can load from ${loadAdapter.name} — showing the first ${formatCount(allProducts.length)} products.`
         );
@@ -965,7 +967,7 @@ export default function StoreLensApp() {
             </Button>
           )}
 
-          <LoadStatus loading={loading} count={products.length} cancelled={loadCancelled} />
+          <LoadStatus loading={loading} count={products.length} outcome={loadOutcome} />
 
           {loading && (
             <div className="flex flex-col items-center justify-center gap-3 h-64">

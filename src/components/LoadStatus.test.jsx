@@ -32,13 +32,22 @@ describe("LoadStatus (#145)", () => {
 
   it("says the load stopped, not finished, when a cancel kept some products", () => {
     const { rerender } = render(<LoadStatus loading count={0} />);
-    rerender(<LoadStatus loading={false} count={1250} cancelled />);
+    rerender(<LoadStatus loading={false} count={1250} outcome="cancelled" />);
     expect(screen.getByRole("status").textContent).toBe("Loading stopped after 1,250 products");
   });
 
-  it("says the load stopped when it ends with nothing loaded (cancel or error)", () => {
+  it("says some products could not be loaded when an error or limit cut it short", () => {
     const { rerender } = render(<LoadStatus loading count={0} />);
-    rerender(<LoadStatus loading={false} count={0} />);
-    expect(screen.getByRole("status").textContent).toBe("Loading stopped");
+    rerender(<LoadStatus loading={false} count={1250} outcome="incomplete" />);
+    expect(screen.getByRole("status").textContent).toBe("Loaded 1,250 products; some could not be loaded");
   });
+
+  it.each(["finished", "cancelled", "incomplete"])(
+    "says the load stopped when it ends with nothing loaded (%s)",
+    (outcome) => {
+      const { rerender } = render(<LoadStatus loading count={0} />);
+      rerender(<LoadStatus loading={false} count={0} outcome={outcome} />);
+      expect(screen.getByRole("status").textContent).toBe("Loading stopped");
+    }
+  );
 });
