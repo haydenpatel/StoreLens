@@ -13,12 +13,12 @@ function endMessage(count, outcome) {
 }
 
 // Screen-reader announcement of a collection load: once when it starts and once
-// when it ends (finished, stopped by the user, or cut short by an error or limit), never per fetched
-// page, which would queue many polite announcements on a large collection. It
-// stays mounted (empty until the first load) because a live region added to the
-// page together with its text is often not announced. The visible spinner and
-// running count are hidden from assistive tech (`aria-hidden`) so nothing is
-// read twice.
+// when it ends (finished, stopped by the user, or cut short by an error or
+// limit), never per fetched page, which would queue many polite announcements
+// on a large collection. It stays mounted (empty until the first load) because
+// a live region added to the page together with its text is often not
+// announced. The visible spinner and running count are hidden from assistive
+// tech (`aria-hidden`) so nothing is read twice.
 export default function LoadStatus({ loading, count, outcome = "finished" }) {
   const [message, setMessage] = useState("");
   const wasLoading = useRef(false);

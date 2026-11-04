@@ -91,7 +91,10 @@ export default function StoreLensApp() {
   // Shown as a warning: the list on screen is incomplete (a page failed, or the
   // platform's paging limit was hit).
   const [loadWarning, setLoadWarning] = useState(null);
-  // The last load ended because the user pressed Cancel (and kept what it had).
+  // How the last load ended, mirrored by the screen-reader announcement:
+  // "finished" (clean), "cancelled" (the user pressed Cancel and kept what it
+  // had) or "incomplete" (a page failed or the paging limit was hit; the same
+  // cases as loadWarning above).
   const [loadOutcome, setLoadOutcome] = useState("finished");
   // Shown as a warning: parts of a shared link (filters) that couldn't be applied.
   const [linkWarning, setLinkWarning] = useState(null);
