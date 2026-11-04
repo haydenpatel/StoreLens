@@ -26,7 +26,7 @@ StoreLens only works with platforms that publish a keyless, browser-readable pro
 | Fourthwall | Supported |
 | Big Cartel | Supported (`*.bigcartel.com` shops) |
 
-Each platform is a small adapter (`src/lib/platforms/`) that turns the platform's own listing into one neutral product shape, so the filters, sorting and search are shared. Platforms that don't allow cross-origin reads (WooCommerce, Magento, Squarespace) or need per-merchant tokens (BigCommerce, Salesforce Commerce Cloud) can't work without a backend and are out of scope.
+Each platform is a small adapter (`src/lib/platforms/`) that turns the platform's own listing into one neutral product shape, so the filters, sorting and search are shared. Platforms that don't allow cross-origin reads (WooCommerce, Magento, Squarespace, Odoo) or need per-merchant tokens (BigCommerce, Salesforce Commerce Cloud) can't work without a backend and are out of scope.
 
 
 ## Features
@@ -128,11 +128,7 @@ StoreLens needs Chrome 111+, Edge 111+, Firefox 128+ or Safari 16.4+. That is th
 
 ## Status and Limitations
 
-StoreLens should be considered in ***beta*** (0.3).
-
-Core browsing, filtering, and sorting features are functional.
-
-StoreLens relies on each platform’s public JSON endpoints. Stores that restrict or heavily customise their storefront data may return incomplete or inconsistent information.
+StoreLens 1.0 is feature-complete for the supported platforms. It relies on each platform’s public JSON endpoints, so stores that restrict or heavily customise their storefront data may return incomplete or inconsistent information. See Known Issues below.
 
 **A note about very large collections:** StoreLens works by fetching every product in a collection. Extremely large catalogues may load slowly, and performance will depend on your browser and computer. A slow load can be cancelled, and the products loaded so far are kept.
 
