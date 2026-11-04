@@ -9,6 +9,9 @@ permissions:
   contents: read
 
 jobs:
+  # The "Protect main" ruleset requires a status check named exactly `test`,
+  # so this job keeps that name. It runs the full checks on the Node major in
+  # .nvmrc; node-compat below covers the other majors that `engines` allows.
   test:
     runs-on: ubuntu-latest
     steps:
@@ -19,5 +22,24 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run lint
+      - run: npm test
+      - run: npm run build
+
+  # The other supported Node majors (package.json `engines`). Lint is
+  # Node-independent, so only the tests and the build run here.
+  node-compat:
+    name: test (node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [24, 26]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
       - run: npm test
       - run: npm run build
