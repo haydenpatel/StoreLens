@@ -30,6 +30,12 @@ describe("LoadStatus (#145)", () => {
     expect(screen.getByRole("status").textContent).toBe("Finished loading 1,250 products");
   });
 
+  it("says the load stopped, not finished, when a cancel kept some products", () => {
+    const { rerender } = render(<LoadStatus loading count={0} />);
+    rerender(<LoadStatus loading={false} count={1250} cancelled />);
+    expect(screen.getByRole("status").textContent).toBe("Loading stopped after 1,250 products");
+  });
+
   it("says the load stopped when it ends with nothing loaded (cancel or error)", () => {
     const { rerender } = render(<LoadStatus loading count={0} />);
     rerender(<LoadStatus loading={false} count={0} />);
