@@ -81,6 +81,8 @@ StoreLens has no server of its own that receives store data: the page is static,
   - `storelens:platform:v1:{store}`: which platform a store was recognised as, remembered for seven days.
   - `storelens:visited-collections:v1`: the collection handles you have opened on Fourthwall shops (up to 20 per shop, 25 shops).
 
+  When StoreLens saves one of the two caches it also deletes expired entries and entries left by older versions of those caches (and nothing else).
+
   Clearing the site's data in your browser removes all of it.
 
 ## Tech Stack
