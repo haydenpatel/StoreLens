@@ -34,7 +34,7 @@ export function addressMatches(path, pathname) {
 
 // Bumping this invalidates every previously cached entry whenever the
 // discovery/probe logic changes in a way that could make stale cached results
-// wrong or outdated; saving a cache entry then deletes the old-version keys
+// wrong or outdated; saving a cache entry then deletes the older-version keys
 // (see pruneCaches). v3: keys now include the platform, so one origin can't
 // serve another platform's collections.
 const CACHE_VERSION = 3;
@@ -50,7 +50,7 @@ const isFreshTimestamp = (cachedAt, ttlMs) =>
 const cacheKey = (platformId, origin) => `${CACHE_PREFIX}${platformId}:${origin}`;
 
 // Pruning. Cache entries are written per origin, so without cleanup expired
-// ones and those under an old version would sit in localStorage for good and
+// ones and those under an older version would sit in localStorage for good and
 // could eventually fill the quota, silently stopping every save (theme, Recent
 // Stores and caches alike). Only keys under the two prefixes below are ever
 // removed; the theme, Recent Stores, visited-collections and any other
@@ -69,7 +69,9 @@ const CACHE_FAMILIES = {
 };
 const prunedThisSession = new Set();
 
-// Delete one family's old-version and expired entries. Throws if storage does.
+// Delete one family's older-version and expired entries (never newer-version
+// keys: an older tab overlapping a rollout must not wipe a newer deployment's
+// entries). Throws if storage does.
 function pruneFamily(name) {
   const { keyPrefix, version, ttlMs } = CACHE_FAMILIES[name];
   prunedThisSession.add(name);
@@ -79,7 +81,9 @@ function pruneFamily(name) {
     if (typeof key !== "string" || !key.startsWith(keyPrefix)) continue;
     const found = /^(\d+):/.exec(key.slice(keyPrefix.length));
     if (!found) continue; // not a versioned cache key, so not ours
-    if (Number(found[1]) !== version) {
+    const entryVersion = Number(found[1]);
+    if (entryVersion > version) continue; // a newer deployment's entry
+    if (entryVersion < version) {
       doomed.push(key);
       continue;
     }
@@ -106,7 +110,7 @@ function pruneCaches(names = Object.keys(CACHE_FAMILIES)) {
 }
 
 // Store a cache entry. If the write fails (typically a full quota), free what
-// can safely go (expired and old-version cache entries) and try once more;
+// can safely go (expired and older-version cache entries) and try once more;
 // otherwise the entry is simply not cached. Never throws.
 function saveCacheEntry(family, key, value) {
   try {

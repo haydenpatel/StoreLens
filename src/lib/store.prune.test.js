@@ -24,7 +24,7 @@ afterEach(() => {
 });
 
 describe("pruning caches on save", () => {
-  it("removes old-version collections and platform keys", () => {
+  it("removes older-version collections and platform keys", () => {
     localStorage.setItem("storelens:collections:v2:https://a.example.com", entry(Date.now()));
     localStorage.setItem("storelens:collections:v1:shopify:https://a.example.com", entry(Date.now()));
     localStorage.setItem("storelens:platform:v0:https://a.example.com", platformEntry(Date.now()));
@@ -69,6 +69,15 @@ describe("pruning caches on save", () => {
     expect(localStorage.getItem("storelens:collections:v2:x")).toBeNull();
   });
 
+  it("leaves newer-version keys alone", () => {
+    localStorage.setItem("storelens:collections:v99:shopify:https://a.example.com", entry(0));
+    localStorage.setItem("storelens:platform:v99:https://a.example.com", platformEntry(0));
+    store.saveCollectionsCache("shopify", ORIGIN, [], null);
+    store.savePlatformCache(ORIGIN, "shopify");
+    expect(localStorage.getItem("storelens:collections:v99:shopify:https://a.example.com")).not.toBeNull();
+    expect(localStorage.getItem("storelens:platform:v99:https://a.example.com")).not.toBeNull();
+  });
+
   it("keeps the entry it just wrote", () => {
     store.saveCollectionsCache("shopify", ORIGIN, [{ handle: "a", title: "A", products_count: 1 }], "a");
     expect(store.loadCollectionsCache("shopify", ORIGIN)?.allProductsHandle).toBe("a");
@@ -107,7 +116,7 @@ describe("a save that hits a full quota", () => {
     };
   }
 
-  it("frees expired and old-version entries, then retries once", () => {
+  it("frees expired and older-version entries, then retries once", () => {
     const storage = limitedStorage(3);
     vi.stubGlobal("localStorage", storage);
     storage.setItem("storelens-theme", "dark");
@@ -117,6 +126,15 @@ describe("a save that hits a full quota", () => {
     store.saveCollectionsCache("shopify", ORIGIN, [], null);
     expect(storage.setItem).toHaveBeenCalledTimes(2);
     expect(keys()).toEqual(["storelens-theme", `storelens:collections:v3:shopify:${ORIGIN}`]);
+  });
+
+  it("keeps newer-version keys when freeing space", () => {
+    const storage = limitedStorage(2);
+    vi.stubGlobal("localStorage", storage);
+    storage.setItem("storelens:collections:v99:x", entry(0));
+    storage.setItem("storelens:platform:v99:x", platformEntry(0));
+    store.saveCollectionsCache("shopify", ORIGIN, [], null);
+    expect(keys()).toEqual(["storelens:collections:v99:x", "storelens:platform:v99:x"]);
   });
 
   it("gives up quietly when nothing can be freed, leaving live and unrelated keys", () => {
