@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import React, { useState, useEffect, useMemo, useRef, useDeferredValue } from "react";
 import { Loader2, SlidersHorizontal } from "lucide-react";
 import Notice from "../components/Notice";
 import { Button } from "@/components/ui/button";
@@ -910,13 +910,18 @@ export default function StoreLensApp() {
   );
 
   // How many products each option value would return under the other filters.
+  // Typing and dragging the price slider change per keystroke or frame, so the
+  // counts follow deferred copies of those two: the list stays immediate and
+  // the counts catch up once the input settles.
+  const deferredSearch = useDeferredValue(searchQuery);
+  const deferredPriceRange = useDeferredValue(priceRange);
   const optionCounts = useMemo(
     () => computeOptionCounts(
       products,
-      { searchQuery, selectedVendors, selectedTypes, selectedTags, selectedOptions, priceRange, inStockOnly, saleOnly },
+      { searchQuery: deferredSearch, selectedVendors, selectedTypes, selectedTags, selectedOptions, priceRange: deferredPriceRange, inStockOnly, saleOnly },
       loadedAdapter.capabilities
     ),
-    [products, searchQuery, selectedVendors, selectedTypes, selectedTags, selectedOptions, priceRange, inStockOnly, saleOnly, loadedAdapter]
+    [products, deferredSearch, selectedVendors, selectedTypes, selectedTags, selectedOptions, deferredPriceRange, inStockOnly, saleOnly, loadedAdapter]
   );
 
   return (

@@ -1775,6 +1775,21 @@ describe("sidebar controls, sort and Recent Stores", () => {
     expect(titleShown("Delta Scarf")).toBeNull();
   });
 
+  it("shows a product count by each option value and updates it as other filters change", async () => {
+    const user = await open();
+    expect(checkbox("S (1)")).toBeTruthy();
+    expect(checkbox("M (1)")).toBeTruthy();
+    // Searching for the mug leaves no product with a size, so both counts fall to 0
+    // (the counts follow the deferred search, so wait for them).
+    await user.type(screen.getByPlaceholderText("Search products..."), "mug");
+    await heading(1, 4);
+    expect(await screen.findByRole("checkbox", { name: "S (0), no matching products" })).toBeTruthy();
+    expect(checkbox("M (0), no matching products")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Clear search" }));
+    await heading(3, 4);
+    expect(await screen.findByRole("checkbox", { name: "S (1)" })).toBeTruthy();
+  });
+
   it("'On sale only' keeps just the discounted product", async () => {
     const user = await open();
     await user.click(checkbox("On sale only"));
