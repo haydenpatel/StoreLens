@@ -81,7 +81,7 @@ StoreLens has no server of its own that receives store data: the page is static,
   - `storelens:platform:v1:{store}`: which platform a store was recognised as, remembered for seven days.
   - `storelens:visited-collections:v1`: the collection handles you have opened on Fourthwall shops (up to 20 per shop, 25 shops).
 
-  When StoreLens saves one of the two caches it also deletes expired entries and entries left by older versions of those caches (and nothing else).
+  When StoreLens saves one of the two caches it also deletes expired entries and entries left by older versions of those caches (and nothing else; keys from before the caches were versioned are not removed).
 
   Clearing the site's data in your browser removes all of it.
 
@@ -104,7 +104,7 @@ npm run dev
 
 Use `npm ci` rather than `npm install` for an existing clone: Node 22's npm rewrites `package-lock.json` on `npm install`, while `npm ci` leaves it alone. Use `npm install` only to change dependencies.
 
-Development needs Node 22.22.2+ (22.x), 24.15+ (24.x) or 26+: that is the range the test tooling (jsdom 30) supports, so Node 23 and 25 are out. CI uses Node 22, and `.nvmrc` selects it (`nvm use`). `package.json` declares this range in `engines`, so `npm ci` (or `npm install`) on another Node prints one warning instead of scattered ones from dev packages.
+Development needs Node 22.22.2+ (22.x), 24.15+ (24.x) or 26+: that is the range the test tooling (jsdom 30) supports, so Node 23 and 25 are out. CI runs lint, tests and build on Node 22 (`.nvmrc` selects it: `nvm use`), and tests and build on Node 24 and 26. `package.json` declares this range in `engines`, so `npm ci` (or `npm install`) on another Node prints one warning instead of scattered ones from dev packages.
 
 `npm ci` and `npm install` also install the git hooks in `.githooks/` (run it again after changing one). They refuse commits and merges on `main`: work on a branch (one per issue) and merge through a pull request.
 
