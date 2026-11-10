@@ -10,6 +10,7 @@ import { Separator } from "@/components/ui/separator"
 import { cn } from "@/lib/utils";
 import { formatCount } from "@/lib/locale";
 import { formatMoneyRange } from "@/lib/currency";
+import { normalizeOptionName, normalizeOptionValue } from "@/lib/filters";
 
 
 export default function Sidebar({
@@ -25,6 +26,7 @@ export default function Sidebar({
   selectedTags,
   setSelectedTags,
   selectedOptions,
+  optionCounts,
   setSelectedOptions,
   priceRange,
   setPriceRange,
@@ -285,6 +287,7 @@ export default function Sidebar({
               title={option.name}
               items={option.values}
               selected={selectedOptions[option.key] || []}
+              counts={optionCounts && (optionCounts.get(normalizeOptionName(option.key)) ?? new Map())}
               onToggle={(v) => toggleOption(option.key, v)}
             />
           ))}
@@ -305,12 +308,15 @@ export default function Sidebar({
   );
 }
 
-function FilterSection({ title, items: collectionItems, selected, onToggle }) {
+// `counts` (optional) maps a normalised value to the number of products it
+// would return under the other filters; a value missing from it has none.
+function FilterSection({ title, items: collectionItems, selected, onToggle, counts }) {
   // A selection restored from a link can name something this collection doesn't
   // have; list it (last) so it can still be seen and cleared.
   const items = [...collectionItems, ...new Set(selected.filter(item => !collectionItems.includes(item)))];
   const [expanded, setExpanded] = React.useState(items.length <= 8);
   const idPrefix = useId();
+  const count = (item) => counts?.get(normalizeOptionValue(item)) ?? 0;
 
   // A collapsed section still shows what is selected, so no active filter is
   // ever hidden behind "Show more".
@@ -341,15 +347,36 @@ function FilterSection({ title, items: collectionItems, selected, onToggle }) {
               checked={selected.includes(item)}
               onCheckedChange={() => onToggle(item)}
             />
-            <Label 
-              htmlFor={`${idPrefix}-${index}`} 
-              className="text-sm font-[350] cursor-pointer flex-1 truncate"
+            <Label
+              htmlFor={`${idPrefix}-${index}`}
+              className={cn(
+                "text-sm font-[350] cursor-pointer flex-1 min-w-0",
+                counts && count(item) === 0 && "opacity-60 italic"
+              )}
             >
-              {item}
+              {counts ? (
+                <span className="flex gap-1">
+                  <span className="truncate">{item}</span>{" "}
+                  <ItemCount count={count(item)} />
+                </span>
+              ) : (
+                <span className="block truncate">{item}</span>
+              )}
             </Label>
           </div>
         ))}
       </div>
     </div>
+  );
+}
+
+// "(12)" after a value; a zero is also italic and dimmed with the row, and
+// says so to screen readers, so it never relies on colour or opacity alone.
+function ItemCount({ count }) {
+  return (
+    <span className="shrink-0">
+      ({formatCount(count)})
+      {count === 0 && <span className="sr-only">, no matching products</span>}
+    </span>
   );
 }

@@ -383,15 +383,11 @@ function filterByVariant(products, { selectedOptions, inStockOnly, saleOnly, pri
   return result;
 }
 
-export function filterAndSortProducts(products, state, capabilities = {}) {
-  const {
-    searchQuery, selectedVendors, selectedTypes, selectedTags, selectedOptions, priceRange, saleOnly, sortBy,
-  } = withoutUnsupportedSelections(state, capabilities);
-  // Without stock data nothing can be filtered by it.
-  const inStockOnly = capabilities.variantStock === false ? false : state.inStockOnly;
-  let filtered = [...products];
+// The filters that look at the product as a whole (search, vendor, type, tag),
+// shared by the product list and the option counts.
+function filterByProductFields(products, { searchQuery, selectedVendors, selectedTypes, selectedTags }) {
+  let filtered = products;
 
-  // Search
   if (searchQuery) {
     const query = foldText(searchQuery);
     filtered = filtered.filter(p =>
@@ -399,23 +395,106 @@ export function filterAndSortProducts(products, state, capabilities = {}) {
       (p.descriptionSearch ?? foldText(p.descriptionText ?? htmlToText(p.description))).includes(query)
     );
   }
-
-  // Vendors
   if (selectedVendors.length > 0) {
     filtered = filtered.filter(p => p.vendors?.some(v => selectedVendors.includes(v)));
   }
-
-  // Types
   if (selectedTypes.length > 0) {
     filtered = filtered.filter(p => p.categories?.some(c => selectedTypes.includes(c)));
   }
-
-  // Tags
   if (selectedTags.length > 0) {
-    filtered = filtered.filter(p => 
-      selectedTags.some(tag => p.tags?.includes(tag))
-    );
+    filtered = filtered.filter(p => selectedTags.some(tag => p.tags?.includes(tag)));
   }
+  return filtered;
+}
+
+// How many products each variant-option value would return, for the counts
+// beside the option filters: Map of option key -> Map of normalised value ->
+// number of products. A product counts for a value when one of its variants
+// has that value and passes every other current filter (the other options'
+// selections, stock, price, sale, and the search/vendor/type/tag filters). The
+// option's own selection is left out of its own counts, so a value shows what
+// picking it would add. Products are counted, never variants, and the whole
+// thing is one pass over the products: each variant is tested once, and the
+// selected options it fails say which options' counts it may still feed (none
+// if it fails two, only that option's if it fails one, all if it fails none).
+// The rules mirror filterByVariant (a test checks they agree).
+export function computeOptionCounts(products, state, capabilities = {}) {
+  const result = new Map();
+  const {
+    selectedOptions, priceRange, saleOnly,
+  } = withoutUnsupportedSelections(state, capabilities);
+  if (capabilities.variantOptions === false) return result;
+  const inStockOnly = capabilities.variantStock === false ? false : state.inStockOnly;
+  const scoped = filterByProductFields(products, withoutUnsupportedSelections(state, capabilities));
+
+  const selections = new Map();
+  Object.entries(selectedOptions).forEach(([name, values]) => {
+    if (values.length > 0) selections.set(normalizeOptionName(name), new Set(values.map(normalizeOptionValue)));
+  });
+
+  scoped.forEach(product => {
+    const variants = product.variants || [];
+    if (variants.length === 0 || !product.options) return;
+    // The first option with each name, as filterByVariant finds it.
+    const indexByName = new Map();
+    product.options.forEach((option, index) => {
+      const key = normalizeOptionName(option.name);
+      if (key && !indexByName.has(key)) indexByName.set(key, index);
+    });
+    // A selected option the product doesn't have rules every other count out.
+    const checks = [];
+    for (const [name, wanted] of selections) {
+      const index = indexByName.get(name);
+      if (index === undefined) return;
+      checks.push({ name, index, wanted });
+    }
+    const anyPriced = variants.some(v => Number.isFinite(v.price));
+    // name -> value -> { priced: a variant passed, with a price; stocked: and in stock }
+    const found = new Map();
+    variants.forEach(variant => {
+      if (saleOnly && !isDiscounted(variant)) return;
+      if (Number.isFinite(variant.price) && (variant.price < priceRange[0] || variant.price > priceRange[1])) return;
+      let failedName = null;
+      for (const { name, index, wanted } of checks) {
+        const value = variant.options?.[index];
+        if (value != null && wanted.has(normalizeOptionValue(value))) continue;
+        if (failedName !== null) return;
+        failedName = name;
+      }
+      const priced = Number.isFinite(variant.price);
+      const stocked = !inStockOnly || Boolean(variant.available);
+      indexByName.forEach((index, name) => {
+        if (failedName !== null && failedName !== name) return;
+        const value = variant.options?.[index];
+        if (!value) return;
+        const valueKey = normalizeOptionValue(value);
+        if (!valueKey) return;
+        const values = found.get(name) ?? new Map();
+        const flags = values.get(valueKey) ?? { priced: false, stocked: false };
+        if (priced) flags.priced = true;
+        if (stocked) flags.stocked = true;
+        values.set(valueKey, flags);
+        found.set(name, values);
+      });
+    });
+    found.forEach((values, name) => {
+      const counts = result.get(name) ?? new Map();
+      values.forEach((flags, valueKey) => {
+        if (flags.stocked && (!anyPriced || flags.priced)) counts.set(valueKey, (counts.get(valueKey) ?? 0) + 1);
+      });
+      result.set(name, counts);
+    });
+  });
+  return result;
+}
+
+export function filterAndSortProducts(products, state, capabilities = {}) {
+  const {
+    selectedOptions, priceRange, saleOnly, sortBy,
+  } = withoutUnsupportedSelections(state, capabilities);
+  // Without stock data nothing can be filtered by it.
+  const inStockOnly = capabilities.variantStock === false ? false : state.inStockOnly;
+  let filtered = filterByProductFields(products, withoutUnsupportedSelections(state, capabilities));
 
   // Variant-level filters (options, in stock, price, on sale) are ANDed into
   // one test per variant, so a product matches only when a single variant

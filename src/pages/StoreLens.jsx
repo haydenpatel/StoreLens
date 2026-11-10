@@ -12,6 +12,7 @@ import {
   buildFilterSearch,
   computeFilterData,
   countActiveFilters,
+  computeOptionCounts,
   filterAndSortProducts,
   parseFilterParams,
   restoreListSelections,
@@ -908,6 +909,16 @@ export default function StoreLensApp() {
     [products, searchQuery, selectedVendors, selectedTypes, selectedTags, selectedOptions, priceRange, inStockOnly, saleOnly, sortBy, loadedAdapter]
   );
 
+  // How many products each option value would return under the other filters.
+  const optionCounts = useMemo(
+    () => computeOptionCounts(
+      products,
+      { searchQuery, selectedVendors, selectedTypes, selectedTags, selectedOptions, priceRange, inStockOnly, saleOnly },
+      loadedAdapter.capabilities
+    ),
+    [products, searchQuery, selectedVendors, selectedTypes, selectedTags, selectedOptions, priceRange, inStockOnly, saleOnly, loadedAdapter]
+  );
+
   return (
     <div className="min-h-screen flex flex-col bg-secondary">
       <Header
@@ -944,6 +955,7 @@ export default function StoreLensApp() {
             selectedTags={selectedTags}
             setSelectedTags={setSelectedTags}
             selectedOptions={selectedOptions}
+            optionCounts={optionCounts}
             setSelectedOptions={setSelectedOptions}
             priceRange={priceRange}
             setPriceRange={setPriceRange}
