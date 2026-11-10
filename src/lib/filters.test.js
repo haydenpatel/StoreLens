@@ -6,7 +6,8 @@ import {
   filterAndSortProducts,
   htmlToText,
   parseFilterParams,
-  withSearchText,
+  prepareProducts,
+  scopeProducts,
   restoreListSelections,
   restoreOptionSelections,
   restorePriceRange,
@@ -458,9 +459,11 @@ describe("filterAndSortProducts", () => {
       expect(run({ searchQuery: "cotton" }, products)).toEqual(["Plain Tee"]);
     });
 
-    it("strips tags once when products load", () => {
-      const [loaded] = withSearchText([withDescription("Plain Tee", "<p>Soft &amp; warm</p>")]);
-      expect(loaded.descriptionText).toBe("Soft & warm");
+    it("strips tags once when products load, keeping only the folded text", () => {
+      const [loaded] = prepareProducts([withDescription("Plain Tee", "<p>Soft &amp; Wärm</p>")]);
+      expect(loaded.descriptionSearch).toBe("soft & warm");
+      expect(loaded.titleSearch).toBe("plain tee");
+      expect(loaded).not.toHaveProperty("descriptionText");
       expect(htmlToText(undefined)).toBe("");
     });
   });
@@ -1079,5 +1082,55 @@ describe("filtering per variant (#92)", () => {
       );
       expect(names(filter([onSale], { saleOnly: true, selectedOptions: { Size: ["M"] } }))).toEqual(["Sale"]);
     });
+  });
+});
+
+describe("products prepared at load", () => {
+  const sorts = ["title-asc", "title-desc", "price-asc", "price-desc", "newest", "discount-percent", "discount-amount"];
+  const v = (size, price, compareAtPrice = null, available = true) => ({ id: `${size}-${price}`, price, compareAtPrice, available, options: [size] });
+  const make = (title, createdAt, variants) => ({
+    id: title, handle: title, title, description: "", createdAt, currency: "USD",
+    options: [{ name: "Size", values: [] }], variants,
+  });
+  const items = () => [
+    make("A", "2024-01-01T00:00:00Z", [v("S", 10, 20), v("M", 30)]),
+    make("B", "2024-03-01T00:00:00Z", [v("S", 8, 9), v("M", 50, 100)]),
+    make("C", undefined, [v("S", NaN)]),
+    make("D", "2023-01-01T00:00:00Z", [v("S", 15, 30, false)]),
+  ];
+  const state = { ...defaults, inStockOnly: false };
+
+  it("sorts in the same order as products without the precomputed keys", () => {
+    const raw = items();
+    const prepared = prepareProducts(raw);
+    sorts.forEach((sortBy) => {
+      expect(titles(filterAndSortProducts(prepared, { ...state, sortBy }))).toEqual(
+        titles(filterAndSortProducts(raw, { ...state, sortBy }))
+      );
+    });
+  });
+
+  it("sorts narrowed products by their matching variants, not the keys from load", () => {
+    const prepared = prepareProducts(items());
+    const raw = items();
+    const narrowed = { ...state, selectedOptions: { Size: ["S"] } };
+    sorts.forEach((sortBy) => {
+      expect(titles(filterAndSortProducts(prepared, { ...narrowed, sortBy }))).toEqual(
+        titles(filterAndSortProducts(raw, { ...narrowed, sortBy }))
+      );
+    });
+    // B keeps only its 8 variant (its 50 one is out of the Size S filter), so it
+    // is below A's 10 by price, but above it by the all-variants key from load.
+    expect(titles(filterAndSortProducts(prepared, { ...narrowed, sortBy: "price-asc" }))).toEqual(["B", "A", "D", "C"]);
+    expect(titles(filterAndSortProducts(prepared, { ...state, sortBy: "price-desc" }))).toEqual(["B", "A", "D", "C"]);
+    expect(titles(filterAndSortProducts(prepared, { ...narrowed, sortBy: "price-desc" }))).toEqual(["D", "A", "B", "C"]);
+  });
+
+  it("gives the same list from a shared scopeProducts result", () => {
+    const prepared = prepareProducts(items());
+    const search = { ...state, searchQuery: "a", sortBy: "price-asc" };
+    const scoped = scopeProducts(prepared, search);
+    expect(titles(scoped)).toEqual(["A"]);
+    expect(titles(filterAndSortProducts(prepared, search, {}, scoped))).toEqual(titles(filterAndSortProducts(prepared, search)));
   });
 });

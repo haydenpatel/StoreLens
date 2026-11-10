@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { computeFilterData, computeOptionCounts, filterAndSortProducts, withSearchText } from "./filters";
+import { computeFilterData, computeOptionCounts, filterAndSortProducts, prepareProducts } from "./filters";
 import { setLocale } from "./locale";
 
 afterEach(() => setLocale("en-US"));
@@ -106,7 +106,7 @@ describe("computeOptionCounts", () => {
   });
 
   it("applies price, sale and the search and vendor filters", () => {
-    const products = withSearchText([
+    const products = prepareProducts([
       item("Red Hat", ["Colour"], [["Red", undefined, true, 5, 8], ["Green", undefined, true, 20]], { vendors: ["A"] }),
       item("Blue Hat", ["Colour"], [["Blue", undefined, true, 30]], { vendors: ["B"] }),
     ]);

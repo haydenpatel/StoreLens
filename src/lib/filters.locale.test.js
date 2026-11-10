@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { computeFilterData, filterAndSortProducts, foldText, withSearchText } from "./filters";
+import { computeFilterData, filterAndSortProducts, foldText, prepareProducts } from "./filters";
 import { setLocale } from "./locale";
 
 afterEach(() => setLocale("en-US"));
@@ -12,7 +12,7 @@ const item = (title, extra = {}) => ({ id: title, handle: title, title, descript
 const run = (products, overrides = {}) => filterAndSortProducts(products, { ...state, ...overrides }).map((p) => p.title);
 
 describe("search folding (#115)", () => {
-  const products = withSearchText([
+  const products = prepareProducts([
     item("Café Mug"),
     item("CAFÉ Bowl"),
     item("Plain Tee", { description: "<p>Served at the café</p>" }),
@@ -27,7 +27,7 @@ describe("search folding (#115)", () => {
   });
 
   it("gives a shared ?q= link the same products in en-US and tr-TR", () => {
-    const list = withSearchText([item("ISTANBUL Tee"), item("İstanbul Cap"), item("istanbul Bag")]);
+    const list = prepareProducts([item("ISTANBUL Tee"), item("İstanbul Cap"), item("istanbul Bag")]);
     const results = ["en-US", "tr-TR"].map((tag) => {
       setLocale(tag);
       return run(list, { searchQuery: "istanbul" }).sort();
@@ -53,7 +53,7 @@ describe("search folding (#115)", () => {
     expect(foldText("が")).not.toBe("か");
     expect(foldText("कि")).toBe("कि");
     expect(foldText("가")).toBe("가");
-    const list = withSearchText([item("각"), item("가"), item("か"), item("が")]);
+    const list = prepareProducts([item("각"), item("가"), item("か"), item("が")]);
     expect(run(list, { searchQuery: "가" })).toEqual(["가"]);
     expect(run(list, { searchQuery: "か" })).toEqual(["か"]);
     expect(run(list, { searchQuery: "が" })).toEqual(["が"]);
