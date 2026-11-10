@@ -308,8 +308,10 @@ export default function Sidebar({
   );
 }
 
-// `counts` (optional) maps a normalised value to the number of products it
-// would return under the other filters; a value missing from it has none.
+// `counts` (optional) maps a normalised value to how many products have that
+// value under the other current filters (that value alone: if another value of
+// the same option is selected, picking this one returns the union, not this
+// count); a value missing from it has none.
 function FilterSection({ title, items: collectionItems, selected, onToggle, counts }) {
   // A selection restored from a link can name something this collection doesn't
   // have; list it (last) so it can still be seen and cleared.
