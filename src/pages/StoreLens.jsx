@@ -902,9 +902,15 @@ export default function StoreLensApp() {
 
   // Typing and dragging the price slider change per keystroke or frame, so the
   // list and the option counts follow deferred copies of those two: the inputs
-  // stay immediate and the results catch up once they settle.
-  const deferredSearch = useDeferredValue(searchQuery);
-  const deferredPriceRange = useDeferredValue(priceRange);
+  // stay immediate and the results catch up once they settle. The deferred copy
+  // is tied to the products it was taken with: a new load resets the search and
+  // price range, and `useDeferredValue` hands back the old values for a render,
+  // which would filter the new products by the previous store's range. So when
+  // the products have changed, the immediate values are used.
+  const deferredInputs = useDeferredValue(useMemo(() => ({ searchQuery, priceRange, products }), [searchQuery, priceRange, products]));
+  const inputsSettled = deferredInputs.products === products;
+  const deferredSearch = inputsSettled ? deferredInputs.searchQuery : searchQuery;
+  const deferredPriceRange = inputsSettled ? deferredInputs.priceRange : priceRange;
 
   // The search, vendor, type and tag filters, run once for both the list and
   // the option counts.

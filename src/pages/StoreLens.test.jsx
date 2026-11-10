@@ -26,6 +26,19 @@ vi.mock("@/lib/platforms", async (importOriginal) => {
   };
 });
 
+// Records what each render of the product grid is given, to check what the page
+// passes it in the render right after a load, which the DOM may never show.
+const gridRenders = vi.hoisted(() => []);
+vi.mock("../components/ProductGrid", async (importOriginal) => {
+  const { default: Grid } = await importOriginal();
+  return {
+    default: (props) => {
+      gridRenders.push(`${props.products.length} of ${props.totalProducts}`);
+      return <Grid {...props} />;
+    },
+  };
+});
+
 // The real retry backoff (500 + 1000 ms) would make every retry path sleep;
 // shrink it to 1 ms (Retry-After waits included), keeping the retry count.
 vi.mock("@/lib/platforms/requests", async (importOriginal) => {
@@ -1473,6 +1486,33 @@ describe("input and filter fixes (#84)", () => {
         });
       }),
     },
+  });
+
+  it("never filters a newly loaded store by the previous store's price range or search", async () => {
+    const priced = (entries) => ({
+      collections: {
+        all: entries.map(([title, price]) => product({ title, handle: title.toLowerCase().replace(/ /g, "-"), vendor: "Acme", variants: [variant({ price: `${price}.00` })] })),
+      },
+    });
+    vi.stubGlobal("fetch", fakeShopifyFetch({
+      [A]: priced([["Low Tee", 10], ["Mid Tee", 20], ["High Tee", 30]]),
+      [B]: priced([["Far Hat", 500], ["Far Cap", 600]]),
+    }));
+    openAt(`/${A}/collections/all?minPrice=10&maxPrice=20&q=tee`);
+    await heading(2, 3);
+
+    gridRenders.length = 0;
+    await act(async () => {
+      window.history.pushState(null, "", `/${B}/collections/all`);
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+    await heading(2, 2);
+    await drain();
+
+    // Every render that had the new store's products showed all of them.
+    const withNewProducts = gridRenders.filter((text) => text.endsWith(" of 2"));
+    expect(withNewProducts.length).toBeGreaterThan(0);
+    expect(withNewProducts.every((text) => text === "2 of 2")).toBe(true);
   });
 
   it("Reset restores the full price range and clears the filter count and URL params", async () => {
