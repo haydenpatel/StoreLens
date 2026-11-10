@@ -18,7 +18,7 @@ export const SORT_VALUES = [
 ];
 
 // The text of an HTML description, for search. Done once when products load
-// (see withSearchText) rather than on every keystroke.
+// (see prepareProducts) rather than on every keystroke.
 export function htmlToText(html) {
   if (!html) return "";
   const source = String(html);
@@ -48,14 +48,64 @@ export function foldText(text) {
   return String(text ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").normalize("NFC").toLowerCase();
 }
 
-// Adds `descriptionText` (the description without its markup) and the folded
-// `titleSearch` / `descriptionSearch` to each product, once when products load
-// rather than on every keystroke.
-export function withSearchText(products) {
-  return products.map((product) => {
-    const descriptionText = htmlToText(product.description);
-    return { ...product, descriptionText, titleSearch: foldText(product.title), descriptionSearch: foldText(descriptionText) };
+// The folded `titleSearch` / `descriptionSearch` a product is searched by. The
+// description's plain text is not kept (only its folded form), so a product
+// holds two copies of the description (markup and folded), not three.
+const searchFieldsOf = (product) => ({
+  titleSearch: foldText(product.title),
+  descriptionSearch: foldText(htmlToText(product.description)),
+});
+
+// A product's creation time in ms, or 0 when it has no date or one that doesn't
+// parse, so those sort last under "Newest First" (NaN would leave their order
+// undefined).
+const createdTime = (product) => {
+  const time = Date.parse(product.createdAt);
+  return Number.isFinite(time) ? time : 0;
+};
+
+// The lowest and highest usable variant price, +/-Infinity when none has one.
+function priceBounds(variants) {
+  let min = Infinity;
+  let max = -Infinity;
+  variants.forEach(({ price }) => {
+    if (!Number.isFinite(price)) return;
+    if (price < min) min = price;
+    if (price > max) max = price;
   });
+  return { min, max };
+}
+
+// What each numeric sort orders by, from a product's shown variants. A narrowed
+// product (see filterByVariant) gets only the key of the active sort worked out
+// when sorting; the others have all of them from load (see prepareProducts).
+const SORT_KEYS = {
+  "price-asc": (product) => priceBounds(shownVariants(product)).min,
+  "price-desc": (product) => priceBounds(shownVariants(product)).max,
+  "discount-percent": (product) => getDiscountData(shownVariants(product)).discountPercent,
+  "discount-amount": (product) => getDiscountData(shownVariants(product)).discountAmount,
+  newest: createdTime,
+};
+
+// `sortKeys` for a product with all its variants shown: one key per numeric sort.
+function sortKeysOf(product) {
+  const variants = product.variants ?? [];
+  const { min, max } = priceBounds(variants);
+  const { discountPercent, discountAmount } = getDiscountData(variants);
+  return {
+    "price-asc": min,
+    "price-desc": max,
+    "discount-percent": discountPercent,
+    "discount-amount": discountAmount,
+    newest: createdTime(product),
+  };
+}
+
+// Adds what search and sorting need to each product, once when products load
+// rather than on every keystroke or comparison: the folded search text and the
+// sort keys. Products without them (as in tests) still work, just slower.
+export function prepareProducts(products) {
+  return products.map((product) => ({ ...product, ...searchFieldsOf(product), sortKeys: sortKeysOf(product) }));
 }
 
 // Parses filter/sort state out of the URL's query string (?q=...&vendor=a&vendor=b&...).
@@ -317,19 +367,42 @@ export function countActiveFilters(state, filterData, capabilities = {}) {
   return count;
 }
 
-// A product's creation time in ms, or 0 when it has no date or one that doesn't
-// parse, so those sort last under "Newest First" (NaN would leave their order
-// undefined).
-const createdTime = (product) => {
-  const time = Date.parse(product.createdAt);
-  return Number.isFinite(time) ? time : 0;
-};
-
-const pricesOf = (product) => shownVariants(product).map(v => v.price).filter(Number.isFinite);
-
 // a - b that treats an unpriced product (+/-Infinity, where the difference
 // would be NaN) as equal to another unpriced one.
 const comparePrices = (a, b) => (a === b ? 0 : a - b);
+
+// A product's option names mapped to the position of the first option with that
+// name (normalised), as the variants' `options` are indexed. Worked out once per
+// options list (the products a filter narrows share it with the original).
+const optionIndexes = new WeakMap();
+function optionIndexOf(product) {
+  const { options } = product;
+  if (!options) return null;
+  let indexes = optionIndexes.get(options);
+  if (!indexes) {
+    indexes = new Map();
+    options.forEach((option, index) => {
+      const key = normalizeOptionName(option.name);
+      if (key && !indexes.has(key)) indexes.set(key, index);
+    });
+    optionIndexes.set(options, indexes);
+  }
+  return indexes;
+}
+
+// Normalised option values, remembered for one filter or count run: stores
+// repeat the same few values across thousands of variants.
+function valueNormalizer() {
+  const seen = new Map();
+  return (value) => {
+    let key = seen.get(value);
+    if (key === undefined) {
+      key = normalizeOptionValue(value);
+      seen.set(value, key);
+    }
+    return key;
+  };
+}
 
 // Keeps the products with at least one variant passing every variant-level
 // filter. Option selections are OR within an option's values and AND across
@@ -344,6 +417,7 @@ const comparePrices = (a, b) => (a === b ? 0 : a - b);
 // `matchingVariants`, which the card and the sorts use in place of all its
 // variants. Other products are returned as they are.
 function filterByVariant(products, { selectedOptions, inStockOnly, saleOnly, priceRange }) {
+  const normalize = valueNormalizer();
   const selections = Object.entries(selectedOptions)
     .filter(([, values]) => values.length > 0)
     .map(([name, values]) => ({ target: normalizeOptionName(name), wanted: new Set(values.map(normalizeOptionValue)) }));
@@ -355,10 +429,8 @@ function filterByVariant(products, { selectedOptions, inStockOnly, saleOnly, pri
       if (selections.length === 0 && !saleOnly) result.push(product);
       return;
     }
-    const checks = selections.map(({ target, wanted }) => ({
-      index: product.options?.findIndex(o => normalizeOptionName(o.name) === target) ?? -1,
-      wanted,
-    }));
+    const indexes = optionIndexOf(product);
+    const checks = selections.map(({ target, wanted }) => ({ index: indexes?.get(target) ?? -1, wanted }));
     if (checks.some(({ index }) => index < 0)) return;
     // A variant with no usable price has nothing to compare, so the range
     // never excludes it; but it can't make a product match on its own when
@@ -368,7 +440,7 @@ function filterByVariant(products, { selectedOptions, inStockOnly, saleOnly, pri
     const passesNarrowing = (v) =>
       checks.every(({ index, wanted }) => {
         const value = v.options?.[index];
-        return value != null && wanted.has(normalizeOptionValue(value));
+        return value != null && wanted.has(normalize(value));
       }) &&
       (!saleOnly || isDiscounted(v)) &&
       (!Number.isFinite(v.price) || (v.price >= priceRange[0] && v.price <= priceRange[1]));
@@ -378,21 +450,23 @@ function filterByVariant(products, { selectedOptions, inStockOnly, saleOnly, pri
     if (narrowed.length === 0 || (anyPriced && !narrowed.some(v => Number.isFinite(v.price)))) return;
     const matching = inStockOnly ? narrowed.filter(v => v.available) : narrowed;
     if (matching.length === 0) return;
-    result.push(variants.some(v => !passesNarrowing(v)) ? { ...product, matchingVariants: matching } : product);
+    result.push(narrowed.length < variants.length ? { ...product, matchingVariants: matching } : product);
   });
   return result;
 }
 
-// The filters that look at the product as a whole (search, vendor, type, tag),
-// shared by the product list and the option counts.
-function filterByProductFields(products, { searchQuery, selectedVendors, selectedTypes, selectedTags }) {
+// The filters that look at the product as a whole (search, vendor, type, tag).
+// The product list and the option counts both start from this, so a caller
+// that needs both runs it once and passes the result to each.
+export function scopeProducts(products, state, capabilities = {}) {
+  const { searchQuery, selectedVendors, selectedTypes, selectedTags } = withoutUnsupportedSelections(state, capabilities);
   let filtered = products;
 
   if (searchQuery) {
     const query = foldText(searchQuery);
     filtered = filtered.filter(p =>
       (p.titleSearch ?? foldText(p.title)).includes(query) ||
-      (p.descriptionSearch ?? foldText(p.descriptionText ?? htmlToText(p.description))).includes(query)
+      (p.descriptionSearch ?? foldText(htmlToText(p.description))).includes(query)
     );
   }
   if (selectedVendors.length > 0) {
@@ -407,6 +481,11 @@ function filterByProductFields(products, { searchQuery, selectedVendors, selecte
   return filtered;
 }
 
+// Per-product tally for computeOptionCounts: a value's bit 1 means a variant
+// passing the filters has it and a price, bit 2 that one is also in stock.
+const PRICED = 1;
+const STOCKED = 2;
+
 // How many products each variant-option value would return, for the counts
 // beside the option filters: Map of option key -> Map of normalised value ->
 // number of products. A product counts for a value when one of its variants
@@ -417,30 +496,29 @@ function filterByProductFields(products, { searchQuery, selectedVendors, selecte
 // thing is one pass over the products: each variant is tested once, and the
 // selected options it fails say which options' counts it may still feed (none
 // if it fails two, only that option's if it fails one, all if it fails none).
-// The rules mirror filterByVariant (a test checks they agree).
-export function computeOptionCounts(products, state, capabilities = {}) {
+// The rules mirror filterByVariant (a test checks they agree). `scoped` is the
+// scopeProducts result when the caller already has it.
+export function computeOptionCounts(products, state, capabilities = {}, scoped = scopeProducts(products, state, capabilities)) {
   const result = new Map();
   const {
     selectedOptions, priceRange, saleOnly,
   } = withoutUnsupportedSelections(state, capabilities);
   if (capabilities.variantOptions === false) return result;
   const inStockOnly = capabilities.variantStock === false ? false : state.inStockOnly;
-  const scoped = filterByProductFields(products, withoutUnsupportedSelections(state, capabilities));
+  const normalize = valueNormalizer();
 
   const selections = new Map();
   Object.entries(selectedOptions).forEach(([name, values]) => {
     if (values.length > 0) selections.set(normalizeOptionName(name), new Set(values.map(normalizeOptionValue)));
   });
 
+  // One tally per option name of the product in hand (value -> flags), reused
+  // from product to product.
+  const tallies = [];
   scoped.forEach(product => {
     const variants = product.variants || [];
-    if (variants.length === 0 || !product.options) return;
-    // The first option with each name, as filterByVariant finds it.
-    const indexByName = new Map();
-    product.options.forEach((option, index) => {
-      const key = normalizeOptionName(option.name);
-      if (key && !indexByName.has(key)) indexByName.set(key, index);
-    });
+    const indexByName = optionIndexOf(product);
+    if (variants.length === 0 || !indexByName) return;
     // A selected option the product doesn't have rules every other count out.
     const checks = [];
     for (const [name, wanted] of selections) {
@@ -448,95 +526,76 @@ export function computeOptionCounts(products, state, capabilities = {}) {
       if (index === undefined) return;
       checks.push({ name, index, wanted });
     }
+    const slots = [];
+    indexByName.forEach((index, name) => {
+      const slot = slots.length;
+      if (!tallies[slot]) tallies[slot] = new Map();
+      else tallies[slot].clear();
+      slots.push({ name, index, tally: tallies[slot] });
+    });
     const anyPriced = variants.some(v => Number.isFinite(v.price));
-    // name -> value -> { priced: a variant passed, with a price; stocked: and in stock }
-    const found = new Map();
     variants.forEach(variant => {
       if (saleOnly && !isDiscounted(variant)) return;
       if (Number.isFinite(variant.price) && (variant.price < priceRange[0] || variant.price > priceRange[1])) return;
       let failedName = null;
       for (const { name, index, wanted } of checks) {
         const value = variant.options?.[index];
-        if (value != null && wanted.has(normalizeOptionValue(value))) continue;
+        if (value != null && wanted.has(normalize(value))) continue;
         if (failedName !== null) return;
         failedName = name;
       }
-      const priced = Number.isFinite(variant.price);
-      const stocked = !inStockOnly || Boolean(variant.available);
-      indexByName.forEach((index, name) => {
-        if (failedName !== null && failedName !== name) return;
+      const flags = (Number.isFinite(variant.price) ? PRICED : 0) | (!inStockOnly || variant.available ? STOCKED : 0);
+      for (const { name, index, tally } of slots) {
+        if (failedName !== null && failedName !== name) continue;
         const value = variant.options?.[index];
-        if (!value) return;
-        const valueKey = normalizeOptionValue(value);
-        if (!valueKey) return;
-        const values = found.get(name) ?? new Map();
-        const flags = values.get(valueKey) ?? { priced: false, stocked: false };
-        if (priced) flags.priced = true;
-        if (stocked) flags.stocked = true;
-        values.set(valueKey, flags);
-        found.set(name, values);
-      });
+        if (!value) continue;
+        const valueKey = normalize(value);
+        if (!valueKey) continue;
+        tally.set(valueKey, (tally.get(valueKey) ?? 0) | flags);
+      }
     });
-    found.forEach((values, name) => {
+    for (const { name, tally } of slots) {
+      if (tally.size === 0) continue;
       const counts = result.get(name) ?? new Map();
-      values.forEach((flags, valueKey) => {
-        if (flags.stocked && (!anyPriced || flags.priced)) counts.set(valueKey, (counts.get(valueKey) ?? 0) + 1);
+      tally.forEach((flags, valueKey) => {
+        if ((flags & STOCKED) && (!anyPriced || (flags & PRICED))) counts.set(valueKey, (counts.get(valueKey) ?? 0) + 1);
       });
       result.set(name, counts);
-    });
+    }
   });
   return result;
 }
 
-export function filterAndSortProducts(products, state, capabilities = {}) {
+// `scoped` is the scopeProducts result when the caller already has it (the
+// option counts start from the same list).
+export function filterAndSortProducts(products, state, capabilities = {}, scoped = scopeProducts(products, state, capabilities)) {
   const {
     selectedOptions, priceRange, saleOnly, sortBy,
   } = withoutUnsupportedSelections(state, capabilities);
   // Without stock data nothing can be filtered by it.
   const inStockOnly = capabilities.variantStock === false ? false : state.inStockOnly;
-  let filtered = filterByProductFields(products, withoutUnsupportedSelections(state, capabilities));
 
   // Variant-level filters (options, in stock, price, on sale) are ANDed into
   // one test per variant, so a product matches only when a single variant
   // passes all of them together (Size S and Color Blue means an S/Blue variant,
   // not an S one and a Blue one).
-  filtered = filterByVariant(filtered, { selectedOptions, inStockOnly, saleOnly, priceRange });
+  const filtered = filterByVariant(scoped, { selectedOptions, inStockOnly, saleOnly, priceRange });
 
-  // Sort
-  filtered.sort((a, b) => {
-    switch (sortBy) {
-      case "title-asc":
-        return compareText(a.title || "", b.title || "");
-      case "title-desc":
-        return compareText(b.title || "", a.title || "");
-      case "price-asc": {
-        const aMin = Math.min(...pricesOf(a), Infinity);
-        const bMin = Math.min(...pricesOf(b), Infinity);
-        return comparePrices(aMin, bMin);
-      }
-      case "price-desc": {
-        const aMax = Math.max(...pricesOf(a), -Infinity);
-        const bMax = Math.max(...pricesOf(b), -Infinity);
-        return comparePrices(bMax, aMax);
-      }
-      case "newest":
-        return createdTime(b) - createdTime(a);
-      case "discount-percent":
-        return (
-          getDiscountData(shownVariants(b)).discountPercent -
-          getDiscountData(shownVariants(a)).discountPercent
-        );
-      case "discount-amount":
-        return (
-          getDiscountData(shownVariants(b)).discountAmount -
-          getDiscountData(shownVariants(a)).discountAmount
-        );
-      default:
-        return 0;
-    }
-  });
-
-  return filtered;
+  if (sortBy === "title-asc" || sortBy === "title-desc") {
+    const direction = sortBy === "title-asc" ? 1 : -1;
+    return filtered.sort((a, b) => direction * compareText(a.title || "", b.title || ""));
+  }
+  const keyOf = SORT_KEYS[sortBy];
+  if (!keyOf) return filtered;
+  // Each product's key is read once, then the sort compares plain numbers.
+  // Narrowed products (carrying matchingVariants) don't use the keys from load,
+  // which describe all their variants.
+  const keys = filtered.map(product => (product.sortKeys && !product.matchingVariants ? product.sortKeys[sortBy] : keyOf(product)));
+  // Price low to high; every other sort puts the biggest first.
+  const ascending = sortBy === "price-asc";
+  const order = filtered.map((_, index) => index);
+  order.sort((i, j) => (ascending ? comparePrices(keys[i], keys[j]) : comparePrices(keys[j], keys[i])));
+  return order.map(index => filtered[index]);
 }
 
 export function buildFilterSearch(state, filterData, capabilities = {}) {

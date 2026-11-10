@@ -18,7 +18,8 @@ import {
   restoreListSelections,
   restoreOptionSelections,
   restorePriceRange,
-  withSearchText,
+  prepareProducts,
+  scopeProducts,
 } from "@/lib/filters";
 import {
   addressMatches,
@@ -392,7 +393,7 @@ export default function StoreLensApp() {
     // can throw (quota exceeded, private browsing, storage blocked) — that
     // shouldn't leave the loading spinner stuck when products already loaded.
     try {
-      setProducts(withSearchText(allProducts));
+      setProducts(prepareProducts(allProducts));
       setLoadedAdapter(loadAdapter);
       setPlatformNotices(notices ?? []);
       // The load worked, so the store really is on this platform.
@@ -899,29 +900,49 @@ export default function StoreLensApp() {
     loadedAdapter,
   ]);
 
+  // Typing and dragging the price slider change per keystroke or frame, so the
+  // list and the option counts follow deferred copies of those two: the inputs
+  // stay immediate and the results catch up once they settle. The deferred copy
+  // is tied to the products it was taken with: a new load resets the search and
+  // price range, and `useDeferredValue` hands back the old values for a render,
+  // which would filter the new products by the previous store's range. So when
+  // the products have changed, the immediate values are used.
+  const deferredInputs = useDeferredValue(useMemo(() => ({ searchQuery, priceRange, products }), [searchQuery, priceRange, products]));
+  const inputsSettled = deferredInputs.products === products;
+  const deferredSearch = inputsSettled ? deferredInputs.searchQuery : searchQuery;
+  const deferredPriceRange = inputsSettled ? deferredInputs.priceRange : priceRange;
+
+  // The search, vendor, type and tag filters, run once for both the list and
+  // the option counts.
+  const scopedProducts = useMemo(
+    () => scopeProducts(
+      products,
+      { searchQuery: deferredSearch, selectedVendors, selectedTypes, selectedTags },
+      loadedAdapter.capabilities
+    ),
+    [products, deferredSearch, selectedVendors, selectedTypes, selectedTags, loadedAdapter]
+  );
+
   // Filter products
   const filteredProducts = useMemo(
     () => filterAndSortProducts(
       products,
-      { searchQuery, selectedVendors, selectedTypes, selectedTags, selectedOptions, priceRange, inStockOnly, saleOnly, sortBy },
-      loadedAdapter.capabilities
+      { searchQuery: deferredSearch, selectedVendors, selectedTypes, selectedTags, selectedOptions, priceRange: deferredPriceRange, inStockOnly, saleOnly, sortBy },
+      loadedAdapter.capabilities,
+      scopedProducts
     ),
-    [products, searchQuery, selectedVendors, selectedTypes, selectedTags, selectedOptions, priceRange, inStockOnly, saleOnly, sortBy, loadedAdapter]
+    [products, scopedProducts, deferredSearch, selectedVendors, selectedTypes, selectedTags, selectedOptions, deferredPriceRange, inStockOnly, saleOnly, sortBy, loadedAdapter]
   );
 
   // How many products each option value would return under the other filters.
-  // Typing and dragging the price slider change per keystroke or frame, so the
-  // counts follow deferred copies of those two: the list stays immediate and
-  // the counts catch up once the input settles.
-  const deferredSearch = useDeferredValue(searchQuery);
-  const deferredPriceRange = useDeferredValue(priceRange);
   const optionCounts = useMemo(
     () => computeOptionCounts(
       products,
       { searchQuery: deferredSearch, selectedVendors, selectedTypes, selectedTags, selectedOptions, priceRange: deferredPriceRange, inStockOnly, saleOnly },
-      loadedAdapter.capabilities
+      loadedAdapter.capabilities,
+      scopedProducts
     ),
-    [products, deferredSearch, selectedVendors, selectedTypes, selectedTags, selectedOptions, deferredPriceRange, inStockOnly, saleOnly, loadedAdapter]
+    [products, scopedProducts, deferredSearch, selectedVendors, selectedTypes, selectedTags, selectedOptions, deferredPriceRange, inStockOnly, saleOnly, loadedAdapter]
   );
 
   return (
