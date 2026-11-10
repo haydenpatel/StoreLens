@@ -358,3 +358,52 @@ describe("Sidebar accessible names (#145)", () => {
     expect(screen.getByRole("slider", { name: "Maximum price" })).toBeTruthy();
   });
 });
+
+describe("Sidebar option counts", () => {
+  const filterData = {
+    ...computeFilterData([product(10), product(20)]),
+    options: [{ name: "Colour", key: "Colour", values: ["Black", "Red", "Blue"] }],
+  };
+  const optionCounts = (entries) => new Map([["colour", new Map(Object.entries(entries))]]);
+
+  it("shows the product count after each value, and names it in the checkbox", () => {
+    renderSidebar({ filterData, optionCounts: optionCounts({ black: 12, red: 3, blue: 1 }) });
+    expect(checkbox("Black (12)")).toBeTruthy();
+    expect(checkbox("Red (3)")).toBeTruthy();
+  });
+
+  it("marks a value with no products in its name and in text, not by dimming alone", () => {
+    renderSidebar({ filterData, optionCounts: optionCounts({ black: 2 }) });
+    const box = checkbox("Red (0), no matching products");
+    expect(box).toBeTruthy();
+    const label = document.querySelector(`label[for="${box.id}"]`);
+    expect(label.textContent).toContain("(0)");
+    expect(label.className).toContain("italic");
+    expect(checkbox(/^Black \(2\)$/)).toBeTruthy();
+  });
+
+  it("keeps a selected value with a zero count visible and toggleable", async () => {
+    const props = renderSidebar({
+      filterData, optionCounts: optionCounts({ black: 2 }), selectedOptions: { Colour: ["Red"] },
+    });
+    const box = checkbox("Red (0), no matching products");
+    expect(box.getAttribute("aria-checked")).toBe("true");
+    await userEvent.click(box);
+    expect(props.setSelectedOptions).toHaveBeenCalledWith({ Colour: [] });
+  });
+
+  it("formats counts for the viewer's locale", () => {
+    setLocale("de-DE");
+    try {
+      renderSidebar({ filterData, optionCounts: optionCounts({ black: 1234 }) });
+      expect(checkbox("Black (1.234)")).toBeTruthy();
+    } finally {
+      setLocale("en-US");
+    }
+  });
+
+  it("shows no counts when none are supplied", () => {
+    renderSidebar({ filterData });
+    expect(checkbox("Black")).toBeTruthy();
+  });
+});

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import React, { useState, useEffect, useMemo, useRef, useDeferredValue } from "react";
 import { Loader2, SlidersHorizontal } from "lucide-react";
 import Notice from "../components/Notice";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,7 @@ import {
   buildFilterSearch,
   computeFilterData,
   countActiveFilters,
+  computeOptionCounts,
   filterAndSortProducts,
   parseFilterParams,
   restoreListSelections,
@@ -908,6 +909,21 @@ export default function StoreLensApp() {
     [products, searchQuery, selectedVendors, selectedTypes, selectedTags, selectedOptions, priceRange, inStockOnly, saleOnly, sortBy, loadedAdapter]
   );
 
+  // How many products each option value would return under the other filters.
+  // Typing and dragging the price slider change per keystroke or frame, so the
+  // counts follow deferred copies of those two: the list stays immediate and
+  // the counts catch up once the input settles.
+  const deferredSearch = useDeferredValue(searchQuery);
+  const deferredPriceRange = useDeferredValue(priceRange);
+  const optionCounts = useMemo(
+    () => computeOptionCounts(
+      products,
+      { searchQuery: deferredSearch, selectedVendors, selectedTypes, selectedTags, selectedOptions, priceRange: deferredPriceRange, inStockOnly, saleOnly },
+      loadedAdapter.capabilities
+    ),
+    [products, deferredSearch, selectedVendors, selectedTypes, selectedTags, selectedOptions, deferredPriceRange, inStockOnly, saleOnly, loadedAdapter]
+  );
+
   return (
     <div className="min-h-screen flex flex-col bg-secondary">
       <Header
@@ -944,6 +960,7 @@ export default function StoreLensApp() {
             selectedTags={selectedTags}
             setSelectedTags={setSelectedTags}
             selectedOptions={selectedOptions}
+            optionCounts={optionCounts}
             setSelectedOptions={setSelectedOptions}
             priceRange={priceRange}
             setPriceRange={setPriceRange}

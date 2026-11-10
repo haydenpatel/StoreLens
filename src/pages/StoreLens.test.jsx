@@ -148,6 +148,14 @@ afterEach(() => {
   document.documentElement.classList.remove("dark");
 });
 
+// An option value's checkbox is named with its product count ("S (3)"); one
+// instance per value, so lists of names can be compared with !==.
+const optionBoxes = new Map();
+const optionBox = (value) => {
+  if (!optionBoxes.has(value)) optionBoxes.set(value, new RegExp(`^${value} \\(\\d+\\)`));
+  return optionBoxes.get(value);
+};
+
 describe("the collection dropdown (#65)", () => {
   it("stays controlled while loading a collection and switching stores, and shows the placeholder only with no selection", async () => {
     const logged = [vi.spyOn(console, "error"), vi.spyOn(console, "warn")];
@@ -1750,7 +1758,7 @@ describe("sidebar controls, sort and Recent Stores", () => {
     expect(cardTitles()).toEqual(["Bravo Mug"]);
     await user.click(checkbox("kitchen"));
     await heading(3, 4);
-    await user.click(checkbox("M"));
+    await user.click(checkbox(optionBox("M")));
     await heading(1, 4);
     expect(cardTitles()).toEqual(["Alpha Tee"]);
   });
@@ -1765,6 +1773,21 @@ describe("sidebar controls, sort and Recent Stores", () => {
     await user.click(checkbox("In stock only"));
     await heading(3, 4);
     expect(titleShown("Delta Scarf")).toBeNull();
+  });
+
+  it("shows a product count by each option value and updates it as other filters change", async () => {
+    const user = await open();
+    expect(checkbox("S (1)")).toBeTruthy();
+    expect(checkbox("M (1)")).toBeTruthy();
+    // Searching for the mug leaves no product with a size, so both counts fall to 0
+    // (the counts follow the deferred search, so wait for them).
+    await user.type(screen.getByPlaceholderText("Search products..."), "mug");
+    await heading(1, 4);
+    expect(await screen.findByRole("checkbox", { name: "S (0), no matching products" })).toBeTruthy();
+    expect(checkbox("M (0), no matching products")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Clear search" }));
+    await heading(3, 4);
+    expect(await screen.findByRole("checkbox", { name: "S (1)" })).toBeTruthy();
   });
 
   it("'On sale only' keeps just the discounted product", async () => {
@@ -1833,14 +1856,14 @@ describe("sidebar controls, sort and Recent Stores", () => {
 
     it("shows them all for the real Shopify adapter", async () => {
       await open();
-      for (const name of ["Acme", "Shirts", "summer", "S", "In stock only"]) expect(checkbox(name)).toBeTruthy();
+      for (const name of ["Acme", "Shirts", "summer", optionBox("S"), "In stock only"]) expect(checkbox(name)).toBeTruthy();
     });
 
     it.each([
       ["vendors", "Acme"],
       ["categories", "Shirts"],
       ["tags", "summer"],
-      ["variantOptions", "S"],
+      ["variantOptions", optionBox("S")],
       ["variantStock", "In stock only"],
     ])("hides what depends on %s", async (capability, name) => {
       without(capability);
@@ -1848,7 +1871,7 @@ describe("sidebar controls, sort and Recent Stores", () => {
       await open(capability === "variantStock" ? 4 : 3);
       expect(screen.queryByRole("checkbox", { name })).toBeNull();
       // Everything else is still offered.
-      for (const other of ["Acme", "Shirts", "summer", "S", "In stock only"].filter((n) => n !== name)) {
+      for (const other of ["Acme", "Shirts", "summer", optionBox("S"), "In stock only"].filter((n) => n !== name)) {
         expect(checkbox(other)).toBeTruthy();
       }
     });
@@ -1889,14 +1912,14 @@ describe("filters match per variant (#92)", () => {
     // In stock only is on: sold-out L is dropped from the badge, but the card still spans every variant.
     expect(within(card("Alpha Tee")).getByText(/\$20(\.00)? - \$60(\.00)?/)).toBeTruthy();
 
-    await user.click(checkbox("S"));
+    await user.click(checkbox(optionBox("S")));
     await heading(1, 2);
     const tee = within(card("Alpha Tee"));
     expect(tee.getByText(/^\$20(\.00)?$/)).toBeTruthy();
     expect(tee.queryByText(/\$60/)).toBeNull();
     expect(tee.getAllByText(/Save \$20(\.00)? \(50% off\)/).length).toBeGreaterThan(0);
 
-    await user.click(checkbox("S"));
+    await user.click(checkbox(optionBox("S")));
     await heading(2, 2);
     expect(within(card("Alpha Tee")).getByText(/\$20(\.00)? - \$60(\.00)?/)).toBeTruthy();
   });
@@ -1910,7 +1933,7 @@ describe("filters match per variant (#92)", () => {
   it("does not say In stock for a sold-out selection when In stock only is off", async () => {
     const user = await open(`/${A}/collections/all?inStock=0&options=${encodeURIComponent('{"Size":["L"]}')}`, 1);
     expect(within(card("Alpha Tee")).getByText("Out of Stock")).toBeTruthy();
-    await user.click(checkbox("L"));
+    await user.click(checkbox(optionBox("L")));
     await heading(2, 2);
     expect(within(card("Alpha Tee")).queryByText("Out of Stock")).toBeNull();
   });

@@ -34,7 +34,7 @@ Each platform is a small adapter (`src/lib/platforms/`) that turns the platform'
 - Browse any collection (including all products)
 - Auto-detect default collections from bare domains  
 - Loads full pagination for complete product retrieval  
-- Filter by vendor, category, tags, variant options, price, and stock or sale status — even if the shop doesn’t show them. Filters match per variant: one variant must meet the selected options, stock, price and sale filters together  
+- Filter by vendor, category, tags, variant options, price, and stock or sale status — even if the shop doesn’t show them. Filters match per variant: one variant must meet the selected options, stock, price and sale filters together. Each option value shows how many products it would return under the other current filters (products, not variants); a value with none is dimmed and marked "(0)"  
 - Sorting by title, price, newest first, or highest discount 
 - Search across product titles and descriptions  
 - Numbers, sorting and search follow your browser's language: digit layout (separators, grouping, percentages, counts) and sort order match your locale, and search ignores case and accents ("cafe" finds "Café"), the same for every viewer
@@ -141,6 +141,7 @@ StoreLens 1.0 is feature-complete for the supported platforms. It relies on each
 - Known currencies are shown as symbol, amount and code ("$12.50 CAD", "£12.50 GBP"), so a CAD price is never mistaken for USD. A bare "$" with no code means the currency is unknown. This applies to every platform that reports a currency (Shopify via `/meta.json`, Big Cartel, Fourthwall); a Fourthwall shop in USD therefore reads "$12.50 USD".
 - The interface text stays English and digits stay Latin (0-9) in every locale; only the digit layout and sort order follow the browser's language.
 - Search does not fold ß, ø, æ or the dotless Turkish ı ("strasse" won't find "Straße", "KIRMIZI" won't find "kırmızı"). Folding covers Latin script only, so Arabic marks and full-width forms are not folded either.
+- Stock shows only as in stock or sold out, never a number of units: the supported platforms' public feeds don't report quantities in a form a browser can read (Shopify reports them for some stores only, one product at a time).
 - Edge keeps the light favicon on dark tab strips (Safari shows a light-tile icon).
 - The home-screen icon on iOS is a single image, so iOS derives its Dark, Clear and Tinted looks itself: Dark shows a black tile, and Clear and Tinted are monochrome and plain. A web app can't supply separate dark artwork.
 
@@ -155,7 +156,7 @@ StoreLens 1.0 is feature-complete for the supported platforms. It relies on each
 ### Fourthwall
 
 - Variant options have no names in Fourthwall's feed (a variant is just a title such as "Black, XS"), so StoreLens guesses them: a size is labelled "Size" and anything else "Option 1", "Option 2"… Filtering by these names can group unrelated options, and a notice says so when it applies.
-- Stock is reported per product, not per variant, so every size of a sold-out product reads as out of stock, and an in-stock product's sizes all read as available.
+- Stock is reported per product, not per variant, so every size of a sold-out product reads as out of stock, and an in-stock product's sizes all read as available. So with "In stock only" on, the option counts reflect product-level availability: a sold-out product counts for none of its sizes and an in-stock one for all of them.
 - StoreLens recognises a Fourthwall shop by its "All Products" collection (every shop tested has one), so a shop without it wouldn't be recognised.
 - Loads stop after 2,000 products, with a warning.
 
