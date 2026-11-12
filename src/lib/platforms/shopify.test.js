@@ -30,8 +30,8 @@ function routedFetch({ listing, probes = {} }) {
   });
 }
 
-// Calls other than the optional /meta.json currency read.
-const feedCalls = (fetchMock) => fetchMock.mock.calls.filter(([url]) => !url.includes("/meta.json")).length;
+// Calls other than the optional single-product currency read.
+const feedCalls = (fetchMock) => fetchMock.mock.calls.filter(([url]) => !/\/products\/[^/]+\.json$/.test(url)).length;
 
 const probeUrls = (fetchMock) =>
   fetchMock.mock.calls.map(([url]) => url).filter((u) => u.includes("/products.json"));
@@ -403,7 +403,7 @@ describe("fetchCollection", () => {
     let calls = 0;
     vi.stubGlobal(
       "fetch",
-      vi.fn(async (url) => (url.includes("/meta.json") ? jsonResponse({}) : ++calls === 1 ? jsonResponse({}, { ok: false, status: 429 }) : jsonResponse({ products: rawProducts(2) })))
+      vi.fn(async (url) => (/\/products\/[^/]+\.json$/.test(url) ? jsonResponse({}) : ++calls === 1 ? jsonResponse({}, { ok: false, status: 429 }) : jsonResponse({ products: rawProducts(2) })))
     );
     const result = await settled(shopifyAdapter.fetchCollection(COLLECTION));
     expect(result.products).toHaveLength(2);
@@ -425,31 +425,70 @@ describe("fetchCollection", () => {
     expect(onProgress.mock.calls.map(([p]) => p.loaded)).toEqual([250, 260]);
   });
 
-  describe("the store's currency (meta.json)", () => {
-    // Serves products for the feed and `meta` for /meta.json (a response, or a function throwing/never settling).
-    const withMeta = (meta) =>
+  describe("the currency of the prices served (single product .json)", () => {
+    // Serves products for the feed and `single` for a product's .json (a response, or a function throwing/never settling).
+    const withSingle = (single) =>
       vi.fn(async (url, init) => {
         const u = new URL(url);
-        if (u.pathname.endsWith("/meta.json")) return typeof meta === "function" ? meta(init) : meta;
+        if (/\/products\/[^/]+\.json$/.test(u.pathname)) return typeof single === "function" ? single(init) : single;
         return jsonResponse({ products: rawProducts(2) });
       });
+    const priced = (code, extra = {}) => jsonResponse({ product: { variants: [{ price: "1.00", price_currency: code, ...extra }] } });
     const currencies = (r) => r.products.map((p) => p.currency);
+    const singleUrls = (fetchMock) => fetchMock.mock.calls.map(([u]) => u).filter((u) => /\/products\/[^/]+\.json$/.test(u));
 
-    it("sets the currency on every product and reads meta.json from the origin", async () => {
-      const fetchMock = withMeta(jsonResponse({ currency: "CAD" }));
+    it("sets the currency on every product from the first product's .json", async () => {
+      const fetchMock = withSingle(priced("NZD"));
       vi.stubGlobal("fetch", fetchMock);
       const result = await settled(shopifyAdapter.fetchCollection(COLLECTION));
-      expect(currencies(result)).toEqual(["CAD", "CAD"]);
+      expect(currencies(result)).toEqual(["NZD", "NZD"]);
       expect(fetchMock.mock.calls[0][0]).toContain("/products.json");
-      expect(fetchMock.mock.calls.map(([u]) => u)).toContain(`${ORIGIN}/meta.json`);
+      expect(singleUrls(fetchMock)).toEqual([`${ORIGIN}/products/p-0.json`]);
     });
 
-    it("doesn't read meta.json on a locale path, so prices keep the default", async () => {
-      const fetchMock = withMeta(jsonResponse({ currency: "USD" }));
+    it("never reads /meta.json, whose base currency can differ from the prices served", async () => {
+      const fetchMock = withSingle(priced("NZD"));
+      vi.stubGlobal("fetch", fetchMock);
+      await settled(shopifyAdapter.fetchCollection(COLLECTION));
+      expect(fetchMock.mock.calls.some(([u]) => u.includes("meta.json"))).toBe(false);
+    });
+
+    it("reads it under a locale path, so a market's currency is named", async () => {
+      const fetchMock = withSingle(priced("CAD"));
       vi.stubGlobal("fetch", fetchMock);
       const result = await settled(shopifyAdapter.fetchCollection(`${ORIGIN}/en-ca/collections/tees`));
-      expect(currencies(result)).toEqual([undefined, undefined]);
-      expect(fetchMock.mock.calls.some(([u]) => u.includes("meta.json"))).toBe(false);
+      expect(currencies(result)).toEqual(["CAD", "CAD"]);
+      expect(singleUrls(fetchMock)).toEqual([`${ORIGIN}/en-ca/products/p-0.json`]);
+    });
+
+    it("reads it once, however many pages there are", async () => {
+      const fetchMock = vi.fn(async (url) => {
+        if (/\/products\/[^/]+\.json$/.test(url)) return priced("USD");
+        const page = Number(new URL(url).searchParams.get("page"));
+        return jsonResponse({ products: page === 1 ? rawProducts(250) : rawProducts(3, 250) });
+      });
+      vi.stubGlobal("fetch", fetchMock);
+      const result = await settled(shopifyAdapter.fetchCollection(COLLECTION));
+      expect(result.products).toHaveLength(253);
+      expect(singleUrls(fetchMock)).toHaveLength(1);
+      expect(currencies(result).every((c) => c === "USD")).toBe(true);
+    });
+
+    it("encodes the handle in the request", async () => {
+      const fetchMock = vi.fn(async (url) =>
+        /\/products\/[^/]+\.json$/.test(url) ? priced("USD") : jsonResponse({ products: [product({ id: 1, handle: "a b/c" })] })
+      );
+      vi.stubGlobal("fetch", fetchMock);
+      await settled(shopifyAdapter.fetchCollection(COLLECTION));
+      expect(singleUrls(fetchMock)).toEqual([`${ORIGIN}/products/a%20b%2Fc.json`]);
+    });
+
+    it("skips products without a handle and reads nothing when none has one", async () => {
+      const noHandle = vi.fn(async () => jsonResponse({ products: [product({ id: 1, handle: undefined })] }));
+      vi.stubGlobal("fetch", noHandle);
+      const result = await settled(shopifyAdapter.fetchCollection(COLLECTION));
+      expect(currencies(result)).toEqual([undefined]);
+      expect(noHandle).toHaveBeenCalledTimes(1);
     });
 
     it.each([
@@ -457,20 +496,23 @@ describe("fetchCollection", () => {
       ["a non-OK response", jsonResponse({}, { ok: false, status: 404 })],
       ["a body that isn't JSON", { ok: true, status: 200, json: async () => { throw new SyntaxError("x"); } }],
       ["a wrong shape", jsonResponse(["USD"])],
-      ["no currency", jsonResponse({})],
-      ["a currency that isn't a 3-letter code", jsonResponse({ currency: "usd" })],
-      ["a currency that isn't a string", jsonResponse({ currency: 5 })],
+      ["no product", jsonResponse({})],
+      ["no variants", jsonResponse({ product: {} })],
+      ["variants that aren't a list", jsonResponse({ product: { variants: "USD" } })],
+      ["a variant without a currency", jsonResponse({ product: { variants: [{ price: "1.00" }] } })],
+      ["a currency that isn't a 3-letter code", priced("usd")],
+      ["a currency that isn't a string", priced(5)],
       ["a null body", jsonResponse(null)],
-    ])("still loads the products with the default when meta.json gives %s", async (_, meta) => {
-      vi.stubGlobal("fetch", withMeta(meta));
+    ])("still loads the products with the default when the product's .json gives %s", async (_, single) => {
+      vi.stubGlobal("fetch", withSingle(single));
       const result = await settled(shopifyAdapter.fetchCollection(COLLECTION));
       expect(result.products).toHaveLength(2);
       expect(result.pageError).toBeNull();
       expect(currencies(result)).toEqual([undefined, undefined]);
     });
 
-    it("still loads the products with the default when meta.json never answers", async () => {
-      vi.stubGlobal("fetch", withMeta((init) => new Promise((_, reject) => init.signal.addEventListener("abort", () => reject(new Error("aborted"))))));
+    it("still loads the products with the default when the product's .json never answers", async () => {
+      vi.stubGlobal("fetch", withSingle((init) => new Promise((_, reject) => init.signal.addEventListener("abort", () => reject(new Error("aborted"))))));
       const result = await settled(shopifyAdapter.fetchCollection(COLLECTION));
       expect(result.products).toHaveLength(2);
       expect(currencies(result)).toEqual([undefined, undefined]);

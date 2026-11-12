@@ -14,22 +14,27 @@ const PAGE_SIZE = 250;
 
 const CURRENCY_CODE = /^[A-Z]{3}$/;
 
-// How long to wait for /meta.json. It is an optional extra and the products
-// load alongside it, so a slow answer mustn't hold the store up.
-const META_TIMEOUT_MS = 5000;
+// How long to wait for the currency read. It is an optional extra and the
+// products load alongside it, so a slow answer mustn't hold the store up.
+const CURRENCY_TIMEOUT_MS = 5000;
 // How much longer the products wait for it once they have all arrived.
-const META_GRACE_MS = 750;
+const CURRENCY_GRACE_MS = 750;
 
-// The store's base currency, from /meta.json (keyless and readable from the
-// browser). Any failure, or a slow answer, just means it is unknown and prices
-// show with the default "$".
-async function readCurrency(origin) {
+// The currency the feed's prices are in. The bulk feed names none, and /meta.json
+// only gives the store's base currency, while the feed is converted to the
+// visitor's market. A single product's .json is served from the same market
+// and labels each variant's price (`price_currency`), and it is keyless and
+// readable from the browser. `base` carries any Markets locale path. Any
+// failure, or a slow answer, just means it is unknown and prices show with the
+// default "$": a bare symbol is better than a confident wrong code.
+async function readCurrency(base, handle) {
   const timeout = new AbortController();
-  const timer = setTimeout(() => timeout.abort(), META_TIMEOUT_MS);
+  const timer = setTimeout(() => timeout.abort(), CURRENCY_TIMEOUT_MS);
   try {
-    const response = await fetch(`${origin}/meta.json`, { signal: timeout.signal });
+    const response = await fetch(`${base}/products/${encodeURIComponent(handle)}.json`, { signal: timeout.signal });
     if (!response.ok) return undefined;
-    const code = (await response.json())?.currency;
+    const variants = (await response.json())?.product?.variants;
+    const code = Array.isArray(variants) ? variants.find((v) => typeof v?.price_currency === "string")?.price_currency : undefined;
     return typeof code === "string" && CURRENCY_CODE.test(code) ? code : undefined;
   } catch {
     return undefined;
@@ -150,10 +155,9 @@ async function fetchCollection(collectionUrl, { signal, maxPages = MAX_PRODUCT_P
   // Every Shopify store answers this, so it tells "this collection doesn't
   // exist" apart from "this store can't be read" when the first page fails.
   const probe = () => probeUrl(`${origin}/products.json?limit=1`, signal);
-  // meta.json reports the store's base currency even on a Markets locale path,
-  // whose feed carries converted prices, so the currency is only read (and
-  // applied) on the plain origin. A locale path keeps the default "$".
-  const isLocalePath = shopifyAdapter.parseUrl(new URL(collectionUrl)).origin !== origin;
+  // The market's origin, locale path included, so the currency is read from
+  // the same market the feed's prices come from.
+  const marketOrigin = shopifyAdapter.parseUrl(new URL(collectionUrl)).origin;
   let currencyRequest = null;
 
   const fetchPage = async (page) => {
@@ -167,8 +171,6 @@ async function fetchCollection(collectionUrl, { signal, maxPages = MAX_PRODUCT_P
     let response;
     try {
       const request = fetchWithRetry(`${jsonUrl}?page=${page}&limit=${PAGE_SIZE}`, { signal });
-      // Read alongside the first page, not before it: the products don't wait on it.
-      if (page === 1 && !isLocalePath && !currencyRequest) currencyRequest = readCurrency(origin);
       response = await request;
     } catch (err) {
       if (signal?.aborted) throw err;
@@ -186,8 +188,12 @@ async function fetchCollection(collectionUrl, { signal, maxPages = MAX_PRODUCT_P
       throw err instanceof SyntaxError ? new StoreError("unsupported-platform", { cause: err }) : await diagnose({ cause: err });
     }
     if (!Array.isArray(data?.products)) throw new StoreError("unsupported-platform");
+    const items = asObjects(data.products).map((raw) => normalizeShopifyProduct(raw, origin));
+    // Read alongside the remaining pages: the products don't wait on it.
+    const sample = items.find((item) => item.handle);
+    if (page === 1 && sample && !currencyRequest) currencyRequest = readCurrency(marketOrigin, sample.handle);
     return {
-      items: asObjects(data.products).map((raw) => normalizeShopifyProduct(raw, origin)),
+      items,
       done: data.products.length < PAGE_SIZE,
     };
   };
@@ -205,7 +211,7 @@ async function fetchCollection(collectionUrl, { signal, maxPages = MAX_PRODUCT_P
   if (currencyRequest && pageError?.kind !== "cancelled") {
     let timer;
     const grace = new Promise((resolve) => {
-      timer = setTimeout(() => resolve(undefined), META_GRACE_MS);
+      timer = setTimeout(() => resolve(undefined), CURRENCY_GRACE_MS);
     });
     const currency = await Promise.race([currencyRequest, grace]);
     clearTimeout(timer);
