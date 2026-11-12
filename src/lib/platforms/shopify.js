@@ -14,11 +14,11 @@ const PAGE_SIZE = 250;
 
 const CURRENCY_CODE = /^[A-Z]{3}$/;
 
-// How long to wait for the currency read. It is an optional extra and the
-// products load alongside it, so a slow answer mustn't hold the store up.
+// How long the currency read may take, counted from when the first page has
+// arrived. It is an optional extra: the products load alongside it, but they
+// are only returned once it has answered or run out this long, so a slow
+// answer delays the final result by up to this much and then shows "$".
 const CURRENCY_TIMEOUT_MS = 5000;
-// How much longer the products wait for it once they have all arrived.
-const CURRENCY_GRACE_MS = 750;
 
 // The currency the feed's prices are in. The bulk feed names none, and /meta.json
 // only gives the store's base currency, while the feed is converted to the
@@ -27,9 +27,12 @@ const CURRENCY_GRACE_MS = 750;
 // readable from the browser. `base` carries any Markets locale path. Any
 // failure, or a slow answer, just means it is unknown and prices show with the
 // default "$": a bare symbol is better than a confident wrong code.
-async function readCurrency(base, handle) {
+async function readCurrency(base, handle, signal) {
   const timeout = new AbortController();
   const timer = setTimeout(() => timeout.abort(), CURRENCY_TIMEOUT_MS);
+  // A cancelled load or store switch stops the request too.
+  const stop = () => timeout.abort();
+  signal?.addEventListener("abort", stop, { once: true });
   try {
     const response = await fetch(`${base}/products/${encodeURIComponent(handle)}.json`, { signal: timeout.signal });
     if (!response.ok) return undefined;
@@ -40,6 +43,7 @@ async function readCurrency(base, handle) {
     return undefined;
   } finally {
     clearTimeout(timer);
+    signal?.removeEventListener("abort", stop);
   }
 }
 
@@ -191,7 +195,7 @@ async function fetchCollection(collectionUrl, { signal, maxPages = MAX_PRODUCT_P
     const items = asObjects(data.products).map((raw) => normalizeShopifyProduct(raw, origin));
     // Read alongside the remaining pages: the products don't wait on it.
     const sample = items.find((item) => item.handle);
-    if (page === 1 && sample && !currencyRequest) currencyRequest = readCurrency(marketOrigin, sample.handle);
+    if (page === 1 && sample && !currencyRequest) currencyRequest = readCurrency(marketOrigin, sample.handle, signal);
     return {
       items,
       done: data.products.length < PAGE_SIZE,
@@ -209,12 +213,7 @@ async function fetchCollection(collectionUrl, { signal, maxPages = MAX_PRODUCT_P
   });
   // Not worth waiting for once the user has cancelled.
   if (currencyRequest && pageError?.kind !== "cancelled") {
-    let timer;
-    const grace = new Promise((resolve) => {
-      timer = setTimeout(() => resolve(undefined), CURRENCY_GRACE_MS);
-    });
-    const currency = await Promise.race([currencyRequest, grace]);
-    clearTimeout(timer);
+    const currency = await currencyRequest;
     if (currency) for (const item of items) item.currency = currency;
   }
   return { products: items, pageError, truncated };

@@ -149,7 +149,7 @@ StoreLens 1.0 is feature-complete for the supported platforms. It relies on each
 
 - Shopify enforces a limit of 1,000 collection pages (and 250 products per page).
   For a collection larger than 250,000 items StoreLens shows the first 250,000 products, with a warning.
-- The products feed has no currency, and Shopify converts it to the visitor's market, so StoreLens reads the currency from one product's own `.json` (the same market, and on a Markets locale path such as `/en-ca` the market's currency). If that can't be read or is slow, prices show with "$" rather than a code that might be wrong.
+- The products feed has no currency, and Shopify converts it to the visitor's market, so StoreLens reads the currency from one product's own `.json` (the same market, and on a Markets locale path such as `/en-ca` the market's currency). If that can't be read within 5 seconds of the first page arriving, prices show with "$" rather than a code that might be wrong; a slow read delays the finished list by up to those 5 seconds.
 
 
 ### Fourthwall

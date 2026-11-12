@@ -4,6 +4,7 @@ import {
   normalizeShopifyProduct,
   shopifyAdapter,
 } from "./shopify";
+import { cancelledError } from "@/lib/errors";
 import { loadCollectionsCache } from "@/lib/store";
 import { collectionsPage, product, variant } from "../__fixtures__/shopify";
 
@@ -509,6 +510,40 @@ describe("fetchCollection", () => {
       expect(result.products).toHaveLength(2);
       expect(result.pageError).toBeNull();
       expect(currencies(result)).toEqual([undefined, undefined]);
+    });
+
+    it("waits for a slow answer rather than giving up after a moment", async () => {
+      vi.stubGlobal("fetch", withSingle(() => new Promise((resolve) => setTimeout(() => resolve(priced("NZD")), 3000))));
+      const result = await settled(shopifyAdapter.fetchCollection(COLLECTION));
+      expect(currencies(result)).toEqual(["NZD", "NZD"]);
+    });
+
+    it("falls back to the default when the answer comes after the timeout", async () => {
+      vi.stubGlobal("fetch", withSingle((init) => new Promise((resolve, reject) => {
+        const t = setTimeout(() => resolve(priced("NZD")), 6000);
+        init.signal.addEventListener("abort", () => { clearTimeout(t); reject(new Error("aborted")); });
+      })));
+      const result = await settled(shopifyAdapter.fetchCollection(COLLECTION));
+      expect(currencies(result)).toEqual([undefined, undefined]);
+    });
+
+    it("passes the caller's signal on, and skips the wait when the load was cancelled", async () => {
+      const controller = new AbortController();
+      let readSignal;
+      vi.stubGlobal("fetch", vi.fn(async (url, init) => {
+        if (/\/products\/[^/]+\.json$/.test(url)) {
+          readSignal = init.signal;
+          return new Promise((_, reject) => init.signal.addEventListener("abort", () => reject(new Error("aborted"))));
+        }
+        const page = Number(new URL(url).searchParams.get("page"));
+        if (page === 1) return jsonResponse({ products: rawProducts(250) });
+        controller.abort(cancelledError());
+        return jsonResponse({ products: rawProducts(250, 250) });
+      }));
+      const result = await shopifyAdapter.fetchCollection(COLLECTION, { signal: controller.signal });
+      expect(result.pageError?.kind).toBe("cancelled");
+      expect(readSignal.aborted).toBe(true);
+      expect(currencies(result).every((c) => c === undefined)).toBe(true);
     });
 
     it("still loads the products with the default when the product's .json never answers", async () => {
