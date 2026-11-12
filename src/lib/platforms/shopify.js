@@ -14,11 +14,12 @@ const PAGE_SIZE = 250;
 
 const CURRENCY_CODE = /^[A-Z]{3}$/;
 
-// How long the currency read may take, counted from when the first page has
-// arrived. It is an optional extra: the products load alongside it, but they
-// are only returned once it has answered or run out this long, so a slow
-// answer delays the final result by up to this much and then shows "$".
+// How long the currency read may take before it is given up on.
 const CURRENCY_TIMEOUT_MS = 5000;
+// The read starts once the first page has arrived, and it is an optional extra:
+// once every page is in, the products wait at most this long for it, then show
+// "$". Longer than a small /meta.json read needed, as a product's .json is bigger.
+const CURRENCY_GRACE_MS = 2000;
 
 // The currency the feed's prices are in. The bulk feed names none, and /meta.json
 // only gives the store's base currency, while the feed is converted to the
@@ -213,7 +214,12 @@ async function fetchCollection(collectionUrl, { signal, maxPages = MAX_PRODUCT_P
   });
   // Not worth waiting for once the user has cancelled.
   if (currencyRequest && pageError?.kind !== "cancelled") {
-    const currency = await currencyRequest;
+    let timer;
+    const grace = new Promise((resolve) => {
+      timer = setTimeout(() => resolve(undefined), CURRENCY_GRACE_MS);
+    });
+    const currency = await Promise.race([currencyRequest, grace]);
+    clearTimeout(timer);
     if (currency) for (const item of items) item.currency = currency;
   }
   return { products: items, pageError, truncated };

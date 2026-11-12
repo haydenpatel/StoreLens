@@ -512,17 +512,14 @@ describe("fetchCollection", () => {
       expect(currencies(result)).toEqual([undefined, undefined]);
     });
 
-    it("waits for a slow answer rather than giving up after a moment", async () => {
-      vi.stubGlobal("fetch", withSingle(() => new Promise((resolve) => setTimeout(() => resolve(priced("NZD")), 3000))));
+    it("applies an answer that arrives inside the 2s grace", async () => {
+      vi.stubGlobal("fetch", withSingle(() => new Promise((resolve) => setTimeout(() => resolve(priced("NZD")), 1500))));
       const result = await settled(shopifyAdapter.fetchCollection(COLLECTION));
       expect(currencies(result)).toEqual(["NZD", "NZD"]);
     });
 
-    it("falls back to the default when the answer comes after the timeout", async () => {
-      vi.stubGlobal("fetch", withSingle((init) => new Promise((resolve, reject) => {
-        const t = setTimeout(() => resolve(priced("NZD")), 6000);
-        init.signal.addEventListener("abort", () => { clearTimeout(t); reject(new Error("aborted")); });
-      })));
+    it("falls back to the default when the answer comes after the grace", async () => {
+      vi.stubGlobal("fetch", withSingle(() => new Promise((resolve) => setTimeout(() => resolve(priced("NZD")), 2500))));
       const result = await settled(shopifyAdapter.fetchCollection(COLLECTION));
       expect(currencies(result)).toEqual([undefined, undefined]);
     });
