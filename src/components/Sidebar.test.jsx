@@ -407,3 +407,34 @@ describe("Sidebar option counts", () => {
     expect(checkbox("Black")).toBeTruthy();
   });
 });
+
+describe("Sidebar long keys", () => {
+  const prefix = "_tab_inside-drink-plant-recovery-smoothie-";
+  const longA = `${prefix}130`;
+  const longB = `${prefix}131`;
+
+  it("renders a long key in full, with the full key as its title, in every group", () => {
+    const filterData = {
+      ...computeFilterData([product(10), product(20)]),
+      vendors: [longA],
+      types: [longA],
+      tags: [longA],
+      options: [{ name: "Flavour", key: "flavour", values: [longA] }],
+    };
+    renderSidebar({ filterData });
+    const rows = screen.getAllByText(longA);
+    expect(rows.length).toBe(4);
+    for (const row of rows) expect(row.getAttribute("title")).toBe(longA);
+  });
+
+  it("keeps two keys that share a long prefix as separate filters and selects only the one clicked", async () => {
+    const props = renderSidebar({
+      filterData: { ...computeFilterData([product(10), product(20)]), tags: [longA, longB] },
+    });
+    expect(checkbox(longA)).toBeTruthy();
+    expect(checkbox(longB)).toBeTruthy();
+    await userEvent.click(checkbox(longB));
+    const update = props.setSelectedTags.mock.calls[0][0];
+    expect(update).toEqual([longB]);
+  });
+});

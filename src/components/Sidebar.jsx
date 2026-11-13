@@ -357,12 +357,12 @@ function FilterSection({ title, items: collectionItems, selected, onToggle, coun
               )}
             >
               {counts ? (
-                <span className="flex gap-1">
-                  <span className="truncate">{item}</span>{" "}
+                <span className="flex min-w-0 gap-1">
+                  <span className="truncate" title={item}>{item}</span>{" "}
                   <ItemCount count={count(item)} />
                 </span>
               ) : (
-                <span className="block truncate">{item}</span>
+                <span className="block min-w-0 truncate" title={item}>{item}</span>
               )}
             </Label>
           </div>
