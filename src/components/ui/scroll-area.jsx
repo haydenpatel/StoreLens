@@ -5,6 +5,10 @@ import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area"
 
 import { cn } from "@/lib/utils"
 
+// Radix wraps the content in a `display: table` div that grows to its widest
+// child, so a long unbreakable line would widen the content past the area
+// instead of letting `truncate` work. `[&>div]:!block` keeps it as wide as the
+// viewport. This area only scrolls vertically.
 function ScrollArea({
   className,
   children,
@@ -14,7 +18,7 @@ function ScrollArea({
     <ScrollAreaPrimitive.Root data-slot="scroll-area" className={cn("relative", className)} {...props}>
       <ScrollAreaPrimitive.Viewport
         data-slot="scroll-area-viewport"
-        className="focus-visible:ring-ring/50 size-full rounded-[inherit] transition-[color,box-shadow] outline-none focus-visible:ring-[3px] focus-visible:outline-1">
+        className="[&>div]:!block focus-visible:ring-ring/50 size-full rounded-[inherit] transition-[color,box-shadow] outline-none focus-visible:ring-[3px] focus-visible:outline-1">
         {children}
       </ScrollAreaPrimitive.Viewport>
       <ScrollBar />
