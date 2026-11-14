@@ -138,8 +138,8 @@ export default function Sidebar({
         ref={asideRef}
         {...(isDesktop ? {} : { role: "dialog", "aria-modal": "true", "aria-labelledby": headingId })}
         className={cn(
-          "fixed left-0 top-0 z-50 h-screen w-80 max-w-[85vw] bg-secondary border-r border-sidebar-border shadow-xl transition-transform duration-200 ease-in-out",
-          isOpen ? "translate-x-0" : "-translate-x-full",
+          "fixed left-0 top-0 z-50 h-dvh w-80 max-w-[85vw] bg-secondary border-r border-sidebar-border shadow-xl transition-[transform,visibility] duration-200 ease-in-out",
+          isOpen ? "translate-x-0" : "-translate-x-full max-xl:invisible",
           "xl:sticky xl:top-[73px] xl:left-auto xl:z-auto xl:h-[calc(100vh-73px)] xl:max-w-none xl:translate-x-0 xl:shadow-none xl:bg-transparent"
         )}
         inert={isDesktop ? undefined : !isOpen}
