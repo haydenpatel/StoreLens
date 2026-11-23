@@ -594,7 +594,7 @@ describe("store resolution that takes a while", () => {
     const user = userEvent.setup();
     await screen.findByTitle("Retry loading collections");
 
-    await user.click(input());
+    await user.tripleClick(input());
     await user.paste(B);
     await user.keyboard("{Enter}");
     // B fails too (the retry button is still there, now for B).

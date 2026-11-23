@@ -4,6 +4,7 @@
 // this maps onto.
 import { StoreError, diagnoseFailure, probeUrl } from "@/lib/errors";
 import { fetchPages, fetchWithRetry } from "./requests";
+import { decodeHandle } from "./handle";
 
 const PLATFORM_ID = "fourthwall";
 
@@ -155,7 +156,7 @@ export function normalizeFourthwallProduct(raw, origin) {
 // /collections/{slug}/{n}[.json]; null for a bare store.
 function parseUrl(url) {
   const match = url.pathname.match(COLLECTION_PATH);
-  if (match) return { origin: `${url.origin}${match[1] ?? ""}`, collection: match[2] };
+  if (match) return { origin: `${url.origin}${match[1] ?? ""}`, collection: decodeHandle(match[2]) };
   const root = url.pathname.match(ROOT_LOCALE_PATH);
   return { origin: `${url.origin}${root?.[1] ?? ""}`, collection: null };
 }
@@ -175,7 +176,7 @@ async function fetchCollection(collectionUrl, { signal, onProgress, maxPages = M
       // no longer returning products, not a missing collection.
       return page > 1 && err.kind === "not-found" ? new StoreError("empty", { status: err.status, cause: err }) : err;
     };
-    const request = () => fetchWithRetry(`${origin}/collections/${collection}/${page}.json`, { signal });
+    const request = () => fetchWithRetry(`${origin}/collections/${encodeURIComponent(collection)}/${page}.json`, { signal });
     let response;
     try {
       response = await request();
@@ -287,7 +288,7 @@ export const fourthwallAdapter = {
   matchesUrl: (url) => /\/collections\/[^/]+\/\d+\.json$/i.test(url.pathname),
   detect,
   parseUrl,
-  collectionUrl: (origin, collection) => `${origin}/collections/${collection}`,
+  collectionUrl: (origin, collection) => `${origin}/collections/${encodeURIComponent(collection)}`,
   // No collection listing is readable from the browser, so a bare store opens
   // its "all" collection, and the collection dropdown offers only that and the
   // collection on screen, with this note explaining why.

@@ -2,6 +2,7 @@ import { loadCollectionsCache, saveCollectionsCache } from "@/lib/store";
 import { StoreError, diagnoseFailure, kindFromStatus, probeUrl, withTimeout } from "@/lib/errors";
 import { compareText } from "@/lib/locale";
 import { fetchPages, fetchWithRetry } from "./requests";
+import { decodeHandle } from "./handle";
 
 const PLATFORM_ID = "shopify";
 
@@ -110,10 +111,11 @@ export function normalizeShopifyProduct(raw, origin) {
 
   let url = null;
   if (raw.handle && origin) {
-    // Links are always https on the store's hostname, as they were before
-    // this became an adapter.
+    // Links are always https on the store's hostname; the market's locale
+    // path stays, so "View" opens the same market the prices came from.
     try {
-      url = `https://${new URL(origin).hostname}/products/${raw.handle}`;
+      const { hostname, pathname } = new URL(origin);
+      url = `https://${hostname}${pathname.replace(/\/+$/, "")}/products/${raw.handle}`;
     } catch {
       url = null;
     }
@@ -157,12 +159,12 @@ export function getCollectionJsonUrl(url) {
 async function fetchCollection(collectionUrl, { signal, maxPages = MAX_PRODUCT_PAGES, onProgress } = {}) {
   const jsonUrl = getCollectionJsonUrl(collectionUrl);
   const origin = new URL(collectionUrl).origin;
+  // The market's origin, locale path included, so the currency is read from
+  // the same market the feed's prices come from, and product links keep it.
+  const marketOrigin = shopifyAdapter.parseUrl(new URL(collectionUrl)).origin;
   // Every Shopify store answers this, so it tells "this collection doesn't
   // exist" apart from "this store can't be read" when the first page fails.
   const probe = () => probeUrl(`${origin}/products.json?limit=1`, signal);
-  // The market's origin, locale path included, so the currency is read from
-  // the same market the feed's prices come from.
-  const marketOrigin = shopifyAdapter.parseUrl(new URL(collectionUrl)).origin;
   let currencyRequest = null;
 
   const fetchPage = async (page) => {
@@ -193,7 +195,7 @@ async function fetchCollection(collectionUrl, { signal, maxPages = MAX_PRODUCT_P
       throw err instanceof SyntaxError ? new StoreError("unsupported-platform", { cause: err }) : await diagnose({ cause: err });
     }
     if (!Array.isArray(data?.products)) throw new StoreError("unsupported-platform");
-    const items = asObjects(data.products).map((raw) => normalizeShopifyProduct(raw, origin));
+    const items = asObjects(data.products).map((raw) => normalizeShopifyProduct(raw, marketOrigin));
     // Read alongside the remaining pages: the products don't wait on it.
     const sample = items.find((item) => item.handle);
     if (page === 1 && sample && !currencyRequest) currencyRequest = readCurrency(marketOrigin, sample.handle, signal);
@@ -464,14 +466,24 @@ export const shopifyAdapter = {
   // two-letter language so ordinary short pages such as /faq are not mistaken
   // for one.
   parseUrl(url) {
-    const match = url.pathname.match(/^(\/[a-z]{2,3}(?:-[a-z0-9]{2,8})?)?\/collections\/([^/]+)/i);
+    const match = url.pathname.match(/^(\/[a-z]{2,3}(?:-[a-z0-9]{2,8})?)?\/collections\/([^/]+)(\/.*)?$/i);
     if (match) {
-      return { origin: `${url.origin}${match[1] ?? ""}`, collection: match[2] };
+      const origin = `${url.origin}${match[1] ?? ""}`;
+      const handle = decodeHandle(match[2]);
+      // vendors and types are filter pages (/collections/vendors?q=Acme), and a
+      // third segment is a tag filter (/collections/tees/red): neither is a
+      // collection feed, and loading the plain handle would show the wrong
+      // products, so they read as a bare store.
+      const rest = match[3] ?? "";
+      if (/^(?:vendors|types)$/.test(handle) || !/^(?:\/|\/products(?:\.json|\/[^/]+)?\/?)?$/i.test(rest)) {
+        return { origin, collection: null };
+      }
+      return { origin, collection: handle };
     }
     const root = url.pathname.match(/^(\/[a-z]{2}(?:-[a-z0-9]{2,8})?)\/?$/i);
     return { origin: `${url.origin}${root?.[1] ?? ""}`, collection: null };
   },
-  collectionUrl: (origin, collection) => `${origin}/collections/${collection}`,
+  collectionUrl: (origin, collection) => `${origin}/collections/${encodeURIComponent(collection)}`,
   listCollections,
   fetchCollection,
 };

@@ -103,7 +103,14 @@ export default function Header({
               onPaste={(e) => {
                 const text = e.clipboardData.getData("text");
                 e.preventDefault();
-                onStorePaste(text);
+                // A pasted link replaces the whole value; anything else goes in at
+                // the cursor (over any selection), as a normal paste would.
+                const { selectionStart: start, selectionEnd: end } = e.currentTarget;
+                onStorePaste(
+                  /^https?:\/\//i.test(text.trim()) || start == null
+                    ? text
+                    : `${storeInput.slice(0, start)}${text}${storeInput.slice(end ?? start)}`
+                );
               }}
               onKeyPress={handleKeyPress}
               disabled={loading}
