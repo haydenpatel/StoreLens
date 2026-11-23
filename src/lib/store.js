@@ -143,6 +143,9 @@ function saveCacheEntry(family, key, value) {
   if (!prunedThisSession.has(family)) pruneCaches([family]);
 }
 
+const isUsableCollection = (c) =>
+  typeof c === "object" && c !== null && typeof c.handle === "string" && c.handle.trim() !== "" && typeof c.title === "string";
+
 export function loadCollectionsCache(platformId, origin) {
   try {
     const raw = localStorage.getItem(cacheKey(platformId, origin));
@@ -151,6 +154,10 @@ export function loadCollectionsCache(platformId, origin) {
     if (!parsed || typeof parsed !== "object") return null;
     const { cachedAt, collections, allProductsHandle } = parsed;
     if (!isFreshTimestamp(cachedAt, TTL_MS) || !Array.isArray(collections)) return null;
+    // An entry written by a build that let a bad collection through would crash
+    // the dropdown on every visit for 6 hours, so one is a miss and is fetched afresh.
+    if (!collections.every(isUsableCollection)) return null;
+    if (allProductsHandle !== null && allProductsHandle !== undefined && typeof allProductsHandle !== "string") return null;
     return { collections, allProductsHandle: allProductsHandle ?? null };
   } catch {
     return null;
@@ -186,6 +193,22 @@ export function loadPlatformCache(origin) {
     return platformId;
   } catch {
     return null;
+  }
+}
+
+// Forgets every cached collection list and platform answer (not Recent Stores
+// or the visited collections), for the error page's "clear saved data" button.
+// Any version of the keys goes: they are all disposable caches.
+export function clearStoreCaches() {
+  try {
+    const doomed = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (typeof key === "string" && Object.values(CACHE_FAMILIES).some(({ keyPrefix }) => key.startsWith(keyPrefix))) doomed.push(key);
+    }
+    for (const key of doomed) localStorage.removeItem(key);
+  } catch {
+    /* storage unavailable: nothing to clear */
   }
 }
 

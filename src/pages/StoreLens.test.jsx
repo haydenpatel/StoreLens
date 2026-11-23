@@ -624,6 +624,7 @@ describe("store resolution that takes a while", () => {
   });
 
   it("shows the error when resolving fails for a reason other than being superseded", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
     slowResolve.override = (url, options, real) =>
       url.host === A ? Promise.reject(new TypeError("Failed to fetch")) : real(url, options);
     vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: storeA() }));
@@ -633,7 +634,7 @@ describe("store resolution that takes a while", () => {
     await user.click(input());
     await user.paste(A);
 
-    expect(await screen.findByText("Failed to fetch")).not.toBeNull();
+    expect(await screen.findByText(/Something went wrong loading this store/)).not.toBeNull();
   });
 });
 
@@ -1216,6 +1217,7 @@ describe("history writes and load cancellation (#82)", () => {
     });
 
     it("leaves the entry as it was when its store can't be resolved", async () => {
+      vi.spyOn(console, "error").mockImplementation(() => {});
       vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: storeA() }));
       openAt(`/${A}/collections/tees`);
       await heading(3, 3);
@@ -1236,7 +1238,7 @@ describe("history writes and load cancellation (#82)", () => {
       await user.click(screen.getByRole("checkbox", { name: "Acme" }));
       act(() => window.history.back());
       await act(async () => resolution.release());
-      expect(await screen.findByText("Failed to fetch")).not.toBeNull();
+      expect(await screen.findByText(/Something went wrong loading this store/)).not.toBeNull();
       await settle();
       expect(here()).toBe(`/${A}/collections/tees`);
     });

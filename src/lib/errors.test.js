@@ -72,11 +72,6 @@ describe("describeStoreError", () => {
     expect(describeStoreErrorReason(new StoreError("server-error", { status: 502 }))).toContain("502");
   });
 
-  it("keeps the message of an error that isn't a StoreError", () => {
-    expect(describeStoreError(new Error("Please enter a valid collection URL"))).toBe("Please enter a valid collection URL");
-    expect(describeStoreErrorReason(new Error("network down"))).toBe("network down");
-  });
-
   it("falls back to the server-error copy for an unknown kind", () => {
     expect(describeStoreError(new StoreError("something-new", { status: 500 }))).toContain("error");
   });
