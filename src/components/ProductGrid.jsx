@@ -38,7 +38,6 @@ function ProductGrid({ products, totalProducts, sortBy, setSortBy, currency }) {
   // report the current state again, so reveals continue until the sentinel
   // leaves view or the list is exhausted. This also reattaches to the
   // sentinel node, which remounts when a filter empties the results.
-  const total = products.length;
   useEffect(() => {
     const sentinel = sentinelRef.current;
     if (!sentinel) return;
@@ -46,14 +45,14 @@ function ProductGrid({ products, totalProducts, sortBy, setSortBy, currency }) {
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries[0]?.isIntersecting) {
-          setVisibleCount((prev) => Math.min(prev + CHUNK_SIZE, total));
+          setVisibleCount((prev) => Math.min(prev + CHUNK_SIZE, products.length));
         }
       },
       { rootMargin: "600px" }
     );
     observer.observe(sentinel);
     return () => observer.disconnect();
-  }, [products, visibleCount, total]);
+  }, [products, visibleCount]);
 
   const visibleProducts = products.slice(0, visibleCount);
   // The same id can appear twice (a product repeated across pages); only the
