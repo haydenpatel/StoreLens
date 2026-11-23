@@ -438,3 +438,32 @@ describe("Sidebar long keys", () => {
     expect(update).toEqual([longB]);
   });
 });
+
+describe("Sidebar option keys that name something on Object.prototype (#185, #193)", () => {
+  const withOption = (name) => {
+    const filterData = {
+      ...computeFilterData([product(10), product(20)]),
+      options: [{ name, key: name, values: ["S", "M"] }],
+    };
+    return filterData;
+  };
+
+  it.each(["constructor", "toString", "__proto__", "hasOwnProperty", "valueOf"])(
+    "renders an option named %s with nothing selected, and selects a value under that own key",
+    async (name) => {
+      const props = renderSidebar({ filterData: withOption(name) });
+      expect(checkbox("S").getAttribute("aria-checked")).toBe("false");
+      await userEvent.click(checkbox("S"));
+      const [next] = props.setSelectedOptions.mock.calls[0];
+      expect(Object.keys(next)).toEqual([name]);
+      expect(next[name]).toEqual(["S"]);
+    }
+  );
+
+  it("still shows and clears a value that is selected under such a key", async () => {
+    const props = renderSidebar({ filterData: withOption("constructor"), selectedOptions: { constructor: ["S"] } });
+    expect(checkbox("S").getAttribute("aria-checked")).toBe("true");
+    await userEvent.click(checkbox("S"));
+    expect(props.setSelectedOptions).toHaveBeenCalledWith({ constructor: [] });
+  });
+});

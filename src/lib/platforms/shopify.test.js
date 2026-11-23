@@ -1353,3 +1353,83 @@ describe("listCollections", () => {
     expect(loadCollectionsCache("shopify", ORIGIN)).toBeNull();
   });
 });
+
+describe("feed values that aren't text (#185)", () => {
+  const norm = (overrides) => normalizeShopifyProduct(product(overrides), ORIGIN);
+
+  it("never lets an object reach a title, vendor, type or description", () => {
+    const result = norm({ title: { a: 1 }, vendor: { a: 1 }, product_type: ["x"], body_html: { a: 1 } });
+    expect(result.title).toBe("");
+    expect(result.vendors).toEqual([]);
+    expect(result.categories).toEqual([]);
+    expect(result.description).toBe("");
+  });
+
+  it("keeps a numeric title or vendor as text", () => {
+    const result = norm({ title: 2026, vendor: 7 });
+    expect(result.title).toBe("2026");
+    expect(result.vendors).toEqual(["7"]);
+  });
+
+  it("keeps only the text tags, as an array or a comma-separated string", () => {
+    expect(norm({ tags: ["a", 1, { x: 1 }, null, ["b"], ""] }).tags).toEqual(["a", "1"]);
+    expect(norm({ tags: { 0: "a" } }).tags).toEqual([]);
+  });
+
+  it("reads an option's name and values as text", () => {
+    const result = norm({
+      options: [{ name: { a: 1 }, values: ["S", 5, {}, null] }, { name: "Color", values: "Red" }],
+      variants: [variant({ option1: { a: 1 }, option2: 3 })],
+    });
+    expect(result.options).toEqual([
+      { name: "", values: ["S", "5"] },
+      { name: "Color", values: [] },
+    ]);
+    expect(result.variants[0].options).toEqual(["", "3"]);
+  });
+
+  it("reads a variant title, handle and image address as text", () => {
+    const result = norm({
+      handle: { a: 1 },
+      images: [{ src: { a: 1 } }],
+      variants: [variant({ title: { a: 1 }, option1: "S" })],
+      options: [{ name: "Size", values: ["S"] }],
+    });
+    expect(result.handle).toBe("");
+    expect(result.url).toBeNull();
+    expect(result.images).toEqual([{ url: "" }]);
+    expect(result.variants[0].title).toBe("");
+  });
+});
+
+describe("collections with no usable handle (#185)", () => {
+  const listing = (collections) => routedFetch({ listing: () => jsonResponse({ collections }) });
+  const cacheKey = `storelens:collections:v3:shopify:${ORIGIN}`;
+
+  it("skips a collection whose handle is empty, blank, missing or not text", async () => {
+    vi.stubGlobal(
+      "fetch",
+      listing([
+        { handle: "", title: "Empty", products_count: 3 },
+        { handle: "  ", title: "Blank", products_count: 3 },
+        { title: "Missing", products_count: 3 },
+        { handle: 7, title: "Number", products_count: 3 },
+        { handle: { a: 1 }, title: "Object", products_count: 3 },
+        { handle: "tees", title: "Tees", products_count: 5 },
+      ])
+    );
+    const result = await shopifyAdapter.listCollections(ORIGIN);
+    expect(result.collections.map((c) => c.handle)).toEqual(["tees"]);
+    expect(JSON.parse(localStorage.getItem(cacheKey)).collections.map((c) => c.handle)).toEqual(["tees"]);
+  });
+
+  it("doesn't serve a cached list that holds one, and fetches a fresh one", async () => {
+    localStorage.setItem(
+      cacheKey,
+      JSON.stringify({ cachedAt: Date.now(), collections: [{ handle: "", title: "Bad", products_count: 1 }], allProductsHandle: null })
+    );
+    vi.stubGlobal("fetch", listing([{ handle: "tees", title: "Tees", products_count: 5 }]));
+    const result = await shopifyAdapter.listCollections(ORIGIN);
+    expect(result.collections.map((c) => c.handle)).toEqual(["tees"]);
+  });
+});

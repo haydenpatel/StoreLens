@@ -13,6 +13,17 @@ import { jsonResponse } from "./__fixtures__/test-helpers";
 
 afterEach(() => vi.unstubAllGlobals());
 
+describe("an error that isn't a StoreError (#185)", () => {
+  const raw = new TypeError("Cannot read properties of undefined (reading 'filter')");
+
+  it("gets generic copy, never the raw message", () => {
+    expect(describeStoreError(raw)).toBe("Something went wrong loading this store. Try again, or try another collection.");
+    expect(describeStoreErrorReason(raw)).toBe("an unexpected error occurred");
+    expect(describeStoreError(new Error("secret internals"))).not.toMatch(/secret/);
+    expect(describeStoreError(undefined)).toMatch(/Something went wrong/);
+  });
+});
+
 describe("describeStoreError", () => {
   const SUPPORTED = "Alpha, Beta or Gamma";
 

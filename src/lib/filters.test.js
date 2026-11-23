@@ -1140,3 +1140,32 @@ describe("products prepared at load", () => {
     expect(titles(filterAndSortProducts(prepared, search, {}, scoped))).toEqual(titles(filterAndSortProducts(prepared, search)));
   });
 });
+
+describe("option names that name something on Object.prototype (#185, #193)", () => {
+  const productWith = (name) =>
+    normalizeShopifyProduct(
+      product({
+        title: "Odd Tee",
+        options: [{ name }],
+        variants: [variant({ price: "10.00", option1: "S" }), variant({ price: "12.00", option1: "M" })],
+      }),
+      "https://shop.example.com"
+    );
+
+  it.each(["constructor", "toString", "__proto__", "hasOwnProperty"])("filters, counts and restores an option named %s", (name) => {
+    const products = [productWith(name)];
+    const filterData = computeFilterData(products);
+    expect(filterData.options.map((o) => o.key)).toEqual([name]);
+
+    const { options, ignored } = restoreOptionSelections(JSON.parse(`{${JSON.stringify(name)}:["s"]}`), filterData.options);
+    expect(ignored).toEqual([]);
+    expect(Object.getPrototypeOf(options)).toBe(Object.prototype);
+    expect(Object.keys(options)).toEqual([name]);
+    expect(Object.getOwnPropertyDescriptor(options, name).value).toEqual(["S"]);
+
+    const state = { ...defaults, selectedOptions: options };
+    expect(filterAndSortProducts(products, state, {})).toHaveLength(1);
+    expect(countActiveFilters(state, filterData)).toBe(1);
+    expect(buildFilterSearch(state, filterData)).toContain("options=");
+  });
+});

@@ -7,6 +7,7 @@ import {
   titleFromHandle,
   appPathFor,
   clearPlatformCache,
+  clearStoreCaches,
   getDisplayOrigin,
   loadCollectionsCache,
   loadPlatformCache,
@@ -417,5 +418,62 @@ describe("visited collections", () => {
     expect(() => saveVisitedCollection(ORIGIN, "tees")).not.toThrow();
     expect(() => forgetVisitedCollection(ORIGIN, "tees")).not.toThrow();
     expect(loadVisitedCollections(ORIGIN)).toEqual([]);
+  });
+});
+
+describe("collections cache validation (#185)", () => {
+  const cacheKey = `storelens:collections:v3:shopify:${ORIGIN}`;
+  const write = (collections, allProductsHandle = null) =>
+    localStorage.setItem(cacheKey, JSON.stringify({ cachedAt: Date.now(), collections, allProductsHandle }));
+
+  it.each([
+    ["an empty handle", [{ handle: "", title: "A" }]],
+    ["a blank handle", [{ handle: " ", title: "A" }]],
+    ["no handle", [{ title: "A" }]],
+    ["a handle that isn't text", [{ handle: 3, title: "A" }]],
+    ["a title that isn't text", [{ handle: "a", title: { x: 1 } }]],
+    ["an entry that isn't an object", [null]],
+    ["a bad entry among good ones", [{ handle: "a", title: "A" }, { handle: "", title: "B" }]],
+  ])("treats a list with %s as a cache miss", (_label, collections) => {
+    write(collections);
+    expect(loadCollectionsCache("shopify", ORIGIN)).toBeNull();
+  });
+
+  it("treats an all-products handle that isn't text as a cache miss", () => {
+    write([{ handle: "a", title: "A" }], { x: 1 });
+    expect(loadCollectionsCache("shopify", ORIGIN)).toBeNull();
+  });
+
+  it("still serves a valid list", () => {
+    write([{ handle: "a", title: "A", products_count: 2 }], "a");
+    expect(loadCollectionsCache("shopify", ORIGIN)).toEqual({
+      collections: [{ handle: "a", title: "A", products_count: 2 }],
+      allProductsHandle: "a",
+    });
+  });
+});
+
+describe("clearStoreCaches (#185)", () => {
+  it("removes the collections and platform caches of every version, and nothing else", () => {
+    localStorage.setItem("storelens:collections:v3:shopify:https://a.example.com", "{}");
+    localStorage.setItem("storelens:collections:v2:https://a.example.com", "{}");
+    localStorage.setItem("storelens:platform:v1:https://a.example.com", "{}");
+    localStorage.setItem("storelens-url-history", "[]");
+    localStorage.setItem("storelens:visited-collections:v1", "{}");
+    clearStoreCaches();
+    expect(localStorage.getItem("storelens:collections:v3:shopify:https://a.example.com")).toBeNull();
+    expect(localStorage.getItem("storelens:collections:v2:https://a.example.com")).toBeNull();
+    expect(localStorage.getItem("storelens:platform:v1:https://a.example.com")).toBeNull();
+    expect(localStorage.getItem("storelens-url-history")).toBe("[]");
+    expect(localStorage.getItem("storelens:visited-collections:v1")).toBe("{}");
+  });
+
+  it("never throws when storage is blocked", () => {
+    vi.stubGlobal("localStorage", {
+      get length() {
+        throw new Error("blocked");
+      },
+    });
+    expect(() => clearStoreCaches()).not.toThrow();
   });
 });
