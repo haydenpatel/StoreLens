@@ -748,4 +748,9 @@ describe("feed values that aren't text (#185)", () => {
     const everything = JSON.stringify([result.options, result.variants.map((v) => [v.title, v.options])]);
     expect(everything).not.toMatch(/object Object/);
   });
+
+  it("reads a numeric image address as text, not a number", () => {
+    expect(norm({ image: 5 }).images).toEqual([{ url: "5" }]);
+    expect(norm({ image: "https://example.com/a.jpg" }).images).toEqual([{ url: "https://example.com/a.jpg" }]);
+  });
 });

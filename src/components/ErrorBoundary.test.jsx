@@ -51,6 +51,7 @@ describe("ErrorBoundary (#185)", () => {
     );
     await userEvent.click(screen.getByRole("button", { name: "Reload" }));
     expect(reload).toHaveBeenCalledTimes(1);
+    expect(reload).toHaveBeenCalledWith();
     expect(window.localStorage.getItem("storelens:collections:v3:shopify:https://a.example.com")).toBe("{}");
   });
 
@@ -66,6 +67,8 @@ describe("ErrorBoundary (#185)", () => {
     await userEvent.click(screen.getByRole("button", { name: "Clear saved data and reload" }));
     expect(window.localStorage.getItem("storelens:collections:v3:shopify:https://a.example.com")).toBeNull();
     expect(window.localStorage.getItem("storelens-url-history")).toBe("[]");
+    // Home, not the same address: a crash caused by the link would come straight back.
     expect(reload).toHaveBeenCalledTimes(1);
+    expect(reload).toHaveBeenCalledWith("/");
   });
 });
