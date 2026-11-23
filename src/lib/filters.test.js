@@ -81,6 +81,12 @@ describe("computeFilterData", () => {
     expect(data.options).toEqual([]);
   });
 
+  it("keeps a 0 to 0 range when every product is free", () => {
+    const data = computeFilterData(norm([product({ variants: [variant({ price: "0.00" })] })]));
+    expect(data.minPrice).toBe(0);
+    expect(data.maxPrice).toBe(0);
+  });
+
   describe("option groups across a store whose options sit at different positions", () => {
     it("gathers every product's option under its name, wherever it sits", () => {
       const { options } = computeFilterData(scatteredOptionsCatalog());
