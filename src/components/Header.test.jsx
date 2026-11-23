@@ -70,6 +70,17 @@ describe("Header store field", () => {
     expect(props.onStoreInputChange).not.toHaveBeenCalled();
   });
 
+  it("inserts pasted text at the cursor and over a selection", () => {
+    const props = renderHeader({ storeInput: "shop.example.com" });
+    urlField().setSelectionRange(4, 4);
+    fireEvent.paste(urlField(), { clipboardData: { getData: () => "-x" } });
+    expect(props.onStorePaste).toHaveBeenLastCalledWith("shop-x.example.com");
+
+    urlField().setSelectionRange(0, 4);
+    fireEvent.paste(urlField(), { clipboardData: { getData: () => "store" } });
+    expect(props.onStorePaste).toHaveBeenLastCalledWith("store.example.com");
+  });
+
   it("disables the field and button while loading, and ignores Enter", () => {
     const props = renderHeader({ loading: true });
     expect(urlField().disabled).toBe(true);

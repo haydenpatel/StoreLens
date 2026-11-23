@@ -15,6 +15,12 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+describe("collectionUrl", () => {
+  it("encodes a non-ASCII handle", () => {
+    expect(fourthwallAdapter.collectionUrl(ORIGIN, "新品")).toBe(`${ORIGIN}/collections/%E6%96%B0%E5%93%81`);
+  });
+});
+
 describe("parseUrl", () => {
   it.each([
     ["a collection", `${ORIGIN}/collections/tees`, "tees"],
@@ -24,7 +30,8 @@ describe("parseUrl", () => {
     ["a numbered page", `${ORIGIN}/collections/all/3`, "all"],
     ["a numbered .json page", `${ORIGIN}/collections/all/3.json`, "all"],
     ["a trailing slash", `${ORIGIN}/collections/tees/`, "tees"],
-    ["upper case", `${ORIGIN}/Collections/Tees`, "Tees"],
+    ["upper case", `${ORIGIN}/Collections/Tees`, "tees"],
+    ["a percent-encoded handle", `${ORIGIN}/collections/%E6%96%B0%E5%93%81`, "新品"],
   ])("finds the collection in %s", (_, input, collection) => {
     expect(parse(input)).toEqual({ origin: ORIGIN, collection });
   });

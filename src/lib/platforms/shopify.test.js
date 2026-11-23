@@ -62,6 +62,25 @@ describe("parseUrl", () => {
     expect(parse("/collections").collection).toBeNull();
   });
 
+  it("decodes and lowercases the handle", () => {
+    expect(parse("/collections/%E6%96%B0%E5%93%81").collection).toBe("新品");
+    expect(parse("/collections/Tees").collection).toBe("tees");
+    expect(parse("/collections/%E0%A4%A").collection).toBe("%e0%a4%a");
+    expect(shopifyAdapter.collectionUrl(ORIGIN, "新品")).toBe(`${ORIGIN}/collections/%E6%96%B0%E5%93%81`);
+  });
+
+  it("ignores a query string and a product path after the collection", () => {
+    expect(parse("/collections/tees/products/blue-tee").collection).toBe("tees");
+    expect(shopifyAdapter.parseUrl(new URL(`${ORIGIN}/collections/tees?page=2&utm=x`)).collection).toBe("tees");
+  });
+
+  it("reads filter pages and tag filters as a bare store, not a collection", () => {
+    expect(shopifyAdapter.parseUrl(new URL(`${ORIGIN}/collections/vendors?q=Acme`))).toEqual({ origin: ORIGIN, collection: null });
+    expect(parse("/collections/types").collection).toBeNull();
+    expect(parse("/collections/tees/red")).toEqual({ origin: ORIGIN, collection: null });
+    expect(parse("/en-nz/collections/all/red+blue")).toEqual({ origin: `${ORIGIN}/en-nz`, collection: null });
+  });
+
   it("keeps the port in the origin", () => {
     expect(shopifyAdapter.parseUrl(new URL("http://localhost:3000/collections/all"))).toEqual({
       origin: "http://localhost:3000",
@@ -351,6 +370,12 @@ describe("fetchCollection", () => {
 
     await shopifyAdapter.fetchCollection(`${ORIGIN}/en-nz/collections/tees`);
     expect(fetchMock.mock.calls[0][0]).toBe(`${ORIGIN}/en-nz/collections/tees/products.json?page=1&limit=250`);
+  });
+
+  it("keeps the locale prefix on product links", async () => {
+    vi.stubGlobal("fetch", pagedFetch([[product({ handle: "tee" })]]));
+    const { products } = await shopifyAdapter.fetchCollection(`${ORIGIN}/en-nz/collections/tees`);
+    expect(products[0].url).toBe(`${ORIGIN}/en-nz/products/tee`);
   });
 
   it("returns normalized products", async () => {

@@ -42,13 +42,38 @@ describe("parseUserInputToURL", () => {
 
   it("reads the scheme case-insensitively (#84)", () => {
     expect(parseUserInputToURL("HTTPS://Shop.com").href).toBe("https://shop.com/");
-    expect(parseUserInputToURL("HTTP://Shop.com").href).toBe("http://shop.com/");
+    expect(parseUserInputToURL("HTTP://Shop.com").href).toBe("https://shop.com/");
   });
 
-  it("keeps an explicit http or https scheme and path", () => {
+  it("upgrades http to https and keeps the path", () => {
     expect(parseUserInputToURL("http://shop.example.com/collections/tees").href).toBe(
-      "http://shop.example.com/collections/tees"
+      "https://shop.example.com/collections/tees"
     );
+    expect(parseUserInputToURL("http://shop.example.com:80/").href).toBe("https://shop.example.com/");
+  });
+
+  it.each([
+    "localhost",
+    "http://localhost:3000/collections/all",
+    "intranet",
+    "127.0.0.1",
+    "https://192.168.1.5/collections/all",
+    "0x7f.1",
+    "2130706433",
+    "[::1]",
+    "shop.example.com:8443",
+    "user:pass@shop.example.com",
+    "https://user@shop.example.com",
+    "printer.local",
+    "router.home.arpa",
+    "db.internal",
+  ])("rejects a private or non-public address: %s", (input) => {
+    expect(parseUserInputToURL(input)).toBeNull();
+  });
+
+  it("accepts internationalised and punycode hostnames", () => {
+    expect(parseUserInputToURL("shop.例え.jp").hostname).toBe("shop.xn--r8jz45g.jp");
+    expect(parseUserInputToURL("shop.xn--p1ai").hostname).toBe("shop.xn--p1ai");
   });
 
   it("returns null for empty, whitespace-only or unparseable input", () => {

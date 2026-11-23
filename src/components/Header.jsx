@@ -103,7 +103,11 @@ export default function Header({
               onPaste={(e) => {
                 const text = e.clipboardData.getData("text");
                 e.preventDefault();
-                onStorePaste(text);
+                // Insert at the cursor, replacing any selection, as a normal paste would.
+                const { selectionStart: start, selectionEnd: end } = e.currentTarget;
+                onStorePaste(
+                  start == null ? text : `${storeInput.slice(0, start)}${text}${storeInput.slice(end ?? start)}`
+                );
               }}
               onKeyPress={handleKeyPress}
               disabled={loading}
