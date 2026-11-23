@@ -261,7 +261,8 @@ export function computeFilterData(products) {
     options: optionsArray,
     currency,
     minPrice: minPrice === Infinity ? 0 : Math.floor(minPrice),
-    maxPrice: maxPrice === 0 ? 1000 : Math.ceil(maxPrice)
+    // 1000 only when nothing is priced; all-free stays 0-0 (slider hidden)
+    maxPrice: minPrice === Infinity ? 1000 : Math.ceil(maxPrice)
   };
 }
 
