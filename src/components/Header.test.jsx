@@ -70,6 +70,15 @@ describe("Header store field", () => {
     expect(props.onStoreInputChange).not.toHaveBeenCalled();
   });
 
+  it("replaces the whole value with a pasted link, whatever the cursor", () => {
+    const props = renderHeader({ storeInput: "shop.example.com" });
+    urlField().setSelectionRange(16, 16);
+    fireEvent.paste(urlField(), { clipboardData: { getData: () => "  HTTP://other.example.com/collections/tees " } });
+    expect(props.onStorePaste).toHaveBeenLastCalledWith("  HTTP://other.example.com/collections/tees ");
+    fireEvent.paste(urlField(), { clipboardData: { getData: () => "https://third.example.com" } });
+    expect(props.onStorePaste).toHaveBeenLastCalledWith("https://third.example.com");
+  });
+
   it("inserts pasted text at the cursor and over a selection", () => {
     const props = renderHeader({ storeInput: "shop.example.com" });
     urlField().setSelectionRange(4, 4);

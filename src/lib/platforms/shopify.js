@@ -2,6 +2,7 @@ import { loadCollectionsCache, saveCollectionsCache } from "@/lib/store";
 import { StoreError, diagnoseFailure, kindFromStatus, probeUrl, withTimeout } from "@/lib/errors";
 import { compareText } from "@/lib/locale";
 import { fetchPages, fetchWithRetry } from "./requests";
+import { decodeHandle } from "./handle";
 
 const PLATFORM_ID = "shopify";
 
@@ -438,15 +439,6 @@ async function listCollections(origin, signal, options = {}) {
   }
   if (primaryError) throw primaryError;
   return primary;
-}
-
-// Handles are lowercase; a pasted one may be percent-encoded or mixed case.
-function decodeHandle(raw) {
-  try {
-    return decodeURIComponent(raw).toLowerCase();
-  } catch {
-    return raw.toLowerCase();
-  }
 }
 
 /** @type {import("./types").PlatformAdapter} */

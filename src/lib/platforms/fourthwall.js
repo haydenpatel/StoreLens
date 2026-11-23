@@ -4,6 +4,7 @@
 // this maps onto.
 import { StoreError, diagnoseFailure, probeUrl } from "@/lib/errors";
 import { fetchPages, fetchWithRetry } from "./requests";
+import { decodeHandle } from "./handle";
 
 const PLATFORM_ID = "fourthwall";
 
@@ -153,14 +154,6 @@ export function normalizeFourthwallProduct(raw, origin) {
 // its market's prices carry through. `collection` is the slug from
 // /collections/{slug}, /collections/{slug}.json, /collections/{slug}/products or
 // /collections/{slug}/{n}[.json]; null for a bare store.
-function decodeHandle(raw) {
-  try {
-    return decodeURIComponent(raw).toLowerCase();
-  } catch {
-    return raw.toLowerCase();
-  }
-}
-
 function parseUrl(url) {
   const match = url.pathname.match(COLLECTION_PATH);
   if (match) return { origin: `${url.origin}${match[1] ?? ""}`, collection: decodeHandle(match[2]) };

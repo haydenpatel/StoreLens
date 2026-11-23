@@ -67,8 +67,18 @@ describe("parseUserInputToURL", () => {
     "printer.local",
     "router.home.arpa",
     "db.internal",
+    "app.test",
+    "shop.example",
+    "x.invalid",
+    "host.localdomain",
   ])("rejects a private or non-public address: %s", (input) => {
     expect(parseUserInputToURL(input)).toBeNull();
+  });
+
+  it("drops a trailing dot from the host", () => {
+    expect(parseUserInputToURL("shop.example.com./collections/tees").href).toBe("https://shop.example.com/collections/tees");
+    expect(parseUserInputToURL("localhost.")).toBeNull();
+    expect(parseUserInputToURL("printer.local.")).toBeNull();
   });
 
   it("accepts internationalised and punycode hostnames", () => {

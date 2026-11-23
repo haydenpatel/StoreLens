@@ -1,5 +1,5 @@
 // Names that only resolve inside a private network.
-const PRIVATE_SUFFIX = /\.(?:local|localhost|internal|intranet|lan|home|corp|arpa)$/;
+const PRIVATE_SUFFIX = /\.(?:local|localhost|localdomain|internal|intranet|lan|home|corp|arpa|test|example|invalid)$/;
 
 // A store address must be a public https hostname: a pasted or shared link
 // can't make the browser request a private host (an IP literal, a dotless name,
@@ -11,7 +11,9 @@ export function parseUserInputToURL(input) {
     if (!value) return null;
     const url = new URL(/^https?:\/\//i.test(value) ? value : `https://${value}`);
     if (url.username || url.password || url.port) return null;
-    const host = url.hostname;
+    // A trailing dot is the same host (shop.com.); drop it.
+    const host = url.hostname.replace(/\.$/, "");
+    url.hostname = host;
     // The last label of a real domain has a letter; an IPv4 address (any
     // notation URL normalises to dotted digits) and an IPv6 literal don't.
     if (!/^[^.]+(\.[^.]+)+$/.test(host) || !/[a-z]/.test(host.slice(host.lastIndexOf(".") + 1))) return null;
