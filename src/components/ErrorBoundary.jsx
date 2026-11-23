@@ -20,11 +20,12 @@ export default class ErrorBoundary extends React.Component {
 
   render() {
     if (!this.state.failed) return this.props.children;
-    const reload = this.props.reload ?? (() => window.location.reload());
+    // `reload()` reloads this address; `reload("/")` goes to the home page.
+    const reload = this.props.reload ?? ((to) => (to ? window.location.assign(to) : window.location.reload()));
     return (
       <div className="min-h-screen flex flex-col items-center justify-center gap-4 p-6 bg-background text-foreground">
         <Notice level="error" className="mb-0">
-          Something went wrong and the page couldn't be shown. Reloading usually fixes it; if it comes back, clear the saved data and reload.
+          Something went wrong and the page couldn't be shown. Reloading usually fixes it; if it comes back, clear the saved data, which also returns to the home page.
         </Notice>
         <div className="flex gap-2">
           <Button onClick={() => reload()}>Reload</Button>
@@ -32,7 +33,9 @@ export default class ErrorBoundary extends React.Component {
             variant="outline"
             onClick={() => {
               clearStoreCaches();
-              reload();
+              // Home, not the same address: a crash caused by the link or the
+              // feed would come straight back.
+              reload("/");
             }}
           >
             Clear saved data and reload

@@ -105,6 +105,7 @@ function guessOptions(variantTitles) {
 
 // Maps one raw collection entry onto the neutral product shape.
 export function normalizeFourthwallProduct(raw, origin) {
+  const image = asText(raw.image);
   const basePrice = parseFloat(raw.price);
   const compareAt = parseFloat(raw.compare_at_price);
   // A malformed variant is skipped rather than failing the page, and so is one
@@ -139,7 +140,7 @@ export function normalizeFourthwallProduct(raw, origin) {
     handle: asText(raw.handle),
     title: asText(raw.title),
     url: productUrl(raw, origin),
-    images: asText(raw.image) ? [{ url: raw.image }] : [],
+    images: image ? [{ url: image }] : [],
     vendors: [],
     categories: [],
     tags: [],
