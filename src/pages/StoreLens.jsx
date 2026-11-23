@@ -741,7 +741,7 @@ export default function StoreLensApp() {
             unfulfilledAutoLoadRef.current = pendingAutoLoad;
             setError(
               err instanceof StoreError
-                ? describeFailure(err)
+                ? describeStoreError(err, errorContext())
                 : "I couldn't find a collection of products to load. Please paste the full collection URL and try again."
             );
             showFailedStore(appPathFor(storeOrigin), pendingAutoLoad.fromAddressBar);
