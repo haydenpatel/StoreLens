@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { setLocale } from "@/lib/locale";
@@ -121,6 +121,61 @@ describe("ProductGrid listing", () => {
       expect(cards()).toBe(120);
       rerender(grid(items(100)));
       expect(cards()).toBe(60);
+    });
+
+    describe("while the end of the grid stays in view (#187)", () => {
+      let observers;
+      let outerObserver;
+      beforeAll(() => {
+        outerObserver = globalThis.IntersectionObserver;
+        // Like the real observer, report the current state when observing starts.
+        globalThis.IntersectionObserver = class {
+          constructor(cb) {
+            this.cb = cb;
+            this.live = true;
+            observers.push(this);
+          }
+          observe() {
+            queueMicrotask(() => this.live && this.cb([{ isIntersecting: true }]));
+          }
+          unobserve() {}
+          disconnect() {
+            this.live = false;
+          }
+        };
+      });
+      afterAll(() => {
+        globalThis.IntersectionObserver = outerObserver;
+      });
+      beforeEach(() => {
+        observers = [];
+      });
+
+      it("keeps revealing after the list shrinks, up to the new length", async () => {
+        const { rerender } = render(grid(items(200)));
+        await act(async () => {});
+        expect(cards()).toBe(200);
+        rerender(grid(items(150)));
+        await act(async () => {});
+        expect(cards()).toBe(150);
+      });
+
+      it("reveals again when results return after an empty list", async () => {
+        const { rerender } = render(grid(items(100)));
+        await act(async () => {});
+        rerender(grid([]));
+        rerender(grid(items(70)));
+        await act(async () => {});
+        expect(cards()).toBe(70);
+      });
+
+      it("disconnects the observer it replaces", async () => {
+        const { rerender } = render(grid(items(200)));
+        await act(async () => {});
+        rerender(grid(items(130)));
+        await act(async () => {});
+        expect(observers.filter((o) => o.live)).toHaveLength(1);
+      });
     });
   });
 });
