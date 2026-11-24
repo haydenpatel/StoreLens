@@ -3,6 +3,11 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* Keep equal to DESKTOP_MIN_WIDTH in src/lib/breakpoints.js. */
+@theme {
+  --breakpoint-xl: 80rem;
+}
+
 @theme inline {
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);

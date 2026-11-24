@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import { formatCount } from "@/lib/locale";
 import { formatMoneyRange } from "@/lib/currency";
 import { normalizeOptionName, normalizeOptionValue } from "@/lib/filters";
+import { DESKTOP_QUERY } from "@/lib/breakpoints";
 
 
 export default function Sidebar({
@@ -69,19 +70,47 @@ export default function Sidebar({
   // docked panel, so its controls need to be inert (and focus managed) while
   // closed instead of just visually translated away.
   const [isDesktop, setIsDesktop] = useState(
-    () => typeof window !== "undefined" && window.matchMedia("(min-width: 1280px)").matches
+    () => typeof window !== "undefined" && window.matchMedia(DESKTOP_QUERY).matches
   );
   const headingId = useId();
+  const priceLabelId = useId();
   const headingRef = useRef(null);
   const closeButtonRef = useRef(null);
   const asideRef = useRef(null);
 
+  // The latest open state and close handler, for the breakpoint listener below.
+  const closeRef = useRef({ isOpen, onClose });
   useEffect(() => {
-    const mql = window.matchMedia("(min-width: 1280px)");
-    const handleChange = (e) => setIsDesktop(e.matches);
+    closeRef.current = { isOpen, onClose };
+  });
+
+  // Crossing the breakpoint closes the drawer, so rotating back to a narrow
+  // width doesn't bring back a drawer that was left open at the wide one.
+  useEffect(() => {
+    const mql = window.matchMedia(DESKTOP_QUERY);
+    const handleChange = (e) => {
+      setIsDesktop(e.matches);
+      if (closeRef.current.isOpen) closeRef.current.onClose();
+    };
     mql.addEventListener("change", handleChange);
     return () => mql.removeEventListener("change", handleChange);
   }, []);
+
+  // Lock the page behind the open drawer. The drawer's own scroll area
+  // contains its overscroll, so a flick at its end can't chain to the page.
+  useEffect(() => {
+    if (!isOpen || isDesktop) return;
+    const root = document.documentElement;
+    const { overflow, scrollbarGutter } = root.style;
+    // Hiding overflow removes a classic scrollbar and would shift the page by
+    // its width; a stable gutter keeps that space.
+    root.style.overflow = "hidden";
+    root.style.scrollbarGutter = "stable";
+    return () => {
+      root.style.overflow = overflow;
+      root.style.scrollbarGutter = scrollbarGutter;
+    };
+  }, [isOpen, isDesktop]);
 
   useEffect(() => {
     if (!isOpen || isDesktop) return;
@@ -139,13 +168,17 @@ export default function Sidebar({
         ref={asideRef}
         {...(isDesktop ? {} : { role: "dialog", "aria-modal": "true", "aria-labelledby": headingId })}
         className={cn(
-          "fixed left-0 top-0 z-50 h-dvh w-80 max-w-[85vw] bg-secondary border-r border-sidebar-border shadow-xl transition-[transform,visibility] duration-200 ease-in-out",
-          isOpen ? "translate-x-0" : "-translate-x-full max-xl:invisible",
+          "fixed left-0 top-0 z-50 h-dvh w-80 max-w-[85vw] bg-secondary border-r border-sidebar-border shadow-xl duration-200 ease-in-out",
+          // Visibility only transitions on the way out (it holds the drawer
+          // visible until the slide ends). Transitioned on the way in it would
+          // still read as hidden when the focus effect runs, and focus() on
+          // the Close button would fail.
+          isOpen ? "translate-x-0 transition-transform" : "-translate-x-full transition-[transform,visibility] max-xl:invisible",
           "xl:sticky xl:top-[73px] xl:left-auto xl:z-auto xl:h-[calc(100vh-73px)] xl:max-w-none xl:translate-x-0 xl:shadow-none xl:bg-transparent"
         )}
         inert={isDesktop ? undefined : !isOpen}
       >
-      <ScrollArea className="h-full">
+      <ScrollArea className="h-full" viewportClassName="max-xl:overscroll-contain">
         <div className="p-6 space-y-6">
           {/* Search */}
           <div className="space-y-2">
@@ -242,8 +275,8 @@ export default function Sidebar({
           </div>
 
           {/* Price Range */}
-          <div className="space-y-3">
-            <Label className="text-sm font-medium">
+          <div role="group" aria-labelledby={priceLabelId} className="space-y-3">
+            <Label id={priceLabelId} className="text-sm font-medium">
               Price Range: <span className="font-[350]">{formatMoneyRange(priceRange[0], priceRange[1], filterData.currency, { decimals: 0 })}</span>
             </Label>
             {/* With one price there is nothing to choose, and Radix computes
@@ -319,30 +352,36 @@ function FilterSection({ title, items: collectionItems, selected, onToggle, coun
   const items = [...collectionItems, ...new Set(selected.filter(item => !collectionItems.includes(item)))];
   const [expanded, setExpanded] = React.useState(items.length <= 8);
   const idPrefix = useId();
+  const titleId = `${idPrefix}-title`;
+  const listId = `${idPrefix}-list`;
   const count = (item) => counts?.get(normalizeOptionValue(item)) ?? 0;
 
   // A collapsed section still shows what is selected, so no active filter is
   // ever hidden behind "Show more".
   const displayItems = expanded ? items : items.filter((item, i) => i < 5 || selected.includes(item));
   const hiddenCount = items.length - displayItems.length;
+  const toggleText = expanded ? "Show less" : `Show ${formatCount(hiddenCount)} more`;
   const hasMore = expanded ? items.length > 5 : hiddenCount > 0;
 
   return (
-    <div className="space-y-2">
+    <div role="group" aria-labelledby={titleId} className="space-y-2">
       <div className="flex items-center space-x-2 justify-between">
-        <Label className="text-sm font-medium">{title}</Label>
+        <Label id={titleId} className="text-sm font-medium">{title}</Label>
         {hasMore && (
           <><Separator /><Button
             variant="link"
             size="sm"
             onClick={() => setExpanded(!expanded)}
+            aria-label={`${toggleText} in ${title}`}
+            aria-expanded={expanded}
+            aria-controls={listId}
             className="text-sidebar-primary p-0 h-auto"
           >
-            {expanded ? "Show less" : `Show ${formatCount(hiddenCount)} more`}
+            {toggleText}
           </Button></>
         )}
       </div>
-      <div className="space-y-2">
+      <div id={listId} className="space-y-2">
         {displayItems.map((item, index) => (
           <div key={item} className="flex items-center space-x-2">
             <Checkbox

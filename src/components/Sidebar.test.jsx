@@ -1,10 +1,14 @@
 // @vitest-environment jsdom
+import React, { useState } from "react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import Sidebar from "./Sidebar";
 import { setLocale } from "@/lib/locale";
 import { computeFilterData } from "@/lib/filters";
+import { createMatchMedia } from "@/lib/__fixtures__/fake-match-media";
+import { DESKTOP_QUERY } from "@/lib/breakpoints";
+import { readFileSync } from "node:fs";
 
 class NoopObserver {
   observe() {}
@@ -14,12 +18,7 @@ class NoopObserver {
 
 beforeAll(() => {
   globalThis.ResizeObserver = NoopObserver;
-  window.matchMedia = (query) => ({
-    matches: true,
-    media: query,
-    addEventListener() {},
-    removeEventListener() {},
-  });
+  window.matchMedia = createMatchMedia({ width: 1400 }).matchMedia;
 });
 
 afterEach(cleanup);
@@ -69,7 +68,7 @@ describe("Sidebar collapsed sections", () => {
     renderSidebar({ filterData: { ...computeFilterData([product(10), product(20)]), vendors } });
     expect(checkbox("Vendor05")).toBeTruthy();
     expect(checkbox("Vendor06")).toBeNull();
-    expect(screen.getByRole("button", { name: "Show 7 more" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Show 7 more in Vendor" })).toBeTruthy();
   });
 
   it("keeps a selected item in the hidden part visible, and counts only what is still hidden", () => {
@@ -79,7 +78,7 @@ describe("Sidebar collapsed sections", () => {
     });
     expect(checkbox("Vendor09").getAttribute("aria-checked")).toBe("true");
     expect(checkbox("Vendor06")).toBeNull();
-    expect(screen.getByRole("button", { name: "Show 6 more" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Show 6 more in Vendor" })).toBeTruthy();
   });
 
   it("keeps visible selections in order and still expands to everything", async () => {
@@ -89,9 +88,9 @@ describe("Sidebar collapsed sections", () => {
     });
     const shown = screen.getAllByRole("checkbox").map((c) => c.parentElement.textContent).filter((t) => t.startsWith("Vendor"));
     expect(shown).toEqual(["Vendor01", "Vendor02", "Vendor03", "Vendor04", "Vendor05", "Vendor08", "Vendor12"]);
-    await userEvent.click(screen.getByRole("button", { name: "Show 5 more" }));
+    await userEvent.click(screen.getByRole("button", { name: "Show 5 more in Vendor" }));
     expect(checkbox("Vendor06")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Show less" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Show less in Vendor" })).toBeTruthy();
   });
 
   it("offers no expand button when every hidden item is selected", () => {
@@ -143,7 +142,7 @@ describe("Sidebar counts (#115)", () => {
     setLocale("de-DE");
     const vendors = names("Vendor", 1500);
     renderSidebar({ filterData: { ...computeFilterData([product(10), product(20)]), vendors } });
-    expect(screen.getByRole("button", { name: "Show 1.495 more" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Show 1.495 more in Vendor" })).toBeTruthy();
   });
 });
 
@@ -151,7 +150,7 @@ describe("Sidebar tags", () => {
   it("makes every tag reachable, not just the first 20", async () => {
     const tags = names("tag", 45);
     renderSidebar({ filterData: { ...computeFilterData([product(10), product(20)]), tags } });
-    await userEvent.click(screen.getByRole("button", { name: "Show 40 more" }));
+    await userEvent.click(screen.getByRole("button", { name: "Show 40 more in Tags" }));
     for (const t of tags) expect(checkbox(t)).toBeTruthy();
   });
 
@@ -187,10 +186,10 @@ describe("Sidebar price range", () => {
 
 describe("Sidebar dialog semantics and robustness (#113)", () => {
   const mobile = () => {
-    window.matchMedia = (query) => ({ matches: false, media: query, addEventListener() {}, removeEventListener() {} });
+    window.matchMedia = createMatchMedia({ width: 800 }).matchMedia;
   };
   const desktop = () => {
-    window.matchMedia = (query) => ({ matches: true, media: query, addEventListener() {}, removeEventListener() {} });
+    window.matchMedia = createMatchMedia({ width: 1400 }).matchMedia;
   };
   afterEach(desktop);
 
@@ -465,5 +464,248 @@ describe("Sidebar option keys that name something on Object.prototype (#185, #19
     expect(checkbox("S").getAttribute("aria-checked")).toBe("true");
     await userEvent.click(checkbox("S"));
     expect(props.setSelectedOptions).toHaveBeenCalledWith({ constructor: [] });
+  });
+});
+
+describe("Sidebar as a mobile drawer (#188, #193)", () => {
+  const FOCUSABLE =
+    'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+  let media;
+  const at = (width, remPx) => {
+    media = createMatchMedia({ width, remPx });
+    window.matchMedia = media.matchMedia;
+  };
+  afterEach(() => {
+    window.matchMedia = createMatchMedia({ width: 1400 }).matchMedia;
+    document.documentElement.style.overflow = "";
+  });
+
+  const filterData = {
+    ...computeFilterData([product(10), product(20)]),
+    vendors: names("Vendor", 12),
+  };
+
+  // A page that owns the open state, with a button to open it from.
+  function Harness({ onClose = () => {}, initiallyOpen = false }) {
+    const [open, setOpen] = useState(initiallyOpen);
+    return (
+      <>
+        <button onClick={() => setOpen(true)}>Open filters</button>
+        <Sidebar
+          filterData={filterData}
+          searchQuery=""
+          setSearchQuery={() => {}}
+          selectedVendors={[]}
+          setSelectedVendors={() => {}}
+          selectedTypes={[]}
+          setSelectedTypes={() => {}}
+          selectedTags={[]}
+          setSelectedTags={() => {}}
+          selectedOptions={{}}
+          setSelectedOptions={() => {}}
+          priceRange={[filterData.minPrice, filterData.maxPrice]}
+          setPriceRange={() => {}}
+          inStockOnly={false}
+          setInStockOnly={() => {}}
+          saleOnly={false}
+          setSaleOnly={() => {}}
+          onReset={() => {}}
+          activeFilterCount={0}
+          isOpen={open}
+          onClose={() => {
+            onClose();
+            setOpen(false);
+          }}
+        />
+      </>
+    );
+  }
+  const openDrawer = async (user) => {
+    await user.click(screen.getByRole("button", { name: "Open filters" }));
+    return screen.getByRole("dialog", { name: "Filters" });
+  };
+
+  it("closes on Escape", async () => {
+    at(800);
+    const onClose = vi.fn();
+    render(<Harness onClose={onClose} />);
+    const user = userEvent.setup();
+    await openDrawer(user);
+    await user.keyboard("{Escape}");
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(document.querySelector("aside").hasAttribute("inert")).toBe(true);
+  });
+
+  it("closes from the Close button", async () => {
+    at(800);
+    const onClose = vi.fn();
+    render(<Harness onClose={onClose} />);
+    const user = userEvent.setup();
+    await openDrawer(user);
+    await user.click(screen.getByRole("button", { name: "Close filters" }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("closes when the backdrop is clicked", async () => {
+    at(800);
+    const onClose = vi.fn();
+    render(<Harness onClose={onClose} />);
+    const user = userEvent.setup();
+    await openDrawer(user);
+    await user.click(document.querySelector("aside").previousElementSibling);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("moves focus to Close on open and returns it to the opener on close", async () => {
+    at(800);
+    render(<Harness />);
+    const user = userEvent.setup();
+    const opener = screen.getByRole("button", { name: "Open filters" });
+    await openDrawer(user);
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Close filters" }));
+    await user.keyboard("{Escape}");
+    expect(document.activeElement).toBe(opener);
+  });
+
+  it("keeps Tab and Shift+Tab inside the drawer", async () => {
+    at(800);
+    render(<Harness />);
+    const user = userEvent.setup();
+    const dialog = await openDrawer(user);
+    const focusable = [...dialog.querySelectorAll(FOCUSABLE)];
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+
+    last.focus();
+    await user.tab();
+    expect(document.activeElement).toBe(first);
+    await user.tab({ shift: true });
+    expect(document.activeElement).toBe(last);
+  });
+
+  it("ignores Escape while the sidebar is docked", async () => {
+    at(1400);
+    const onClose = vi.fn();
+    render(<Harness onClose={onClose} initiallyOpen />);
+    await userEvent.setup().keyboard("{Escape}");
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("becomes a dialog and docks again when the window crosses the breakpoint", () => {
+    at(800);
+    render(<Harness />);
+    expect(screen.queryByRole("dialog", { hidden: true })).toBeTruthy();
+    act(() => media.resize({ width: 1400 }));
+    expect(screen.queryByRole("dialog", { hidden: true })).toBeNull();
+    act(() => media.resize({ width: 800 }));
+    expect(screen.queryByRole("dialog", { hidden: true })).toBeTruthy();
+  });
+
+  it("closes an open drawer when the window crosses the breakpoint, so it stays closed on the way back", async () => {
+    at(800);
+    const onClose = vi.fn();
+    render(<Harness onClose={onClose} />);
+    await openDrawer(userEvent.setup());
+    expect(document.querySelector("aside").hasAttribute("inert")).toBe(false);
+
+    act(() => media.resize({ width: 1400 }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    act(() => media.resize({ width: 800 }));
+    expect(document.querySelector("aside").hasAttribute("inert")).toBe(true);
+  });
+
+  it("does not call onClose on a breakpoint change while the drawer is closed", () => {
+    at(800);
+    const onClose = vi.fn();
+    render(<Harness onClose={onClose} />);
+    act(() => media.resize({ width: 1400 }));
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("uses the same rem-based width as Tailwind's xl, so a larger default font size still gets the drawer", () => {
+    // 1300px is wide enough at 16px per rem (80rem = 1280px) but not at 20px (1600px).
+    at(1300, 20);
+    render(<Harness />);
+    expect(screen.getByRole("dialog", { hidden: true, name: "Filters" })).toBeTruthy();
+    act(() => media.resize({ remPx: 16 }));
+    expect(screen.queryByRole("dialog", { hidden: true })).toBeNull();
+  });
+
+  it("locks page scroll while the drawer is open and restores it on close", async () => {
+    at(800);
+    document.documentElement.style.overflow = "scroll";
+    render(<Harness />);
+    const user = userEvent.setup();
+    expect(document.documentElement.style.overflow).toBe("scroll");
+    await openDrawer(user);
+    expect(document.documentElement.style.overflow).toBe("hidden");
+    expect(document.documentElement.style.scrollbarGutter).toBe("stable");
+    await user.keyboard("{Escape}");
+    expect(document.documentElement.style.overflow).toBe("scroll");
+    expect(document.documentElement.style.scrollbarGutter).toBe("");
+  });
+
+  it("releases the scroll lock when unmounted open, and never takes it while docked", () => {
+    at(800);
+    const { unmount } = render(<Harness initiallyOpen />);
+    expect(document.documentElement.style.overflow).toBe("hidden");
+    unmount();
+    expect(document.documentElement.style.overflow).toBe("");
+
+    at(1400);
+    render(<Harness initiallyOpen />);
+    expect(document.documentElement.style.overflow).toBe("");
+  });
+
+  it("releases the scroll lock when the window crosses the breakpoint", async () => {
+    at(800);
+    render(<Harness />);
+    await openDrawer(userEvent.setup());
+    act(() => media.resize({ width: 1400 }));
+    expect(document.documentElement.style.overflow).toBe("");
+  });
+
+  it("stops scroll chaining out of the drawer's own scroll area", () => {
+    at(800);
+    render(<Harness />);
+    const viewport = document.querySelector("aside [data-slot='scroll-area-viewport']");
+    expect(viewport.className).toContain("max-xl:overscroll-contain");
+  });
+});
+
+describe("Sidebar filter section semantics (#188)", () => {
+  const vendors = names("Vendor", 12);
+
+  it("names each filter section as a group", () => {
+    renderSidebar({ filterData: { ...computeFilterData([product(10), product(20)]), vendors, tags: ["a", "b"] } });
+    const group = screen.getByRole("group", { name: "Vendor" });
+    expect(group.contains(checkbox("Vendor01"))).toBe(true);
+    expect(screen.getByRole("group", { name: "Tags" }).contains(checkbox("a"))).toBe(true);
+    expect(group.contains(checkbox("a"))).toBe(false);
+  });
+
+  it("names the price range as a group around its slider", () => {
+    renderSidebar({ filterData: computeFilterData([product(10), product(20)]) });
+    const group = screen.getByRole("group", { name: /^Price Range:/ });
+    expect(group.querySelectorAll("[role='slider']")).toHaveLength(2);
+  });
+
+  it("gives Show more its section name and a state that tracks the list", async () => {
+    renderSidebar({ filterData: { ...computeFilterData([product(10), product(20)]), vendors } });
+    const user = userEvent.setup();
+    const more = screen.getByRole("button", { name: "Show 7 more in Vendor" });
+    expect(more.getAttribute("aria-expanded")).toBe("false");
+    expect(more.getAttribute("aria-controls")).toBe(screen.getByRole("group", { name: "Vendor" }).querySelector("[id]:not(label)").id);
+    await user.click(more);
+    const less = screen.getByRole("button", { name: "Show less in Vendor" });
+    expect(less.getAttribute("aria-expanded")).toBe("true");
+  });
+});
+
+describe("the desktop breakpoint", () => {
+  it("is the same width as Tailwind's xl variant", () => {
+    const css = readFileSync("src/index.css", "utf8");
+    const xl = /--breakpoint-xl:\s*([^;]+);/.exec(css)?.[1];
+    expect(DESKTOP_QUERY).toBe(`(min-width: ${xl})`);
   });
 });
