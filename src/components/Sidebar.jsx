@@ -73,6 +73,7 @@ export default function Sidebar({
     () => typeof window !== "undefined" && window.matchMedia(DESKTOP_QUERY).matches
   );
   const headingId = useId();
+  const priceLabelId = useId();
   const headingRef = useRef(null);
   const closeButtonRef = useRef(null);
   const asideRef = useRef(null);
@@ -100,10 +101,14 @@ export default function Sidebar({
   useEffect(() => {
     if (!isOpen || isDesktop) return;
     const root = document.documentElement;
-    const previous = root.style.overflow;
+    const { overflow, scrollbarGutter } = root.style;
+    // Hiding overflow removes a classic scrollbar and would shift the page by
+    // its width; a stable gutter keeps that space.
     root.style.overflow = "hidden";
+    root.style.scrollbarGutter = "stable";
     return () => {
-      root.style.overflow = previous;
+      root.style.overflow = overflow;
+      root.style.scrollbarGutter = scrollbarGutter;
     };
   }, [isOpen, isDesktop]);
 
@@ -270,8 +275,8 @@ export default function Sidebar({
           </div>
 
           {/* Price Range */}
-          <div className="space-y-3">
-            <Label className="text-sm font-medium">
+          <div role="group" aria-labelledby={priceLabelId} className="space-y-3">
+            <Label id={priceLabelId} className="text-sm font-medium">
               Price Range: <span className="font-[350]">{formatMoneyRange(priceRange[0], priceRange[1], filterData.currency, { decimals: 0 })}</span>
             </Label>
             {/* With one price there is nothing to choose, and Radix computes

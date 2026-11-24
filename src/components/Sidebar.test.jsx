@@ -639,8 +639,10 @@ describe("Sidebar as a mobile drawer (#188, #193)", () => {
     expect(document.documentElement.style.overflow).toBe("scroll");
     await openDrawer(user);
     expect(document.documentElement.style.overflow).toBe("hidden");
+    expect(document.documentElement.style.scrollbarGutter).toBe("stable");
     await user.keyboard("{Escape}");
     expect(document.documentElement.style.overflow).toBe("scroll");
+    expect(document.documentElement.style.scrollbarGutter).toBe("");
   });
 
   it("releases the scroll lock when unmounted open, and never takes it while docked", () => {
@@ -680,6 +682,12 @@ describe("Sidebar filter section semantics (#188)", () => {
     expect(group.contains(checkbox("Vendor01"))).toBe(true);
     expect(screen.getByRole("group", { name: "Tags" }).contains(checkbox("a"))).toBe(true);
     expect(group.contains(checkbox("a"))).toBe(false);
+  });
+
+  it("names the price range as a group around its slider", () => {
+    renderSidebar({ filterData: computeFilterData([product(10), product(20)]) });
+    const group = screen.getByRole("group", { name: /^Price Range:/ });
+    expect(group.querySelectorAll("[role='slider']")).toHaveLength(2);
   });
 
   it("gives Show more its section name and a state that tracks the list", async () => {
