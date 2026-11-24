@@ -283,7 +283,8 @@ export function restoreOptionSelections(selectedOptions, filterOptions) {
       },
     ])
   );
-  const options = {};
+  // A Map, because a plain object can't hold an option named __proto__.
+  const options = new Map();
   const ignored = [];
   Object.entries(selectedOptions).forEach(([name, values]) => {
     const match = byName.get(normalizeOptionName(name));
@@ -300,10 +301,10 @@ export function restoreOptionSelections(selectedOptions, filterOptions) {
     });
     // An option left with no applicable values isn't a filter at all.
     if (known.length > 0) {
-      options[match.key] = [...new Set([...(options[match.key] ?? []), ...known])];
+      options.set(match.key, [...new Set([...(options.get(match.key) ?? []), ...known])]);
     }
   });
-  return { options, ignored };
+  return { options: Object.fromEntries(options), ignored };
 }
 
 // Matches vendor, category or tag selections read from a link to the values

@@ -38,6 +38,13 @@ import { StoreError, cancelledError, describeStoreError, describeStoreErrorReaso
 // What describeStoreError needs to name the platforms that work.
 const errorContext = () => ({ supported: supportedPlatformNames(), notes: supportNotes() });
 
+// The user-facing sentence for a failure. Anything but a StoreError is a bug:
+// the user gets generic copy and the error goes to the console.
+function describeFailure(err) {
+  if (!(err instanceof StoreError)) console.error(err);
+  return describeStoreError(err, errorContext());
+}
+
 // Where Recent Stores lived before the key was renamed from shopify-specific.
 const LEGACY_HISTORY_KEY = "shopify-url-history";
 const HISTORY_KEY = "storelens-url-history";
@@ -357,7 +364,7 @@ export default function StoreLensApp() {
         // A cancel that reached us as a throw (a platform with no pages to keep).
         const cancelled = isCancelled(controller.signal);
         if (cancelled) setInfoNotice(describeStoreError(cancelledError()));
-        else setError(describeStoreError(err, errorContext()));
+        else setError(describeFailure(err));
         setLoading(false);
         if (!cancelled) forgetAdapter(new URL(url));
         forgetFailedCollection(loadAdapter, url);
@@ -392,46 +399,56 @@ export default function StoreLensApp() {
     // Wrapped in finally: updateHistoryEntry writes to localStorage, which
     // can throw (quota exceeded, private browsing, storage blocked) — that
     // shouldn't leave the loading spinner stuck when products already loaded.
+    // Anything else that throws here (this isn't awaited by its callers) is
+    // reported rather than left as an empty page and an unhandled rejection.
     try {
-      setProducts(prepareProducts(allProducts));
-      setLoadedAdapter(loadAdapter);
-      setPlatformNotices(notices ?? []);
-      // The load worked, so the store really is on this platform.
-      rememberAdapter(new URL(url), loadAdapter);
-      rememberVisitedCollection(loadAdapter, url);
-      setCurrentCollectionUrl(url);
-      setLoadVersion((version) => version + 1);
-      lastLoadWasFromAddressBarRef.current = fromAddressBar;
-      resetFilters();
+      try {
+        setProducts(prepareProducts(allProducts));
+        setLoadedAdapter(loadAdapter);
+        setPlatformNotices(notices ?? []);
+        // The load worked, so the store really is on this platform.
+        rememberAdapter(new URL(url), loadAdapter);
+        rememberVisitedCollection(loadAdapter, url);
+        setCurrentCollectionUrl(url);
+        setLoadVersion((version) => version + 1);
+        lastLoadWasFromAddressBarRef.current = fromAddressBar;
+        resetFilters();
 
-      if (pageError?.kind === "cancelled") {
-        setLoadOutcome("cancelled");
-        setLoadWarning(`Loaded ${formatCount(allProducts.length)} products; you stopped loading the rest.`);
-      } else if (pageError) {
-        setLoadOutcome("incomplete");
-        setLoadWarning(
-          `Loaded ${formatCount(allProducts.length)} products, but couldn't fetch the rest (${describeStoreErrorReason(pageError)}).`
-        );
-      } else if (truncated) {
-        setLoadOutcome("incomplete");
-        setLoadWarning(
-          `This collection is larger than StoreLens can load from ${loadAdapter.name} — showing the first ${formatCount(allProducts.length)} products.`
-        );
-      }
+        if (pageError?.kind === "cancelled") {
+          setLoadOutcome("cancelled");
+          setLoadWarning(`Loaded ${formatCount(allProducts.length)} products; you stopped loading the rest.`);
+        } else if (pageError) {
+          setLoadOutcome("incomplete");
+          setLoadWarning(
+            `Loaded ${formatCount(allProducts.length)} products, but couldn't fetch the rest (${describeStoreErrorReason(pageError)}).`
+          );
+        } else if (truncated) {
+          setLoadOutcome("incomplete");
+          setLoadWarning(
+            `This collection is larger than StoreLens can load from ${loadAdapter.name} — showing the first ${formatCount(allProducts.length)} products.`
+          );
+        }
 
-      // Domain only, never the collection path - a collection URL here would
-      // otherwise bump other domains out of Recent Stores every time someone just
-      // browses collections within the same store. The store's origin including
-      // any locale, so Recent Stores reopens the same market. Skipped once the
-      // store's discovery has made its own entry (the ref, not collectionsState:
-      // this closure may predate the store being switched).
-      const storeOfLoad = loadAdapter.parseUrl(new URL(url)).origin;
-      if (discoveredOriginRef.current !== storeOfLoad) {
-        updateHistoryEntry(storeOfLoad, { keepOrder: fromAddressBar });
+        // Domain only, never the collection path - a collection URL here would
+        // otherwise bump other domains out of Recent Stores every time someone just
+        // browses collections within the same store. The store's origin including
+        // any locale, so Recent Stores reopens the same market. Skipped once the
+        // store's discovery has made its own entry (the ref, not collectionsState:
+        // this closure may predate the store being switched).
+        const storeOfLoad = loadAdapter.parseUrl(new URL(url)).origin;
+        if (discoveredOriginRef.current !== storeOfLoad) {
+          updateHistoryEntry(storeOfLoad, { keepOrder: fromAddressBar });
+        }
+      } finally {
+        if (isCurrent()) {
+          setLoading(false);
+        }
       }
-    } finally {
+    } catch (err) {
       if (isCurrent()) {
-        setLoading(false);
+        setError(describeFailure(err));
+        forgetFailedCollection(loadAdapter, url);
+        showFailedStore(appPathFor(url), fromAddressBar);
       }
     }
   };
@@ -500,7 +517,7 @@ export default function StoreLensApp() {
       // Superseded: the newer input owns state from here.
       if (!resolution.signal.aborted) {
         setResolving(false);
-        setError(describeStoreError(err, errorContext()));
+        setError(describeFailure(err));
       }
       return;
     }
@@ -705,6 +722,7 @@ export default function StoreLensApp() {
         }
       } catch (err) {
         if (!controller.signal.aborted) {
+          if (!(err instanceof StoreError)) console.error(err);
           setCollectionsState({
             status: "error",
             collections: [],
@@ -713,7 +731,7 @@ export default function StoreLensApp() {
             error:
               err instanceof StoreError
                 ? `Couldn't load collections: ${describeStoreErrorReason(err)}`
-                : err.message || "Couldn't load collections for this store",
+                : "Couldn't load collections for this store",
             allProductsHandle: null,
             partial: false,
           });

@@ -48,7 +48,8 @@ export default function Sidebar({
   };
 
   const toggleOption = (optionKey, value) => {
-    const current = selectedOptions[optionKey] || [];
+    // Own keys only: an option named "constructor" must not read Object.prototype's.
+    const current = Object.hasOwn(selectedOptions, optionKey) ? selectedOptions[optionKey] : [];
     if (current.includes(value)) {
       setSelectedOptions({
         ...selectedOptions,
@@ -286,7 +287,7 @@ export default function Sidebar({
               key={option.key}
               title={option.name}
               items={option.values}
-              selected={selectedOptions[option.key] || []}
+              selected={Object.hasOwn(selectedOptions, option.key) ? selectedOptions[option.key] : []}
               counts={optionCounts && (optionCounts.get(normalizeOptionName(option.key)) ?? new Map())}
               onToggle={(v) => toggleOption(option.key, v)}
             />

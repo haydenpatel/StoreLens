@@ -3,6 +3,7 @@ import { StoreError, diagnoseFailure, kindFromStatus, probeUrl, withTimeout } fr
 import { compareText } from "@/lib/locale";
 import { fetchPages, fetchWithRetry } from "./requests";
 import { decodeHandle } from "./handle";
+import { asText, asTexts } from "./coerce";
 
 const PLATFORM_ID = "shopify";
 
@@ -49,6 +50,10 @@ async function readCurrency(base, handle, signal) {
   }
 }
 
+// A variant's value for an option: absent stays absent (the product has fewer
+// options), anything else is read as text.
+const optionValue = (value) => (value === null || value === undefined ? value : asText(value));
+
 function trimTrailingEmpty(values) {
   const out = [...values];
   while (out.length > 0 && (out[out.length - 1] === null || out[out.length - 1] === undefined)) {
@@ -61,7 +66,7 @@ function trimTrailingEmpty(values) {
 // Shopify returns tags as an array from /products.json, but some endpoints
 // return a comma-separated string.
 function normalizeTags(tags) {
-  if (Array.isArray(tags)) return tags;
+  if (Array.isArray(tags)) return asTexts(tags);
   if (typeof tags === "string") {
     return tags.split(",").map((tag) => tag.trim()).filter(Boolean);
   }
@@ -80,7 +85,8 @@ function isPlaceholderOptions(options) {
   return (
     options.length === 1 &&
     options[0].name === "Title" &&
-    options[0].values?.length === 1 &&
+    Array.isArray(options[0].values) &&
+    options[0].values.length === 1 &&
     options[0].values[0] === "Default Title"
   );
 }
@@ -98,24 +104,25 @@ export function normalizeShopifyProduct(raw, origin) {
     id: v.id,
     // The placeholder's lone variant is called "Default Title"; with no real
     // options it has nothing worth showing as a variant name.
-    title: placeholder ? "" : v.title,
+    title: placeholder ? "" : asText(v.title),
     price: parseFloat(v.price),
     compareAtPrice: normalizeComparePrice(v.compare_at_price),
     // A feed that stops sending the field must not read as everything sold out,
     // which would empty the default in-stock view: only an explicit false is.
     available: v.available !== false,
-    options: placeholder ? [] : trimTrailingEmpty([v.option1, v.option2, v.option3]),
+    options: placeholder ? [] : trimTrailingEmpty([v.option1, v.option2, v.option3].map(optionValue)),
   }))
     // An unparseable price is "unavailable", not NaN: the variant is dropped.
     .filter((variant) => Number.isFinite(variant.price));
 
   let url = null;
-  if (raw.handle && origin) {
+  const handle = asText(raw.handle);
+  if (handle && origin) {
     // Links are always https on the store's hostname; the market's locale
     // path stays, so "View" opens the same market the prices came from.
     try {
       const { hostname, pathname } = new URL(origin);
-      url = `https://${hostname}${pathname.replace(/\/+$/, "")}/products/${raw.handle}`;
+      url = `https://${hostname}${pathname.replace(/\/+$/, "")}/products/${handle}`;
     } catch {
       url = null;
     }
@@ -123,18 +130,18 @@ export function normalizeShopifyProduct(raw, origin) {
 
   return {
     id: raw.id,
-    handle: raw.handle,
-    title: raw.title,
+    handle,
+    title: asText(raw.title),
     url,
-    images: asObjects(raw.images).map((image) => ({ url: image.src })),
-    description: raw.body_html,
-    vendors: raw.vendor ? [raw.vendor] : [],
-    categories: raw.product_type ? [raw.product_type] : [],
+    images: asObjects(raw.images).map((image) => ({ url: asText(image.src) })),
+    description: asText(raw.body_html),
+    vendors: asTexts([raw.vendor]),
+    categories: asTexts([raw.product_type]),
     tags: normalizeTags(raw.tags),
     available: variants.some((v) => v.available),
-    createdAt: raw.created_at,
+    createdAt: asText(raw.created_at) || undefined,
     variants,
-    options: placeholder ? [] : rawOptions.map((o) => ({ name: o.name, values: o.values || [] })),
+    options: placeholder ? [] : rawOptions.map((o) => ({ name: asText(o.name), values: asTexts(o.values) })),
   };
 }
 
@@ -359,7 +366,9 @@ async function discoverCollections(origin, signal, { forceRefresh = false } = {}
   }
 
   const mapped = allCollections
-    .filter((c) => typeof c === "object" && c !== null && c.products_count > 0)
+    // A collection with no usable handle can't be opened (and an empty one
+    // breaks the dropdown), so it is left out.
+    .filter((c) => typeof c === "object" && c !== null && c.products_count > 0 && typeof c.handle === "string" && c.handle.trim() !== "")
     .map((c) => ({
       handle: c.handle,
       title: typeof c.title === "string" && c.title.trim() ? c.title : c.handle,

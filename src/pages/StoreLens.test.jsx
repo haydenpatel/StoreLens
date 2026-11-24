@@ -39,6 +39,19 @@ vi.mock("../components/ProductGrid", async (importOriginal) => {
   };
 });
 
+// Wraps prepareProducts so a test can make it throw once products have arrived.
+const prepare = vi.hoisted(() => ({ fail: null }));
+vi.mock("@/lib/filters", async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    prepareProducts: (products) => {
+      if (prepare.fail) throw prepare.fail;
+      return actual.prepareProducts(products);
+    },
+  };
+});
+
 // The real retry backoff (500 + 1000 ms) would make every retry path sleep;
 // shrink it to 1 ms (Retry-After waits included), keeping the retry count.
 vi.mock("@/lib/platforms/requests", async (importOriginal) => {
@@ -153,6 +166,7 @@ beforeEach(() => {
 
 afterEach(() => {
   slowResolve.override = null;
+  prepare.fail = null;
   vi.useRealTimers();
   cleanup();
   vi.restoreAllMocks();
@@ -610,6 +624,7 @@ describe("store resolution that takes a while", () => {
   });
 
   it("shows the error when resolving fails for a reason other than being superseded", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
     slowResolve.override = (url, options, real) =>
       url.host === A ? Promise.reject(new TypeError("Failed to fetch")) : real(url, options);
     vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: storeA() }));
@@ -619,7 +634,7 @@ describe("store resolution that takes a while", () => {
     await user.click(input());
     await user.paste(A);
 
-    expect(await screen.findByText("Failed to fetch")).not.toBeNull();
+    expect(await screen.findByText(/Something went wrong loading this store/)).not.toBeNull();
   });
 });
 
@@ -1202,6 +1217,7 @@ describe("history writes and load cancellation (#82)", () => {
     });
 
     it("leaves the entry as it was when its store can't be resolved", async () => {
+      vi.spyOn(console, "error").mockImplementation(() => {});
       vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: storeA() }));
       openAt(`/${A}/collections/tees`);
       await heading(3, 3);
@@ -1222,7 +1238,7 @@ describe("history writes and load cancellation (#82)", () => {
       await user.click(screen.getByRole("checkbox", { name: "Acme" }));
       act(() => window.history.back());
       await act(async () => resolution.release());
-      expect(await screen.findByText("Failed to fetch")).not.toBeNull();
+      expect(await screen.findByText(/Something went wrong loading this store/)).not.toBeNull();
       await settle();
       expect(here()).toBe(`/${A}/collections/tees`);
     });
@@ -2238,5 +2254,111 @@ describe("cancelling a slow or stalled load (#148)", () => {
       await heading(300, 300);
       expect(screen.queryByText(/couldn't fetch the rest/)).toBeNull();
     });
+  });
+});
+
+describe("bad feed data and unexpected errors (#185)", () => {
+  const dropdown = () => screen.getAllByRole("combobox")[0];
+  const quiet = () => vi.spyOn(console, "error").mockImplementation(() => {});
+
+  it("shows a message and frees the page when the products can't be prepared after they load", async () => {
+    const logged = quiet();
+    const failure = new TypeError("prepare exploded");
+    prepare.fail = failure;
+    vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: storeA() }));
+    openAt(`/${A}/collections/all`);
+
+    expect(await screen.findByText(/Something went wrong loading this store/)).not.toBeNull();
+    expect(screen.queryByText(/prepare exploded/)).toBeNull();
+    await waitFor(() => expect(input().disabled).toBe(false));
+    expect(logged.mock.calls.some(([first]) => first === failure)).toBe(true);
+    // The page isn't left half-built: no grid heading, and another store still loads.
+    expect(screen.queryByText(/Showing \d+ of/)).toBeNull();
+    prepare.fail = null;
+    vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: storeA(), [B]: storeB() }));
+    const user = userEvent.setup();
+    await user.click(input());
+    await user.clear(input());
+    await user.paste(B);
+    await heading(2, 2);
+  });
+
+  it("shows generic copy, not the raw message, for an error that isn't a StoreError, and logs it", async () => {
+    const logged = quiet();
+    const failure = new TypeError("kaboom internals");
+    slowResolve.override = (url) => {
+      if (url.host === A) throw failure;
+    };
+    vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: storeA() }));
+    openAt("/");
+    const user = userEvent.setup();
+    await user.click(input());
+    await user.paste(A);
+
+    expect(await screen.findByText(/Something went wrong loading this store/)).not.toBeNull();
+    expect(screen.queryByText(/kaboom/)).toBeNull();
+    expect(logged.mock.calls.some(([first]) => first === failure)).toBe(true);
+  });
+
+  it("renders a feed whose titles, vendors, tags and option names are not text, and an option named constructor works", async () => {
+    quiet();
+    const odd = product({
+      title: { a: 1 },
+      handle: "odd",
+      vendor: { a: 1 },
+      tags: [{ x: 1 }, "ok"],
+      options: [{ name: "constructor", values: ["S", "M"] }],
+      variants: [variant({ price: "5.00", option1: "S" }), variant({ price: "6.00", option1: "M" })],
+    });
+    vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: { collections: { all: [odd, item("Alpha Tee", "Acme"), item("Bravo Mug", "Beta Co")] } } }));
+    openAt(`/${A}/collections/all`);
+    await heading(3, 3);
+
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("checkbox", { name: optionBox("S") }));
+    await heading(1, 3);
+  });
+
+  it("opens a store whose listing has a collection with no handle, and the dropdown still works", async () => {
+    quiet();
+    const listing = (url) =>
+      url.host === A && url.pathname === "/collections.json"
+        ? jsonResponse({
+            collections: [
+              { handle: "", title: "Nameless", products_count: 2 },
+              { title: "Missing", products_count: 2 },
+              { handle: "all", title: "all", products_count: 3 },
+            ],
+          })
+        : undefined;
+    vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: storeA() }, listing));
+    openAt(`/${A}`);
+    await heading(3, 3);
+
+    const user = userEvent.setup();
+    await user.click(dropdown());
+    const options = within(await screen.findByRole("listbox")).getAllByRole("option");
+    expect(options.map((o) => o.textContent.replace(/\s*\(\d+\)$/, ""))).toEqual(["all"]);
+  });
+
+  it("opens a store whose cached collection list holds one with no handle, instead of crashing on every visit", async () => {
+    quiet();
+    window.localStorage.setItem(
+      `storelens:collections:v3:shopify:https://${A}`,
+      JSON.stringify({
+        cachedAt: Date.now(),
+        collections: [{ handle: "", title: "Nameless", products_count: 2 }, { handle: "all", title: "all", products_count: 3 }],
+        allProductsHandle: "all",
+      })
+    );
+    vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: storeA() }));
+    openAt(`/${A}`);
+    await heading(3, 3);
+
+    const user = userEvent.setup();
+    await user.click(dropdown());
+    const options = within(await screen.findByRole("listbox")).getAllByRole("option");
+    expect(options.length).toBeGreaterThan(0);
+    expect(options.map((o) => o.textContent.replace(/\s*\(\d+\)$/, ""))).not.toContain("Nameless");
   });
 });

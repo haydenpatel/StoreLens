@@ -5,6 +5,7 @@
 import { StoreError, diagnoseFailure, probeUrl } from "@/lib/errors";
 import { fetchPages, fetchWithRetry } from "./requests";
 import { decodeHandle } from "./handle";
+import { asText } from "./coerce";
 
 const PLATFORM_ID = "fourthwall";
 
@@ -65,7 +66,7 @@ function productUrl(raw, origin) {
   const url = typeof raw.url === "string" ? raw.url.trim() : "";
   if (/^https?:\/\//i.test(url)) return url;
   if (url.startsWith("/") && !url.startsWith("//")) return `${origin}${url}`;
-  return `${origin}/products/${raw.handle}`;
+  return `${origin}/products/${asText(raw.handle)}`;
 }
 
 const looksLikeSize = (value) => value.split("/").every((part) => SIZE_TOKEN.test(part.trim()));
@@ -104,6 +105,7 @@ function guessOptions(variantTitles) {
 
 // Maps one raw collection entry onto the neutral product shape.
 export function normalizeFourthwallProduct(raw, origin) {
+  const image = asText(raw.image);
   const basePrice = parseFloat(raw.price);
   const compareAt = parseFloat(raw.compare_at_price);
   // A malformed variant is skipped rather than failing the page, and so is one
@@ -115,7 +117,7 @@ export function normalizeFourthwallProduct(raw, origin) {
       return { v, price: Number.isFinite(cents) ? cents / 100 : basePrice };
     })
     .filter(({ price }) => Number.isFinite(price));
-  const { options, variantOptions } = guessOptions(priced.map(({ v }) => String(v.title ?? "")));
+  const { options, variantOptions } = guessOptions(priced.map(({ v }) => asText(v.title)));
   const currency = priced.find(({ v }) => /^[A-Z]{3}$/.test(v.price?.currency_iso))?.v.price.currency_iso;
   // Stock is only reported for the product as a whole, so every variant shares
   // it. A missing field isn't "sold out" (that would empty the in-stock view if
@@ -124,7 +126,7 @@ export function normalizeFourthwallProduct(raw, origin) {
 
   const variants = priced.map(({ v, price }, i) => ({
     id: v.id,
-    title: options.length ? String(v.title) : "",
+    title: options.length ? asText(v.title) : "",
     price,
     // The compare-at price is the product's, so it applies to each variant
     // sold below it; a dearer variant (a bigger size) isn't on sale.
@@ -135,10 +137,10 @@ export function normalizeFourthwallProduct(raw, origin) {
 
   return {
     id: raw.id,
-    handle: raw.handle,
-    title: raw.title,
+    handle: asText(raw.handle),
+    title: asText(raw.title),
     url: productUrl(raw, origin),
-    images: raw.image ? [{ url: raw.image }] : [],
+    images: image ? [{ url: image }] : [],
     vendors: [],
     categories: [],
     tags: [],

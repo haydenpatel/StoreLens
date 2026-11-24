@@ -62,16 +62,17 @@ export class StoreError extends Error {
 // platforms as text ("Shopify, Fourthwall or Big Cartel"); `notes` are the
 // platforms' own sentences about what they can't read (see supportNote in
 // platforms/types.js), added where a store that can't be reached may be one of
-// them. Errors that aren't StoreErrors (an invalid URL, say) keep their own message.
+// them. An error that isn't a StoreError is a bug, not something the store did:
+// its message is for the console, so the user gets generic copy.
 export function describeStoreError(err, { supported, notes } = {}) {
-  if (!(err instanceof StoreError)) return err?.message || "Something went wrong.";
+  if (!(err instanceof StoreError)) return "Something went wrong loading this store. Try again, or try another collection.";
   const copy = FAILURE_KINDS[err.kind] ?? FAILURE_KINDS["server-error"];
   return typeof copy.message === "function" ? copy.message(supported, err.status, notes) : copy.message;
 }
 
 // A short clause for the "couldn't fetch the rest (...)" warning.
 export function describeStoreErrorReason(err) {
-  if (!(err instanceof StoreError)) return err?.message || "an error occurred";
+  if (!(err instanceof StoreError)) return "an unexpected error occurred";
   const copy = FAILURE_KINDS[err.kind] ?? FAILURE_KINDS["server-error"];
   return typeof copy.reason === "function" ? copy.reason(err.status) : copy.reason;
 }

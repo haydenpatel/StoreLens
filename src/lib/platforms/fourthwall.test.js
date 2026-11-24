@@ -728,3 +728,29 @@ describe("detect", () => {
     await assertion;
   });
 });
+
+describe("feed values that aren't text (#185)", () => {
+  const norm = (overrides) => normalizeFourthwallProduct(product(overrides), "https://shop.example.com");
+
+  it("never lets an object reach the title, handle or image", () => {
+    const result = norm({ title: { a: 1 }, handle: { a: 1 }, image: { a: 1 }, url: undefined });
+    expect(result.title).toBe("");
+    expect(result.handle).toBe("");
+    expect(result.images).toEqual([]);
+  });
+
+  it("keeps a numeric title as text", () => {
+    expect(norm({ title: 2026 }).title).toBe("2026");
+  });
+
+  it("reads a variant title that isn't text as empty, not '[object Object]'", () => {
+    const result = norm({ variants: [{ ...variant("S"), title: { a: 1 } }, variant("M")] });
+    const everything = JSON.stringify([result.options, result.variants.map((v) => [v.title, v.options])]);
+    expect(everything).not.toMatch(/object Object/);
+  });
+
+  it("reads a numeric image address as text, not a number", () => {
+    expect(norm({ image: 5 }).images).toEqual([{ url: "5" }]);
+    expect(norm({ image: "https://example.com/a.jpg" }).images).toEqual([{ url: "https://example.com/a.jpg" }]);
+  });
+});
