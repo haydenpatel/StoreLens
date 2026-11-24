@@ -79,7 +79,9 @@ export default function Sidebar({
 
   // The latest open state and close handler, for the breakpoint listener below.
   const closeRef = useRef({ isOpen, onClose });
-  closeRef.current = { isOpen, onClose };
+  useEffect(() => {
+    closeRef.current = { isOpen, onClose };
+  });
 
   // Crossing the breakpoint closes the drawer, so rotating back to a narrow
   // width doesn't bring back a drawer that was left open at the wide one.
