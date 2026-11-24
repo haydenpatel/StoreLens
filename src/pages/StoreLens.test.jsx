@@ -12,6 +12,7 @@ import * as fw from "../lib/__fixtures__/fourthwall";
 import * as bc from "../lib/__fixtures__/bigcartel";
 import { clearFeedCache } from "@/lib/platforms/bigcartel";
 import { jsonResponse } from "../lib/__fixtures__/test-helpers";
+import { createMatchMedia } from "../lib/__fixtures__/fake-match-media";
 
 // Wraps the real resolveAdapter so a test can make store resolution slow, or fail
 // it, for chosen URLs. `slowResolve.override(url, options, real)` replaces the
@@ -70,15 +71,9 @@ class NoopObserver {
   disconnect() {}
 }
 
-// The sidebar asks whether the viewport is desktop-sized; answer yes.
-const desktopMatchMedia = (query) => ({
-  matches: true,
-  media: query,
-  addEventListener() {},
-  removeEventListener() {},
-  addListener() {},
-  removeListener() {},
-});
+// A matchMedia that honours the query: desktop-sized unless a test resizes it.
+const desktopMatchMedia = createMatchMedia({ width: 1400 }).matchMedia;
+const mobileMatchMedia = createMatchMedia({ width: 800 }).matchMedia;
 
 const A = "shop-a.example.com";
 const B = "shop-b.example.com";
@@ -1629,7 +1624,7 @@ describe("input and filter fixes (#84)", () => {
 
 describe("the filter drawer across loads (#113)", () => {
   it("stays closed when the next collection finishes loading at mobile width", async () => {
-    vi.stubGlobal("matchMedia", (query) => ({ ...desktopMatchMedia(query), matches: false }));
+    vi.stubGlobal("matchMedia", mobileMatchMedia);
     vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: storeA(), [B]: storeB() }));
     openAt(`/${A}/collections/tees`);
     await waitFor(() => expect(screen.getByRole("button", { name: /^filters/i })).toBeTruthy());
@@ -1646,8 +1641,23 @@ describe("the filter drawer across loads (#113)", () => {
     expect(document.querySelector("aside").hasAttribute("inert")).toBe(true);
   });
 
+  it("does not bring the drawer back after rotating across the breakpoint and back (#188)", async () => {
+    const media = createMatchMedia({ width: 800 });
+    vi.stubGlobal("matchMedia", media.matchMedia);
+    vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: storeA(), [B]: storeB() }));
+    openAt(`/${A}/collections/tees`);
+    await waitFor(() => expect(screen.getByRole("button", { name: /^filters/i })).toBeTruthy());
+    await userEvent.setup().click(screen.getByRole("button", { name: /^filters/i }));
+    expect(document.querySelector("aside").hasAttribute("inert")).toBe(false);
+
+    act(() => media.resize({ width: 1400 }));
+    act(() => media.resize({ width: 800 }));
+
+    expect(document.querySelector("aside").hasAttribute("inert")).toBe(true);
+  });
+
   it("keeps focus in the page, not on <body>, when a load closes the drawer", async () => {
-    vi.stubGlobal("matchMedia", (query) => ({ ...desktopMatchMedia(query), matches: false }));
+    vi.stubGlobal("matchMedia", mobileMatchMedia);
     const slow = deferred();
     const hold = (url) => (url.host === B && url.pathname === "/collections/all/products.json" ? slow.promise : undefined);
     vi.stubGlobal("fetch", fakeShopifyFetch({ [A]: storeA(), [B]: storeB() }, hold));

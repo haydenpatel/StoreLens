@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import { formatCount } from "@/lib/locale";
 import { formatMoneyRange } from "@/lib/currency";
 import { normalizeOptionName, normalizeOptionValue } from "@/lib/filters";
+import { DESKTOP_QUERY } from "@/lib/breakpoints";
 
 
 export default function Sidebar({
@@ -69,19 +70,40 @@ export default function Sidebar({
   // docked panel, so its controls need to be inert (and focus managed) while
   // closed instead of just visually translated away.
   const [isDesktop, setIsDesktop] = useState(
-    () => typeof window !== "undefined" && window.matchMedia("(min-width: 1280px)").matches
+    () => typeof window !== "undefined" && window.matchMedia(DESKTOP_QUERY).matches
   );
   const headingId = useId();
   const headingRef = useRef(null);
   const closeButtonRef = useRef(null);
   const asideRef = useRef(null);
 
+  // The latest open state and close handler, for the breakpoint listener below.
+  const closeRef = useRef({ isOpen, onClose });
+  closeRef.current = { isOpen, onClose };
+
+  // Crossing the breakpoint closes the drawer, so rotating back to a narrow
+  // width doesn't bring back a drawer that was left open at the wide one.
   useEffect(() => {
-    const mql = window.matchMedia("(min-width: 1280px)");
-    const handleChange = (e) => setIsDesktop(e.matches);
+    const mql = window.matchMedia(DESKTOP_QUERY);
+    const handleChange = (e) => {
+      setIsDesktop(e.matches);
+      if (closeRef.current.isOpen) closeRef.current.onClose();
+    };
     mql.addEventListener("change", handleChange);
     return () => mql.removeEventListener("change", handleChange);
   }, []);
+
+  // Lock the page behind the open drawer. The drawer's own scroll area
+  // contains its overscroll, so a flick at its end can't chain to the page.
+  useEffect(() => {
+    if (!isOpen || isDesktop) return;
+    const root = document.documentElement;
+    const previous = root.style.overflow;
+    root.style.overflow = "hidden";
+    return () => {
+      root.style.overflow = previous;
+    };
+  }, [isOpen, isDesktop]);
 
   useEffect(() => {
     if (!isOpen || isDesktop) return;
@@ -145,7 +167,7 @@ export default function Sidebar({
         )}
         inert={isDesktop ? undefined : !isOpen}
       >
-      <ScrollArea className="h-full">
+      <ScrollArea className="h-full" viewportClassName="max-xl:overscroll-contain">
         <div className="p-6 space-y-6">
           {/* Search */}
           <div className="space-y-2">
@@ -319,30 +341,36 @@ function FilterSection({ title, items: collectionItems, selected, onToggle, coun
   const items = [...collectionItems, ...new Set(selected.filter(item => !collectionItems.includes(item)))];
   const [expanded, setExpanded] = React.useState(items.length <= 8);
   const idPrefix = useId();
+  const titleId = `${idPrefix}-title`;
+  const listId = `${idPrefix}-list`;
   const count = (item) => counts?.get(normalizeOptionValue(item)) ?? 0;
 
   // A collapsed section still shows what is selected, so no active filter is
   // ever hidden behind "Show more".
   const displayItems = expanded ? items : items.filter((item, i) => i < 5 || selected.includes(item));
   const hiddenCount = items.length - displayItems.length;
+  const toggleText = expanded ? "Show less" : `Show ${formatCount(hiddenCount)} more`;
   const hasMore = expanded ? items.length > 5 : hiddenCount > 0;
 
   return (
-    <div className="space-y-2">
+    <div role="group" aria-labelledby={titleId} className="space-y-2">
       <div className="flex items-center space-x-2 justify-between">
-        <Label className="text-sm font-medium">{title}</Label>
+        <Label id={titleId} className="text-sm font-medium">{title}</Label>
         {hasMore && (
           <><Separator /><Button
             variant="link"
             size="sm"
             onClick={() => setExpanded(!expanded)}
+            aria-label={`${toggleText} in ${title}`}
+            aria-expanded={expanded}
+            aria-controls={listId}
             className="text-sidebar-primary p-0 h-auto"
           >
-            {expanded ? "Show less" : `Show ${formatCount(hiddenCount)} more`}
+            {toggleText}
           </Button></>
         )}
       </div>
-      <div className="space-y-2">
+      <div id={listId} className="space-y-2">
         {displayItems.map((item, index) => (
           <div key={item} className="flex items-center space-x-2">
             <Checkbox
